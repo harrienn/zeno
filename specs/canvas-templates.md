@@ -2,9 +2,9 @@
 
 ## 1. Purpose & Scope
 
-This document specifies the layout, encoding, and seeding mechanics for the **256-token canvas** in Zeno.
+This document records a proposed layout for the model's configured canvas width (256 tokens in the inspected GGUF artifact). The exact prompt serialization and padding behavior remain subject to comparison with the selected reference implementation.
 
-In structured-reads mode, the canvas is not populated sequentially. Instead, it is initialized as a structured token array containing the prompt context, response template, and selected answer position(s) pinned as noise/mask tokens (`mask_token_id = 4`), as pioneered in [vLLM PR #57250](https://github.com/vllm-project/vllm/pull/57250).
+In structured-reads mode, a seeded canvas contains prompt tokens and answer positions whose logits are read. In [vLLM PR #57250](https://github.com/vllm-project/vllm/pull/57250), pinning holds a selected position at its seeded token value across denoising steps. Pinning is an update rule; it does not by itself mean that the seed token must be `MASK` (`4`).
 
 ---
 
@@ -12,31 +12,31 @@ In structured-reads mode, the canvas is not populated sequentially. Instead, it 
 
 The canvas is a fixed-width array of token identifiers:
 
-* **Canvas Length ($L$)**: `256` tokens (matching `diffusion.canvas_length` in [`specs/gguf-mapping.md`](gguf-mapping.md)).
+* **Default Canvas Length ($L$)**: `256` tokens (matching `diffusion.canvas_length` in [`specs/gguf-mapping.md`](gguf-mapping.md)); implementations may accept a shorter request canvas if they preserve the reference semantics.
 * **Token Identifier Type**: 32-bit unsigned integer (`u32`).
 * **Special Token IDs**:
   - `BOS` (Beginning of Sequence): `2`
   - `EOS` (End of Sequence): `1`
-  - `MASK` (Discrete Diffusion Noise / Pinned Slot): `4`
+  - `MASK` (Discrete Diffusion Mask Token): `4`
   - `PAD` (Padding Token): `0`
 
 ---
 
 ## 3. Seeded Canvas Memory Layout
 
-The 256-token canvas is segmented into four contiguous logical regions:
+The following diagram is a template proposal, not a verified requirement for model inputs:
 
 ```text
 ┌─────────┬──────────────────────┬──────────────────────┬─────────────┬─────────────┐
-│   BOS   │    Prompt Context    │   Response Template  │  MASK (Pin) │   Padding   │
-│ token 2 │  user query & state  │    "Answer:" label   │   token 4   │   token 0   │
+│ BOS?    │    Prompt Context    │   Response Template  │ Answer seed │ Remaining   │
+│template │  user query & state  │    "Answer:" label   │ token + pin │   canvas    │
 └─────────┴──────────────────────┴──────────────────────┴─────────────┴─────────────┘
 0         1                      k                      p             p+1         255
 ```
 
 ### 3.1 Region Definitions
 
-1. **Header**: Position `0` is initialized to `BOS` (`2`).
+1. **Header**: The reference tokenizer/template determines BOS insertion. Do not insert BOS separately if the tokenizer already adds it.
 2. **Prompt Context**: Positions `1` through $k-1$ contain the tokenized user turn:
    - System/turn delimiters (`<|turn>user\n...<turn|>\n`).
    - Background context (if provided in the decision request).
@@ -44,16 +44,16 @@ The 256-token canvas is segmented into four contiguous logical regions:
 3. **Response Template**: Positions $k$ through $p-1$ contain the beginning of the model turn:
    - Model turn delimiter (`<|turn>model\n`).
    - Prefix cue (e.g. `Answer:`).
-4. **Pinned Answer Slot**: Position $p$ (`answer_pos`) is explicitly seeded with `MASK` (`4`).
-5. **Padding Trailer**: Positions $p+1$ through $255$ are filled with `PAD` (`0`).
+4. **Answer Position**: Position $p$ is seeded with the token specified by the chosen structured-read procedure and selected for logit readout. Pin it if the selected step policy requires preserving its seed value.
+5. **Remaining Canvas**: Seed contents and attention treatment are not specified here. Establish them from the reference path and a parity fixture.
 
-> **Invariant**: Because non-causal attention attends across all canvas positions bidirectionally, trailing slots after the pinned answer position are padded with `0` (or `EOS` followed by `PAD`), preventing spurious noise interference during single-step readout.
+> **Open requirement**: A `PAD` token is still a token embedding. Define whether unused positions are masked from attention, contain padding IDs, or contain diffusion noise. Do not assume that filling them with `0` prevents them from influencing bidirectional attention.
 
 ---
 
 ## 4. Prompt Template Formatting
 
-To ensure consistent model activations, Zeno structures the text prompt before tokenization using Gemma 4 chat delimiters:
+Illustrative prompt only. Use the selected model artifact's chat template and the reference serializer for the implementation contract; verify the resulting token IDs in a golden fixture.
 
 ```text
 <|turn>user
@@ -96,37 +96,19 @@ Answer:
 
 ## 5. Candidate Validation & Token Resolution
 
-Before constructing the canvas, the runtime must validate the candidates provided in `DecisionRequest`:
+The request supplies a one-token output code and a separate display label for each candidate. Resolve the output code at the actual answer boundary of the fully rendered prompt. Encoding a trimmed candidate string in isolation is insufficient because whitespace and preceding text can change tokenization.
 
-```zig
-pub const CandidateToken = struct {
-    label: []const u8,
-    token_id: u32,
-};
+For each candidate:
 
-pub fn resolveCandidates(
-    tokenizer: *const Tokenizer,
-    candidates: []const []const u8,
-    out_tokens: []CandidateToken,
-) !usize {
-    for (candidates, 0..) |cand, i| {
-        // Encode candidate label with leading space stripping
-        const token_ids = try tokenizer.encode(cand);
+1. Render the model's exact prompt and answer prefix.
+2. Resolve the candidate continuation using the selected tokenizer's continuation semantics.
+3. Reject it with `MultiTokenCandidateNotAllowed` unless that continuation is exactly one token.
+4. Reject duplicate token IDs with `DuplicateCandidateToken`, even when display labels differ.
+5. Keep the resolved token ID associated with its display label.
 
-        // Invariant: candidate MUST be a single token
-        if (token_ids.len != 1) {
-            return error.MultiTokenCandidateNotAllowed;
-        }
-
-        out_tokens[i] = .{
-            .label = cand,
-            .token_id = token_ids[0],
-        };
-    }
-    return candidates.len;
-}
-```
+The exact continuation procedure must be tested against the model tokenizer and a reference fixture before implementation.
 
 ### Error Conditions
-- **`MultiTokenCandidateNotAllowed`**: Returned if any candidate string tokenizes to more than 1 token.
-- **`CanvasOverflow`**: Returned if prompt tokens + response template + 1 pinned slot exceeds 256 tokens.
+- **`MultiTokenCandidateNotAllowed`**: Returned if a rendered candidate continuation is not exactly one token.
+- **`DuplicateCandidateToken`**: Returned when two candidates resolve to the same token ID.
+- **`CanvasOverflow`**: Returned if serialized prompt tokens and required answer positions exceed the configured canvas width.

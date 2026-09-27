@@ -2,9 +2,7 @@
 
 ## 1. Purpose & Scope
 
-This document specifies the interface for Zeno's **System One** decision engine.
-
-Inspired by TypeSafe AI's Jev and aligned with the prototype `/v1/systemone` interposer in [vLLM PR #57250](https://github.com/vllm-project/vllm/pull/57250), Zeno executes fast, deterministic, schema-constrained software decisions without free-form conversational text generation.
+This document proposes a Zeno decision API inspired by TypeSafe AI's Jev and the prototype `/v1/systemone` interposer in [vLLM PR #57250](https://github.com/vllm-project/vllm/pull/57250). The JSON shape below is a Zeno proposal; it is not wire-compatible with the vLLM interposer. Runtime speed and determinism remain to be measured.
 
 The specification defines:
 1. The HTTP REST API contract (`POST /v1/systemone`).
@@ -35,7 +33,10 @@ The decision engine strictly validates that all candidate choices resolve to sin
   "context": "Customer report: All database connections timed out starting at 14:02 UTC.",
   "schema": {
     "type": "boolean",
-    "candidates": ["Yes", "No"]
+    "candidates": [
+      {"token": "Yes", "label": "Yes"},
+      {"token": "No", "label": "No"}
+    ]
   },
   "options": {
     "step_cap": 1,
@@ -52,30 +53,31 @@ The decision engine strictly validates that all candidate choices resolve to sin
 | `query` | `string` | **Yes** | The decision prompt or question to resolve. |
 | `context` | `string` | No | Unstructured application state or background text. |
 | `schema.type` | `string` | **Yes** | Decision schema: `"boolean"`, `"choice"`, or `"score"`. |
-| `schema.candidates` | `string[]` | **Yes** | List of valid choices. Each must resolve to 1 token ($2 \le N \le 32$). |
-| `options.step_cap` | `integer` | No | Max diffusion steps (default: `1`). |
-| `options.temperature` | `float` | No | Logit scaling factor before softmax (default: `1.0`). |
-| `options.entropy_threshold` | `float` | No | Shannon entropy threshold for flagging uncertainty. |
+| `schema.candidates` | object[] | **Yes** | Each item has a `token` string that resolves to one token and a user-facing `label`. Require 2–32 candidates with distinct token IDs. |
+| `options.step_cap` | `integer` | No | Version 0 supports only `1`; reject other values until multi-step semantics are specified and validated. |
+| `options.temperature` | `float` | No | Positive, finite logit scaling factor before candidate normalization (default: `1.0`). It does not control diffusion sampling in a one-step read. |
+| `options.entropy_threshold` | `float` | No | Optional threshold on normalized entropy, in `[0, 1]`. If omitted, `uncertain` is `false`. |
 
 ### 3.2 Response Payload
 
 ```json
 {
   "decision": "Yes",
-  "score": 0.962,
-  "entropy": 0.162,
+  "decision_probability": 0.962,
+  "entropy_nats": 0.162,
+  "normalized_entropy": 0.234,
   "uncertain": false,
   "candidates": [
     {
       "label": "Yes",
       "token_id": 9482,
-      "score": 0.962,
+      "probability": 0.962,
       "raw_logit": 14.82
     },
     {
       "label": "No",
       "token_id": 3521,
-      "score": 0.038,
+      "probability": 0.038,
       "raw_logit": 11.58
     }
   ],
@@ -86,13 +88,14 @@ The decision engine strictly validates that all candidate choices resolve to sin
 
 #### Response Semantics
 
-* **`decision`**: The candidate label with the highest score ($p_{\text{max}}$).
-* **`score`**: Normalized softmax score across the allowed candidate set:
+* **`decision`**: The candidate label with the highest normalized candidate score ($p_{\text{max}}$).
+* **`decision_probability`**: Candidate-normalized softmax score for the selected label. It is not an empirically calibrated probability:
   $$p_i = \frac{\exp(z_i / T)}{\sum_{j=1}^N \exp(z_j / T)}$$
-  *(Note: This is a normalized candidate score; empirical calibration requires separate labeled evaluation).*
-* **`entropy`**: Normalized Shannon entropy over the candidate set:
+  *(Empirical calibration requires separate labeled evaluation.)*
+* **`entropy_nats`**: Shannon entropy over the candidate distribution, in nats:
   $$H(P) = -\sum_{i=1}^N p_i \ln(p_i)$$
-* **`uncertain`**: Boolean flag set to `true` if $H(P) \ge \text{entropy\_threshold}$.
+* **`normalized_entropy`**: $H(P) / \ln(N)$, in $[0,1]$ for $N \ge 2$.
+* **`uncertain`**: Set to `true` when a threshold was supplied or defaulted and `normalized_entropy >= entropy_threshold`. Entropy is a dispersion measure, not a correctness estimate.
 
 ---
 
@@ -104,11 +107,11 @@ Used for guards, gates, assertions, and smart conditionals.
 
 ### 4.2 Single-Token Multiple Choice (`"choice"`)
 Used for intent routing, ticket classification, and moderation.
-* Candidates: Single-word labels (e.g. `["Spam", "Ham"]`, `["Bug", "Feature", "Question"]`) or single-letter codes (e.g. `["A", "B", "C", "D"]`).
+* Candidates: Each candidate contains a one-token `token` code and a display `label`. For example, `{"token":"A", "label":"Credit Card Fraud"}`.
 
 ### 4.3 Ordinal Scoring (`"score"`)
 Used for LLM-as-a-judge, response grading, and severity ranking.
-* Candidates: Numeric single-digit tokens (e.g. `["1", "2", "3", "4", "5"]`).
+* Candidates: Ordered candidate objects, usually with numeric one-token codes. The `decision_probability` remains the normalized probability of the selected code; it is not the ordinal score itself.
 
 ---
 
@@ -127,23 +130,29 @@ pub const DecisionRequest = struct {
     query: []const u8,
     context: ?[]const u8 = null,
     schema_type: SchemaType,
-    candidates: []const []const u8,
+    candidates: []const CandidateSpec,
     step_cap: u32 = 1,
     temperature: f32 = 1.0,
     entropy_threshold: ?f32 = null,
 };
 
+pub const CandidateSpec = struct {
+    token: []const u8,
+    label: []const u8,
+};
+
 pub const CandidateResult = struct {
     label: []const u8,
     token_id: u32,
-    score: f32,
+    probability: f32,
     raw_logit: f32,
 };
 
 pub const DecisionResponse = struct {
     decision: []const u8,
-    score: f32,
-    entropy: f32,
+    decision_probability: f32,
+    entropy_nats: f32,
+    normalized_entropy: f32,
     uncertain: bool,
     candidates: []const CandidateResult,
     steps_executed: u32,
@@ -161,5 +170,10 @@ pub const DecisionEngine = struct {
 
 ### Memory Contract
 
-- **Zero Global State**: All scratch tensors, canvas buffers, and response objects are allocated from the supplied `arena` allocator.
-- **Immediate Reclaim**: At the completion of `decide()`, resetting or freeing `arena` reclaims all temporary activation memory in $O(1)$.
+- The engine owns long-lived model weights, tokenizer data, and backend state; these do not use the request allocator.
+- Per-request scratch and response slices use the caller-supplied allocator. The response remains valid until the caller resets or frees that allocator.
+- The API must document whether an engine may be called concurrently and how callers initialize/load and release it before those operations are implemented.
+
+### Initial Error Contract
+
+Reject malformed schemas, fewer than two or more than 32 candidates, duplicate resolved token IDs, candidates that do not resolve to one token in their rendered answer context, non-finite or non-positive temperatures, canvas overflow, and `step_cap` values other than `1`. HTTP status codes and a stable JSON error envelope must be specified before exposing the endpoint.

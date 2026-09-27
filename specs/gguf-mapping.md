@@ -13,6 +13,8 @@ All values, shapes, and quantization types documented here are directly extracte
 * **Total Tensors**: 692
 * **Total Metadata Key-Values**: 44
 
+These claims are specific to that local file. Its SHA-256 digest and the exact inspection tool/version are not recorded yet; add both before using this table as reproducible provenance. Dimensions below are GGUF/GGML tensor dimensions in stored order, not an implicit row-major `[rows, columns]` convention. Any conversion to a runtime matrix layout must state the transpose/stride mapping explicitly.
+
 ---
 
 ## 2. Model Metadata & Structural Invariants
@@ -89,8 +91,8 @@ Each Global block contains **22 tensors** (omits `attn_v.weight`).
 | **Attention Output** | `blk.{i}.attn_output.weight` | `[4096, 2816]` | `[8192, 2816]` | `Q4_K` | Linear projection back to $d_{\text{model}}$ |
 | **Post-Attn Norm** | `blk.{i}.post_attention_norm.weight`| `[2816]` | `[2816]` | `F32` | RMSNorm post attention |
 | **Shared FFN Norm** | `blk.{i}.ffn_norm.weight` | `[2816]` | `[2816]` | `F32` | Pre-FFN RMSNorm |
-| **Shared FFN Gate** | `blk.{i}.ffn_gate.weight` | `[2816, 2112]` | `[2816, 2112]` | `Q4_K` | SwiGLU gate projection |
-| **Shared FFN Up** | `blk.{i}.ffn_up.weight` | `[2816, 2112]` | `[2816, 2112]` | `Q4_K` | SwiGLU up projection |
+| **Shared FFN Gate** | `blk.{i}.ffn_gate.weight` | `[2816, 2112]` | `[2816, 2112]` | `Q4_K` | Gate projection for the configured dense MLP activation |
+| **Shared FFN Up** | `blk.{i}.ffn_up.weight` | `[2816, 2112]` | `[2816, 2112]` | `Q4_K` | Up projection for the configured dense MLP activation |
 | **Shared FFN Down** | `blk.{i}.ffn_down.weight` | `[2112, 2816]` | `[2112, 2816]` | `Q8_0` | FFN down projection |
 | **MoE Router Gate** | `blk.{i}.ffn_gate_inp.weight` | `[2816, 128]` | `[2816, 128]` | `F32` | Top-8 expert router weights |
 | **MoE Router Scale**| `blk.{i}.ffn_gate_inp.scale` | `[2816]` | `[2816]` | `F32` | Router input normalizer |
@@ -109,9 +111,7 @@ Each Global block contains **22 tensors** (omits `attn_v.weight`).
 ## 5. Critical Architectural Invariants for Runtime
 
 1. **Global Layer $V$-sharing**:
-   In blocks $5, 11, 17, 23, 29$, `blk.{i}.attn_v.weight` is intentionally not present in the model file. During attention computation for these layers:
-   $$V = K$$
-   The key projection is reused directly as the value representation.
+   In blocks $5, 11, 17, 23, 29$, `blk.{i}.attn_v.weight` is not present in this artifact. The key projection weights are reused for the value projection. Preserve the reference's separate K and V processing after projection; do not assume the normalized/rotated key tensor is itself the value tensor.
 
 2. **Dual RoPE Dimensions and Bases**:
    - SWA layers use frequency base `10,000.0` with RoPE dimension `256`.
@@ -121,4 +121,4 @@ Each Global block contains **22 tensors** (omits `attn_v.weight`).
    Before computing attention dot-products, Queries and Keys are normalized across their head dimension using `attn_q_norm` and `attn_k_norm` RMSNorm scales.
 
 4. **MoE Topology**:
-   Every layer contains both a shared FFN (SwiGLU with intermediate dim `2112`) and an MoE branch with 128 experts (intermediate dim `704`, top-8 routing). The layer output is the combination of the attention block, shared FFN, and routed MoE experts.
+   Every layer contains a shared dense FFN (intermediate dim `2112`) and an MoE branch with 128 experts (intermediate dim `704`, top-8 routing). Activation functions and residual/norm ordering are defined by the model configuration and reference implementation, not by tensor shapes alone.

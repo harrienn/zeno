@@ -2,20 +2,20 @@
 
 ## 1. Purpose & Scope
 
-This document specifies the research parameters, sharding strategies, cache lifetimes, and execution mechanics for accelerating Zeno across multiple GPUs.
+This document lists multi-GPU research questions and candidate decompositions. It does not prescribe a validated Zeno architecture; no Zeno GPU execution path exists yet.
 
-As established in [`AGENTS.md`](../AGENTS.md#L107-L128) and [`ARCHITECTURE.md`](../ARCHITECTURE.md#L177-L204), multi-GPU execution is informed by experimental evidence from the [separate community patch for llama.cpp PR #24423](https://github.com/readwrightexecute/llamacpp-diffusiongemma-multigpu). That patch explored a specific two-GPU layer-split setup; this specification defines Zeno's sharding architecture while treating general multi-device scaling as an active research area.
+Multi-GPU research is informed by the [separate community patch for llama.cpp PR #24423](https://github.com/readwrightexecute/llamacpp-diffusiongemma-multigpu). That patch explored a specific two-GPU layer-split setup. Its results do not establish a general performance or correctness guarantee.
 
 ---
 
 ## 2. Hardware Constraints & VRAM Budget
 
-The primary model artifact (`diffusiongemma-26B-A4B-it-Q4_K_M.gguf`, cataloged in [`specs/gguf-mapping.md`](gguf-mapping.md)) occupies approximately **16 GB** of memory:
+The local GGUF file (`diffusiongemma-26B-A4B-it-Q4_K_M.gguf`, cataloged in [`gguf-mapping.md`](gguf-mapping.md)) is approximately **16 GB** on disk. Runtime memory requirements are not established by file size alone; they depend on weight representation, workspaces, logits, cache state, and allocator overhead.
 
-* **Weight Memory**: $\approx 15.8\text{ GB}$ (quantized across Q4_K, Q6_K, Q8_0, and F32).
-* **Canvas Activation Memory ($L = 256$)**: $< 100\text{ MB}$ per forward pass.
+* **Weight memory**: measure for the actual runtime representation and device placement.
+* **Canvas activation memory**: measure for the implemented dtype, attention path, batch size, and scratch strategy.
 
-On high-memory single GPUs (e.g. 24 GB RTX 3090/4090, 48 GB A40/A6000), the model executes in a single device context without inter-device communication. On dual 16 GB hardware (e.g. 2× RTX 4080, 2× V100 16GB), distributing the model across devices is mandatory.
+Whether the model fits on a given GPU and whether it needs sharding must be determined from measured runtime memory on that hardware.
 
 ---
 
@@ -23,9 +23,9 @@ On high-memory single GPUs (e.g. 24 GB RTX 3090/4090, 48 GB A40/A6000), the mode
 
 For low-latency "System One" decision execution, the choice of multi-GPU decomposition determines whether communication overhead negates compute gains.
 
-### 3.1 Strategy A: Pipeline Layer Splitting (Recommended for 1-Step Reads)
+### 3.1 Strategy A: Pipeline Layer Splitting (Candidate)
 
-In layer splitting, transformer blocks are partitioned contiguously across devices:
+Illustrative placement only: this omits phase-specific KV/self-conditioning state and is not a validated transfer plan. In layer splitting, transformer blocks could be partitioned contiguously across devices:
 
 ```text
 [GPU 0: Device 0]
@@ -40,10 +40,10 @@ In layer splitting, transformer blocks are partitioned contiguously across devic
   - Output projection & candidate logit readout
 ```
 
-#### Communication Analysis:
-* **Total Transfers per Decision**: Exactly **1 transfer** of $\approx 1.44\text{ MB}$ (hidden state at layer boundary).
-* **Host Synchronization**: Zero host round-trips; transfer uses CUDA Peer-to-Peer (P2P) memory copies.
-* **Suitability**: Highly optimal for single-step structured reads because it incurs zero intra-layer collective communication overhead.
+#### Questions to Measure:
+* Count boundary transfers for the actual model phases, KV state, and self-conditioning path.
+* Measure P2P availability and host synchronization on each supported topology.
+* Include embeddings, output projection, cache state, and workspaces in placement and memory estimates.
 
 ---
 
@@ -53,10 +53,9 @@ In tensor parallelism, weight matrices within each block are sharded across devi
 * **Attention Heads**: Query/Key/Value heads are split ($H_Q / N$, $H_{KV} / N$).
 * **MoE Experts**: The 128 experts are distributed ($64$ experts per GPU on a 2-GPU topology).
 
-#### Communication Analysis:
-* **Collectives**: Requires an `All-Reduce` operation after every attention output projection and every MoE block reduction.
-* **Overhead**: Across 30 blocks, a single forward pass requires **60 All-Reduce operations**.
-* **Limitation**: On standard PCIe interconnects without high-bandwidth NVLink, 60 synchronization barriers introduce significant latency jitter, making Strategy B less attractive for single-step 100ms decision budgets.
+#### Questions to Measure:
+* Identify collectives from the chosen operator decomposition rather than assuming a fixed count.
+* Benchmark communication and compute on supported interconnects and batch sizes.
 
 ---
 
@@ -66,24 +65,24 @@ In structured decision workloads, the input prompt frequently contains invariant
 
 ### Cache Lifetime Taxonomy
 
-1. **Intra-Query Lifetime (Multi-step Denoising)**:
+1. **Intra-Query Lifetime (if multi-step execution is implemented)**:
    - Intermediate activations and self-conditioning vectors ($H_{\text{sc}}$) remain resident in device memory across steps $1 \dots T$.
-   - **Invariant**: No tensor is copied back to CPU host memory during intermediate steps.
+   - **Goal to evaluate**: Keep reusable state on device where this preserves semantics and improves measured latency; transfers remain an implementation choice.
 
 2. **Inter-Query Lifetime (Prompt Prefix Caching)**:
-   - If sequential queries share an identical prompt prefix ($0 \dots k$), key/value representations or intermediate activations can be cached across requests.
-   - **Research Requirement**: Caching across queries must establish explicit cache eviction, memory ownership, and cache invalidation policies to avoid stale state pollution.
+   - Reuse across requests is a hypothesis for this model's causal-prefill/bidirectional-decoder path; do not assume ordinary causal KV-prefix caching applies unchanged.
+   - Before implementation, specify cache keys, ownership, eviction, invalidation, concurrency, and a parity test against uncached execution.
 
 ---
 
 ## 5. Verification & Parity Constraints
 
-In accordance with [`AGENTS.md` §5](file:///hdd/Projects/zeno/AGENTS.md#L124-L140):
+In accordance with [AGENTS.md](../AGENTS.md):
 
 1. **Semantic Equivalence**:
    Multi-GPU execution must preserve the exact mathematical semantics of the CPU reference implementation.
 2. **Numerical Tolerance**:
    Output logits and candidate probabilities from multi-GPU execution must match single-GPU and CPU outputs within documented numerical floating-point tolerances:
-   $$\max_{k} |z_k^{(\text{multi-gpu})} - z_k^{(\text{cpu})}| < 10^{-4}$$
+   Choose numerical tolerances per operation and dtype from reference comparisons; `10^{-4}` is not a validated global tolerance for quantized model outputs.
 3. **Benchmarking Mandate**:
    Any performance claims regarding multi-GPU acceleration must be substantiated with reproducible latency (milliseconds per decision) and throughput (queries per second) benchmarks against the single-GPU baseline.

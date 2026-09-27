@@ -126,7 +126,7 @@ It should not own low-level kernel implementation details.
 
 ## 6. Model Layer
 
-The model layer represents the computation performed by DiffusionGemma.
+The planned model layer represents the computation performed by DiffusionGemma. The reference execution path has distinct causal encoder/prefill and bidirectional decoder/denoising modes, with KV state and self-conditioning crossing those phases. A Zeno forward-pass contract must preserve this distinction rather than treating inference as one undifferentiated bidirectional pass.
 
 Conceptually:
 
@@ -243,7 +243,7 @@ converged decision state
 ```
 
 Questions to resolve:
-* **Bidirectional attention**: the network attends across the entire token canvas without causal masking.
+* **Bidirectional decoder attention**: the decoder evaluates the canvas bidirectionally; causal prompt prefill and its KV state remain a distinct phase.
 * **Cache behavior**: determine which prompt/model state can be reused and for what lifetime; do not assume caching across queries.
 * **Direct logit readout**: classification judgments are extracted directly from logits at pinned positions without free-form token emission.
 

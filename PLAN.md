@@ -13,7 +13,7 @@ application state + query
           ↓
 seeded canvas using the model's configured width
           ↓
-single-step forward read (pinned mask slot)
+single-step forward read at a selected answer position
           ↓
 candidate logit extraction and entropy (calibration to be evaluated)
           ↓
@@ -67,10 +67,12 @@ Exit condition:
 
 ```text
 zig build
-zig test
+zig build test
 ```
 
 work reliably in the development environment.
+
+The initial build scaffold and configuration constants are present. GGUF loading, tokenizer support, and model execution remain future work.
 
 ---
 

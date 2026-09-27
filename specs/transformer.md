@@ -2,7 +2,7 @@
 
 ## 1. Scope & Structural Parameters
 
-This document specifies the internal layer execution mechanics of the **DiffusionGemma** transformer backbone in Zeno.
+This document records the target layer mechanics for the **DiffusionGemma** transformer backbone. Treat the equations below as source-derived requirements to verify against a pinned reference and the named GGUF artifact; do not implement from the tensor inventory alone.
 
 All structural parameters, head configurations, and routing dimensions are derived from `models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf` (as cataloged in [`specs/gguf-mapping.md`](gguf-mapping.md)).
 
@@ -46,7 +46,7 @@ Each block $l$ applies RMSNorm at distinct stages:
 
 ## 3. Attention Sub-layer
 
-DiffusionGemma operates with **non-causal bidirectional attention** over the token canvas.
+DiffusionGemma has distinct execution modes: causal prompt prefill/encoder execution and bidirectional decoder/denoising execution. The decoder reads KV state established by prefill and uses self-conditioning on later denoising steps. Attention behavior therefore depends on the execution phase; “bidirectional attention over the canvas” is not a complete forward-pass specification.
 
 ### 3.1 Layer Specialization: SWA vs. Global
 
@@ -68,8 +68,7 @@ The 30 blocks follow a recurring 5:1 pattern:
 #### Global Layers ($H_Q = 16, H_{KV} = 2, d_k = 512$):
 * $Q = x \cdot W_Q$ where $W_Q \in \mathbb{R}^{2816 \times 8192}$ ($16 \text{ heads} \times 512$).
 * $K = x \cdot W_K$ where $W_K \in \mathbb{R}^{2816 \times 1024}$ ($2 \text{ heads} \times 512$).
-* **Value Projection Invariant ($V = K$)**: In Global layers, `attn_v.weight` is omitted from the model file. The Value representation is explicitly tied to the Key projection:
-  $$V = K$$
+* **Shared Key/Value Projection**: In Global layers, `attn_v.weight` is omitted from this artifact. The value projection reuses the key projection weights. The value path and key path may apply different normalization/position operations; do not alias the post-normalization K tensor as V without matching the reference order.
 
 ### 3.3 Rotary Position Embeddings (RoPE)
 
@@ -79,36 +78,37 @@ RoPE is applied to Query and Key head vectors with dual frequency bases:
 
 ### 3.4 Attention Dot-Product & Output
 1. Reshape $Q$ into $[B, L, H_Q, d_k]$ and $K, V$ into $[B, L, H_{KV}, d_k]$.
-2. Apply per-head RMSNorm to $Q$ and $K$.
-3. Expand $K, V$ via Grouped-Query Attention (GQA) factor ($2$ for SWA, $8$ for Global).
-4. Compute non-causal attention scores across all positions $i, j \in [0, L-1]$:
+2. Apply per-head normalization and RoPE in the reference-defined order. For shared K/V weights, preserve distinct K and V processing.
+3. Apply the configured attention mask and KV read/write mode for the current encoder or decoder phase; do not assume full-canvas unmasked attention for every phase.
+4. Expand $K, V$ via Grouped-Query Attention (GQA) factor ($2$ for SWA, $8$ for Global), as confirmed for the selected model artifact.
+5. Compute attention scores under the phase's mask:
    $$\text{Attn}(Q, K, V) = \text{Softmax}\left(\frac{Q K^T}{\sqrt{d_k}}\right) V$$
-5. Project back to model dimension:
+6. Project back to model dimension:
    $$O = \text{Attn}(Q, K, V) \cdot W_O \quad \text{where } W_O \in \mathbb{R}^{(H_Q \cdot d_k) \times 2816}$$
 
 ---
 
 ## 4. Feed-Forward & MoE Sub-layer
 
-Every transformer block incorporates both a **Shared FFN** and a **Routed Mixture-of-Experts (MoE)** branch.
+The inspected artifact has a shared dense branch and a routed MoE branch. Implement their activation functions, router preprocessing, and residual/norm ordering from the selected model config and reference; the following pseudocode is not sufficient as an independent implementation contract.
 
 ### 4.1 Shared FFN Branch
-The shared FFN provides a baseline dense representation using SwiGLU activation:
+The shared FFN uses the activation configured for the model's dense MLP. Do not assume SiLU/Swish from the tensor names; record and use the artifact's configured activation:
 $$\text{Gate} = x \cdot W_{\text{gate}} \quad (W_{\text{gate}} \in \mathbb{R}^{2816 \times 2112})$$
 $$\text{Up} = x \cdot W_{\text{up}} \quad (W_{\text{up}} \in \mathbb{R}^{2816 \times 2112})$$
-$$\text{FFN}_{\text{shared}} = (\text{Swish}(\text{Gate}) \odot \text{Up}) \cdot W_{\text{down}} \quad (W_{\text{down}} \in \mathbb{R}^{2112 \times 2816})$$
+$$\text{FFN}_{\text{shared}} = (\text{ConfiguredActivation}(\text{Gate}, \text{Up})) \cdot W_{\text{down}} \quad (W_{\text{down}} \in \mathbb{R}^{2112 \times 2816})$$
 
-where $\text{Swish}(z) = z \cdot \sigma(z)$.
+For the cited vLLM Gemma4 implementation, the dense branch uses the configured `hidden_activation`; confirm its concrete value from the selected artifact/config.
 
 ### 4.2 MoE Branch (128 Experts, Top-8 Routing)
 
-1. **Routing Logits**:
-   $$\text{logits}_{\text{router}} = (x \odot \gamma_{\text{router\_scale}}) \cdot W_{\text{router\_gate}} \quad (W_{\text{router\_gate}} \in \mathbb{R}^{2816 \times 128})$$
+1. **Router Input and Logits**:
+   Apply the reference router preprocessing (unweighted RMSNorm, root-size scaling, and the learned per-dimension scale) before projecting to expert logits. The `ffn_gate_inp.scale` tensor alone does not describe the complete router operation.
 
 2. **Top-8 Selection**:
    Identify the 8 experts with highest routing logits:
    $$\mathcal{E} = \text{top\_8}(\text{logits}_{\text{router}})$$
-   Compute normalized softmax routing weights across the selected 8 experts:
+   Follow the reference ordering for softmax, top-k selection, and renormalization (the vLLM Gemma4 path softmaxes across experts, selects top-k, then renormalizes):
    $$w_e = \frac{\exp(\text{logits}_{\text{router}}[e])}{\sum_{j \in \mathcal{E}} \exp(\text{logits}_{\text{router}}[j])} \quad \text{for } e \in \mathcal{E}$$
 
 3. **Expert Evaluation**:
@@ -116,23 +116,21 @@ where $\text{Swish}(z) = z \cdot \sigma(z)$.
    - Retrieve expert weights from fused tensor `ffn_gate_up_exps.weight` ($2816 \times 1408 \times 128$):
      $$\text{Gate}_e = x \cdot W_{\text{gate}}^{(e)} \quad (W_{\text{gate}}^{(e)} \in \mathbb{R}^{2816 \times 704})$$
      $$\text{Up}_e = x \cdot W_{\text{up}}^{(e)} \quad (W_{\text{up}}^{(e)} \in \mathbb{R}^{2816 \times 704})$$
-   - Compute SwiGLU down-projection scaled by `ffn_down_exps.scale[e]`:
-     $$y_e = [(\text{Swish}(\text{Gate}_e) \odot \text{Up}_e) \cdot W_{\text{down}}^{(e)}] \times s_e$$
+   - Apply the configured expert activation (the cited vLLM Gemma4 path uses `gelu_tanh`) and the checkpoint's per-expert output scaling:
+     $$y_e = [\text{ExpertActivation}(\text{Gate}_e, \text{Up}_e) \cdot W_{\text{down}}^{(e)}] \times s_e$$
      where $W_{\text{down}}^{(e)} \in \mathbb{R}^{704 \times 2816}$.
 
 4. **MoE Output Combination**:
    $$\text{FFN}_{\text{MoE}} = \sum_{e \in \mathcal{E}} w_e \cdot y_e$$
 
-### 4.3 Total Block Residual Addition
-The combined block output is computed by summing attention, shared FFN, and MoE branches with their respective layer scales:
-$$x_{\text{out}} = x + O \cdot s_{\text{layer}} + (\text{FFN}_{\text{shared}} + \text{FFN}_{\text{MoE}}) \cdot s_{\text{enc}}$$
+### 4.3 Norm and Residual Ordering
+
+The block is not specified by a single sum of attention, dense FFN, and MoE outputs. The cited Gemma4 implementation applies input RMSNorm, attention, post-attention RMSNorm, then the attention residual; it then evaluates the dense MLP and MoE branches with their configured pre/post norms, combines the branches, applies post-FFN RMSNorm, and adds the FFN residual. MoE routing uses the residual input, while the expert input has its own pre-FFN norm. Preserve this ordering and the artifact's layer scales when implementing.
 
 ---
 
 ## 5. Self-Conditioning Sub-layer
 
-For multi-step discrete diffusion passes, DiffusionGemma includes a dedicated global self-conditioning projection block:
+For multi-step discrete diffusion passes, self-conditioning uses the previous step's token probability distributions to form probability-weighted soft embeddings from the token embedding table (with the model normalizer). A gated MLP combines those soft embeddings with the current input embeddings. This is not a projection of the final hidden state directly into the next input embeddings. Follow the reference's normalization, activation, dtype, pin masking, and residual order.
 
-$$\text{SC}(x) = [(\text{Swish}(\text{RMSNorm}(x) \cdot W_{\text{sc\_gate}}) \odot (\text{RMSNorm}(x) \cdot W_{\text{sc\_up}})) \cdot W_{\text{sc\_down}}]$$
-
-This projects the intermediate canvas state into a conditioning vector that is injected into subsequent denoising evaluations, preserving state consistency across steps.
+The exact equation and per-layer tensor mapping must be established from the artifact and compared against a reference step before Zeno implements multi-step execution.

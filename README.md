@@ -34,7 +34,7 @@ Zeno draws directly upon two foundational open-source milestones:
 | Feature | Autoregressive LLM | Zeno (Structured Diffusion on DiffusionGemma) |
 | :--- | :--- | :--- |
 | **Generation Mode** | Sequential token-by-token rollout | Parallel whole-canvas evaluation |
-| **Attention** | Causal mask (past tokens only) | Bidirectional (attends across all canvas positions) |
+| **Attention** | Causal mask (past tokens only) | Causal prompt prefill followed by bidirectional decoder evaluation |
 | **Decision Speed** | Sequential token generation | Structured reads may evaluate answer positions in parallel; latency remains to be measured |
 | **Schema Integrity** | Often uses constrained decoding or post-processing | Candidate-token restriction can limit the decision to supplied single-token choices |
 | **Output** | Often free-form text | Intended output: typed decisions with candidate scores and entropy; calibration remains to be measured |
@@ -63,7 +63,7 @@ Typed Decision Output (Boolean, Categorical, or Ordinal Score)
 - **Understand before modifying**: Establish semantic invariants and reference parity before altering code.
 - **Explicit data flow**: Keep tensor layouts, memory transfers, and multi-device boundaries visible.
 - **Comptime policy**: Use Zig `comptime` for structural invariants (model dimensions, dispatch, type specialization); keep mutable tensors and canvas state as runtime data.
-- **Reference-first backends**: The CPU implementation serves as semantic ground truth. CUDA kernels and multi-GPU tensor parallelism must strictly preserve this contract.
+- **Reference-first backends**: The planned CPU implementation will serve as semantic ground truth. CUDA kernels and multi-GPU execution must preserve its contract.
 - **Minimalism over generalization**: A small, mechanically verifiable runtime purpose-built for DiffusionGemma structured decision-making, avoiding bloated framework abstractions.
 
 ---
@@ -73,22 +73,26 @@ Typed Decision Output (Boolean, Categorical, or Ordinal Score)
 - [AGENTS.md](AGENTS.md) — Operational instructions, engineering principles, and coding standards for agents and contributors.
 - [ARCHITECTURE.md](ARCHITECTURE.md) — Architectural layers, structured-reads execution flow, compile-time/runtime boundaries, and component responsibilities.
 - [PLAN.md](PLAN.md) — Implementation roadmap (Phases 0 through 6), current milestones, and research questions.
-- [specs/](specs/) — Index of planned technical specifications for the System One decision API, canvas templates, structured-read dynamics, and multi-GPU execution.
+- [specs/](specs/) — Authored technical specifications for the proposed API, canvas and tokenizer behavior, model mapping, scoring, denoising research, and multi-GPU questions.
 
 ---
 
 ## 6. Status & Development
 
-The project is currently in **Phase 0 (Repository Foundation)**. No Zig build configuration or source files are present yet.
+The repository has a minimal Zig build scaffold, a CLI that reports model constants, and basic configuration tests. GGUF loading, tokenization, model execution, and the decision API are not implemented yet.
 
 ### Prerequisites
 
-- **Zig**: A supported version will be specified when the build configuration is added.
-- **Model**: DiffusionGemma weights in GGUF format will be needed for model execution; `.gitignore` already ignores `/models/` and `*.gguf` for local storage.
+- **Zig**: `0.17.0-dev.2234+80fe9b2b7` or a compatible version, as declared in `build.zig.zon`.
+- **Model**: The local reference artifact is `models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf`; model files are ignored by git and must be obtained separately in a fresh checkout.
 
 ### Build & Test
 
-Build and test commands will be added when the Zig project scaffold exists.
+```bash
+zig build
+zig build test
+zig build run
+```
 
 ---
 

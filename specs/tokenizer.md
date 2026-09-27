@@ -12,15 +12,15 @@ Parameters and special token IDs are extracted directly from `models/diffusionge
 
 | Parameter Key | Value | Description |
 | :--- | :--- | :--- |
-| `tokenizer.ggml.model` | `gemma4` | Byte-Pair Encoding (BPE) / SentencePiece model |
+| `tokenizer.ggml.model` | `gemma4` | GGUF tokenizer identifier; match its pre-tokenization, merge, byte-fallback, and control-token behavior to the reference tokenizer |
 | `tokenizer.ggml.tokens` | `262144` items | Total vocabulary size ($V = 262,144$) |
 | `tokenizer.ggml.merges` | `514906` items | BPE merge pairs |
 | `tokenizer.ggml.bos_token_id` | `2` | Beginning-of-sequence token (`<bos>`) |
 | `tokenizer.ggml.eos_token_id` | `1` | End-of-sequence token (`<eos>`) |
 | `tokenizer.ggml.unknown_token_id` | `3` | Unknown token fallback (`<unk>`) |
 | `tokenizer.ggml.padding_token_id` | `0` | Padding placeholder (`<pad>`) |
-| `tokenizer.ggml.mask_token_id` | `4` | **Discrete diffusion noise / answer slot token (`<mask>`)** |
-| `tokenizer.ggml.add_bos_token` | `true` | Always prepend `BOS` to canvas |
+| `tokenizer.ggml.mask_token_id` | `4` | Discrete diffusion mask token (`<mask>`); answer-slot seeding is defined separately |
+| `tokenizer.ggml.add_bos_token` | `true` | Tokenizer metadata requests BOS insertion; coordinate with chat-template serialization to avoid duplicate BOS tokens |
 | `tokenizer.ggml.add_space_prefix` | `false` | Do not prepend space prefix |
 
 ### 2.1 First Five Control Tokens
@@ -37,7 +37,7 @@ Parameters and special token IDs are extracted directly from `models/diffusionge
 In traditional autoregressive models, mask tokens are rarely used during inference. In Zeno and DiffusionGemma:
 
 * **Token `4` (`<mask>`)** represents unconditioned noise on the token canvas.
-* In structured-reads mode, the target decision position $p$ (`answer_pos`) is explicitly initialized with token `4`.
+* Token `4` is the model's mask token. A structured-read answer position is a selected/pinned canvas position, but its seed token is determined by the read procedure; do not assume every answer position is initialized to token `4`.
 * During non-causal attention, all context tokens attend to this slot, and the slot attends back to the entire context.
 * Forward evaluation at this slot produces a categorical distribution over all vocabulary tokens, from which candidate logits are extracted.
 
@@ -48,25 +48,25 @@ In traditional autoregressive models, mask tokens are rarely used during inferen
 As required by [`specs/decision-api.md`](decision-api.md) and [`specs/canvas-templates.md`](canvas-templates.md), single-step structured reads require candidate labels to correspond to **single tokens**:
 
 ```text
-candidate string "Yes"  ──► Tokenizer.encode() ──► [9482]   (valid: 1 token)
-candidate string "Fraud" ──► Tokenizer.encode() ──► [18420]  (valid: 1 token)
-candidate string "No Outage" ──► Tokenizer.encode() ──► [3521, 48210] (INVALID: 2 tokens)
+candidate code "A"     ──► resolve at rendered answer boundary ──► one token (valid)
+candidate code "No"    ──► resolve at rendered answer boundary ──► one token (valid only if context yields one token)
+candidate code "No Outage" ──► resolve at rendered answer boundary ──► multiple tokens (invalid)
 ```
 
 ### Validation Procedure
-For each candidate string $c \in \text{candidates}$:
-1. Strip leading and trailing whitespace.
-2. Tokenize string into token slice $\tau = \text{encode}(c)$.
-3. If $\text{len}(\tau) \ne 1$:
+For each candidate code, tokenize the exact rendered prompt and resolve the continuation at the answer boundary. Do not trim or encode the candidate in isolation; whitespace and preceding text can change its tokenization.
+1. Render the full model prompt using the artifact's chat template.
+2. Resolve the candidate continuation using the reference tokenizer's continuation behavior.
+3. If the continuation does not resolve to exactly one token:
    - Fail with error `MultiTokenCandidateNotAllowed`.
    - The user/client must map the multi-token label to a one-token code (e.g. `"A"`, `"B"`, `"1"`, `"2"`).
-4. Store resolved token ID: $\text{token\_id} = \tau[0]$.
+4. Reject duplicate candidate token IDs and preserve the independent display label.
 
 ---
 
 ## 5. Native Zig Data Structures
 
-For minimal memory footprint and zero allocations during tokenization passes:
+Tokenization uses request or reusable scratch supplied by the caller; the tokenizer's vocabulary and merge data are long-lived read-only model state:
 
 ```zig
 pub const TokenId = u32;
@@ -100,4 +100,5 @@ pub const Tokenizer = struct {
 
 ### Memory Contract
 * **Vocabulary Storage**: Loaded once from GGUF metadata into read-only string memory during engine startup.
-* **Encoding Scratchpad**: Tokenization uses the request-scoped `arena` allocator, guaranteeing zero memory fragmentation across queries.
+* **Encoding Scratchpad**: Tokenization uses the caller-supplied allocator or explicit reusable scratch. If an arena is used, returned token slices are valid only until that arena is reset.
+* **Parity Requirement**: Match the reference tokenizer's normalization, pre-tokenization, merge order, byte fallback, control-token recognition, BOS behavior, and decode behavior. Vocabulary plus merges alone are not a complete tokenizer contract.
