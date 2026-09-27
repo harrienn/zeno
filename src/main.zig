@@ -4,7 +4,9 @@ const zeno = @import("zeno");
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
-    var stdout_buffer: [1024]u8 = undefined;
+    const arena: std.mem.Allocator = init.arena.allocator();
+
+    var stdout_buffer: [4096]u8 = undefined;
     var stdout_file_writer: Io.File.Writer = .init(.stdout(), io, &stdout_buffer);
     const stdout_writer = &stdout_file_writer.interface;
 
@@ -13,10 +15,66 @@ pub fn main(init: std.process.Init) !void {
         zeno.version.minor,
         zeno.version.patch,
     });
-    try stdout_writer.print("Default canvas length: {d} tokens | Vocab size: {d}\n", .{
+    try stdout_writer.print("Config: canvas={d} tokens | vocab={d} | d_model={d} | layers={d} | experts={d} (top-{d})\n", .{
         zeno.ModelConfig.canvas_length,
         zeno.ModelConfig.vocab_size,
+        zeno.ModelConfig.embedding_dim,
+        zeno.ModelConfig.num_layers,
+        zeno.ModelConfig.num_experts,
+        zeno.ModelConfig.num_active_experts,
     });
+
+    const args = try init.minimal.args.toSlice(arena);
+    if (args.len > 1) {
+        var model_path: []const u8 = args[1];
+        if (std.mem.eql(u8, args[1], "info") and args.len > 2) {
+            model_path = args[2];
+        }
+
+        try stdout_writer.print("\nLoading and inspecting GGUF model: {s}...\n", .{model_path});
+        try stdout_writer.flush();
+
+        var model = zeno.DiffusionGemmaModel.loadFromFile(arena, model_path) catch |err| {
+            try stdout_writer.print("Error loading model: {}\n", .{err});
+            try stdout_writer.flush();
+            return;
+        };
+        defer model.deinit();
+
+        const arch = model.gguf_file.getMetadataString("general.architecture") orelse "unknown";
+        const name = model.gguf_file.getMetadataString("general.name") orelse "unknown";
+        const alignment = model.gguf_file.alignment;
+        const total_tensors = model.gguf_file.tensor_count;
+
+        try stdout_writer.print("  Architecture: {s}\n", .{arch});
+        try stdout_writer.print("  Model name:   {s}\n", .{name});
+        try stdout_writer.print("  Alignment:    {d} bytes\n", .{alignment});
+        try stdout_writer.print("  Tensors:      {d} descriptors parsed\n", .{total_tensors});
+
+        var global_count: usize = 0;
+        var swa_count: usize = 0;
+        for (model.layers) |l| {
+            if (l.is_global) {
+                global_count += 1;
+            } else {
+                swa_count += 1;
+            }
+        }
+        try stdout_writer.print("  Layer verification: {d} total ({d} SWA, {d} Global with tied V=K)\n", .{
+            model.layers.len,
+            swa_count,
+            global_count,
+        });
+
+        const emb_blocks = model.getEmbeddingBlocks(zeno.SpecialTokens.bos);
+        try stdout_writer.print("  Token embedding: {d} Q6_K blocks per token ({d} values)\n", .{
+            emb_blocks.len,
+            emb_blocks.len * zeno.quant.QK_K,
+        });
+        try stdout_writer.print("Model inspection successful.\n", .{});
+    } else {
+        try stdout_writer.print("\nUsage: zeno [info] <path/to/model.gguf>\n", .{});
+    }
 
     try stdout_writer.flush();
 }

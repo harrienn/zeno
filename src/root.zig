@@ -8,6 +8,8 @@ pub const decision = @import("decision.zig");
 pub const tensor = @import("tensor.zig");
 pub const quant = @import("quant.zig");
 pub const ops = @import("ops.zig");
+pub const gguf = @import("gguf.zig");
+pub const model = @import("model.zig");
 
 // Re-export common types
 pub const Tensor = tensor.Tensor;
@@ -17,6 +19,8 @@ pub const DecisionResponse = decision.DecisionResponse;
 pub const CandidateSpec = decision.CandidateSpec;
 pub const CandidateResult = decision.CandidateResult;
 pub const SchemaType = decision.SchemaType;
+pub const GgufFile = gguf.GgufFile;
+pub const DiffusionGemmaModel = model.DiffusionGemmaModel;
 
 /// Semantic version of the Zeno runtime.
 pub const version = std.SemanticVersion{
@@ -57,6 +61,8 @@ test {
     _ = tensor;
     _ = quant;
     _ = ops;
+    _ = gguf;
+    _ = model;
 }
 
 test "model configuration invariants" {
