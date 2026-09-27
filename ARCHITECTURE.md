@@ -2,23 +2,25 @@
 
 ## 1. Purpose
 
-Zeno is a small inference runtime for DiffusionGemma implemented in Zig.
+Zeno is a lightweight, Jev-style structured decision engine built on DiffusionGemma implemented in Zig.
 
-The architecture is organized around one central execution model:
+Rather than serving as a conversational text generator, the architecture is organized around **structured decision execution** (structured reads) over a seeded token canvas:
 
 ```text
-DiffusionGemma
-      ↓
-token canvas
-      ↓
-iterative denoising
-      ↓
-text
+Application State + Query Schema
+               ↓
+Seeded Token Canvas (pinned noisy decision slots)
+               ↓
+Parallel Forward Read (single-step / capped diffusion)
+               ↓
+Logit Extraction & Calibrated Confidence
+               ↓
+Structured Decision (typed label, boolean, or score)
 ```
 
-The runtime exists to make this execution process explicit, inspectable, and eventually efficient.
+The runtime exists to make this execution process explicit, deterministic, inspectable, and high-performance.
 
-Zeno should remain substantially simpler than a general-purpose inference framework.
+Zeno remains substantially simpler and faster than a general-purpose conversational framework.
 
 ---
 
@@ -26,13 +28,13 @@ Zeno should remain substantially simpler than a general-purpose inference framew
 
 Zeno has five primary goals:
 
-1. reproduce the semantic behavior of DiffusionGemma;
-2. make the denoising execution model understandable;
-3. provide a clean CPU/reference execution path;
-4. provide a CUDA execution path without changing model semantics;
-5. create a small foundation for future performance work.
+1. reproduce the structured-reads and discrete diffusion behavior of DiffusionGemma (reference: vLLM PR #57250);
+2. execute deterministic, schema-constrained "System One" decisions with calibrated probabilities and entropy metrics;
+3. provide a clean CPU/reference execution path for canvas seeding, forward evaluation, and logit extraction;
+4. provide an efficient CUDA and multi-GPU execution path (reference: Multi-GPU patch for llama.cpp PR #24423) that preserves prompt caching, device-resident self-conditioning, and tensor parallelism;
+5. maintain a small, understandable foundation without unnecessary abstraction layers.
 
-Performance is important, but correctness and model understanding come first.
+Performance is critical for System One decisions, but correctness, calibrated confidence, and model understanding come first.
 
 ---
 
@@ -43,17 +45,22 @@ The system is conceptually divided into the following layers:
 ```text
 ┌─────────────────────────────────────────┐
 │                 Frontend                │
-│          CLI / inference request        │
+│    CLI / Jev System One Decision API    │
+└────────────────────┬────────────────────┘
+                     │
+┌────────────────────▼────────────────────┐
+│             Decision Engine             │
+│  canvas seeding / pinned slots / read   │
 └────────────────────┬────────────────────┘
                      │
 ┌────────────────────▼────────────────────┐
 │              Model Runtime              │
-│      model state / denoising loop       │
+│       canvas state / execution step     │
 └────────────────────┬────────────────────┘
                      │
 ┌────────────────────▼────────────────────┐
 │               Model Layer               │
-│   embeddings / transformer / outputs    │
+│   embeddings / MoE blocks / attention   │
 └────────────────────┬────────────────────┘
                      │
 ┌────────────────────▼────────────────────┐
@@ -63,7 +70,7 @@ The system is conceptually divided into the following layers:
                      │
 ┌────────────────────▼────────────────────┐
 │                Backend                  │
-│         CPU reference / CUDA            │
+│       CPU reference / CUDA / Multi-GPU  │
 └─────────────────────────────────────────┘
 ```
 
@@ -75,17 +82,17 @@ The implementation should remain free to collapse layers when doing so improves 
 
 ## 4. Frontend
 
-The frontend provides the user-facing inference interface.
+The frontend provides the interface for structured decision queries and runtime diagnostics.
 
 Responsibilities include:
 
-* receiving input;
-* configuring generation;
-* selecting a model;
-* reporting output;
-* exposing basic runtime diagnostics.
+* receiving structured query requests (e.g. Jev-compatible `/v1/systemone` format or native Zig API calls);
+* parsing query schemas (boolean judgments, multiple-choice classification, ordinal scoring);
+* configuring step limits (e.g. single-step read vs capped iterative refinement);
+* formatting responses with typed labels, calibrated probabilities, and Shannon entropy;
+* exposing basic runtime diagnostics and performance metrics.
 
-The frontend should not contain model semantics.
+The frontend does not contain model execution semantics.
 
 It should be possible to change the CLI without changing the denoising engine.
 
@@ -167,7 +174,7 @@ Avoid creating a large tensor framework unless Zeno actually requires one.
 
 ---
 
-## 8. Backend Layer
+## 8. Backend Layer & Multi-GPU Execution
 
 The backend provides execution primitives.
 
@@ -175,32 +182,26 @@ The initial conceptual backends are:
 
 ```text
 CPU
-CUDA
+CUDA (Single-GPU)
+CUDA (Multi-GPU Tensor Parallel)
 ```
 
 The CPU path serves as the reference implementation.
 
-CUDA is an execution backend, not a separate model implementation.
+CUDA implementations must preserve the exact semantic contract of the reference path.
 
-For example:
-
-```text
-Model operation
-      │
-      ├── CPU implementation
-      │
-      └── CUDA implementation
-```
-
-The operation's semantic contract remains the same.
+For multi-GPU execution, Zeno incorporates lessons from the **Multi-GPU patch for llama.cpp PR #24423**:
+* **Device-resident state**: self-conditioning tensors and layer activations remain resident on GPU devices to avoid host synchronization.
+* **Prompt-cache awareness**: static prompt contexts are cached across decision steps without being invalidated by multi-GPU layer splitting.
+* **Balanced tensor splitting**: transformer blocks and large MoE feed-forward weight tensors (128 experts) are split across available devices while minimizing cross-device collective communication overhead during single-step forward reads.
 
 ---
 
-## 9. Denoising Engine
+## 9. Decision Engine & Structured Reads
 
-The denoising engine is the conceptual center of Zeno.
+The decision engine is the conceptual center of Zeno.
 
-Unlike autoregressive generation, generation is not modeled as:
+Rather than generating sequential conversational text token-by-token:
 
 ```text
 token 1
@@ -212,30 +213,44 @@ token 3
 ...
 ```
 
-Instead, the runtime operates over a fixed token canvas (256 tokens in DiffusionGemma) and repeatedly updates its state:
+Zeno operates over a seeded token canvas (256 tokens in DiffusionGemma) and executes **structured reads** (as pioneered in **vLLM PR #57250**):
+
+### 9.1 Structured Reads Mode (System One / Jev-Style Decisions)
+
+In structured-reads mode, the engine evaluates software decisions in a single or step-capped pass:
 
 ```text
-initial canvas (prompt + mask tokens)
-      ↓
-denoise step 1
-      ↓
-denoise step 2
-      ↓
-denoise step 3
-      ↓
-...
-      ↓
-converged canvas
+1. Seed Canvas: Place input context + schema template onto the 256 canvas.
+2. Pin Slots: Leave target decision positions as noise / mask tokens (mask_token_id = 4).
+3. Forward Read: Execute a single parallel forward pass with bidirectional attention.
+4. Logit Readout: Read logits exclusively at the pinned slot index for allowed candidate tokens.
+5. Calibrate: Apply softmax over candidates and compute Shannon entropy.
+```
+
+Because output is strictly constrained to the candidate tokens defined by the query schema, outputs are guaranteed to be type-safe and never go "off-schema."
+
+### 9.2 Confidence-Guided Iterative Denoising
+
+When a decision slot exhibits high entropy (uncertainty) or when a query requests multi-token structured infilling, the engine can adaptively execute capped iterative steps:
+
+```text
+initial seeded canvas
+        ↓
+read step 1 (evaluate entropy at pinned slots)
+        ↓
+[entropy > threshold?]
+        ↓
+refine step 2 (denoise ambiguous positions)
+        ↓
+converged decision state
 ```
 
 Key execution distinctions:
 * **Bidirectional attention**: the network attends across the entire token canvas without causal masking.
 * **No accumulating KV cache**: generation does not append new keys and values step-by-step; each step refines the canvas representation in parallel.
-* **Discrete token refinement**: positions transition from noise/mask placeholders into high-confidence token identities.
+* **Direct logit readout**: classification judgments are extracted directly from logits at pinned positions without free-form token emission.
 
-The exact mathematical semantics of a denoising step belong in the dedicated denoising specification, not in this document.
-
-This document only establishes that denoising is an iterative state transformation.
+The exact mathematical semantics of structured reads and denoising belong in dedicated specifications in `specs/`.
 
 ---
 
@@ -301,49 +316,49 @@ This distinction is especially important while the model semantics are still bei
 
 ## 12. External References
 
-llama.cpp is a valuable reference for understanding and validating runtime behavior.
+Zeno relies on two key external implementations as behavioral references:
+
+1. **vLLM PR #57250** (`examples/features/structured_diffusion/structured_server.py`):
+   - Reference for **structured-reads mode**, seeded canvas construction, pinned mask positions, and the Jev-compatible `/v1/systemone` decision API.
+
+2. **llama.cpp PR #24423 & Multi-GPU patch**:
+   - Reference for DiffusionGemma GGUF execution (`llama-diffusion-cli`), non-causal attention implementation, and multi-GPU tensor splitting with preserved self-conditioning.
 
 However:
 
 ```text
-llama.cpp architecture
-        ≠
-Zeno architecture
+External reference architecture
+              ≠
+       Zeno architecture
 ```
 
-Zeno should borrow verified semantics while intentionally avoiding unnecessary historical or framework complexity.
+Zeno borrows verified semantics while intentionally avoiding unnecessary historical or framework complexity.
 
-The reference runtime is an oracle for behavior where appropriate, not a mandate for internal structure.
+The reference runtimes are oracles for behavior, not templates for internal design.
 
 ---
 
 ## 13. Data Flow
 
-The intended conceptual data flow is:
+The structured decision data flow is:
 
 ```text
-User Input
-    ↓
-Input Representation
-    ↓
-Initial Token Canvas
-    ↓
-Model Evaluation
-    ↓
-Denoising Update
-    ↓
-Updated Canvas
-    ↓
-Repeated Evaluation
-    ↓
-Final Canvas
-    ↓
-Decode
-    ↓
-Text Output
+Application State & Typed Query
+              ↓
+Schema Mapping & Template Construction
+              ↓
+Seeded Token Canvas (pinned noisy slots)
+              ↓
+Parallel Model Evaluation (bidirectional attention)
+              ↓
+Pinned Slot Logit Readout (restricted to candidate tokens)
+              ↓
+Softmax Normalization & Shannon Entropy
+              ↓
+Calibrated Decision & Confidence Output
 ```
 
-Each transition should eventually have a precise specification.
+Each transition corresponds to a mechanically verifiable runtime step.
 
 ---
 
@@ -353,28 +368,28 @@ A useful responsibility split is:
 
 ```text
 Frontend
-    owns user interaction
+    owns user interaction, HTTP endpoints, and CLI queries
+
+Decision Engine / Schema Mapper
+    owns schema-to-canvas mapping, pinned slot placement, logit extraction, and calibration
 
 Runtime
-    owns execution state and control flow
+    owns execution state, canvas lifetime, and step control flow
 
 Model
-    owns model semantics
-
-Tensor
-    owns tensor representation
-
-Backend
-    owns execution mechanics
-
-Allocator / Memory
-    owns lifetime mechanics
-
-Denoising Engine
-    owns iterative generation semantics
+    owns model semantics, MoE routing, and bidirectional attention
 
 Tokenizer
-    owns encoding input text to tokens and decoding canvas tokens to text
+    owns encoding input text to tokens and decoding candidate labels
+
+Tensor
+    owns tensor representation and quantized layout
+
+Backend
+    owns execution mechanics (CPU, CUDA, and Multi-GPU tensor splitting)
+
+Allocator / Memory
+    owns lifetime mechanics and step arena allocations
 ```
 
 These responsibilities may be implemented with fewer concrete modules.

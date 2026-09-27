@@ -2,25 +2,25 @@
 
 ## 1. North Star
 
-Build a small Zig runtime that can execute DiffusionGemma end-to-end and make its iterative denoising process understandable.
+Build a lightweight Zig runtime implementing a **Jev-style structured decision engine** on DiffusionGemma, delivering deterministic, calibrated decisions over seeded token canvases.
 
-The first successful milestone is not maximum performance.
+The first successful milestone is not maximum conversational output.
 
 The first successful milestone is:
 
 ```text
-model
-  ↓
-input
-  ↓
-256-token canvas
-  ↓
-iterative denoising
-  ↓
-decoded text
+application state + query
+          ↓
+seeded 256-token canvas
+          ↓
+single-step forward read (pinned mask slot)
+          ↓
+logit extraction & calibration
+          ↓
+typed decision + confidence score
 ```
 
-running through Zeno with behavior that can be compared against a trusted reference.
+running through Zeno with behavior validated against **vLLM PR #57250** (`examples/features/structured_diffusion/structured_server.py`) and **llama.cpp PR #24423** (`llama-diffusion-cli`).
 
 ---
 
@@ -122,98 +122,105 @@ The model structure and weights can be loaded, represented, and inspected withou
 
 ---
 
-## 6. Phase 3 — Single Denoising Step
+## 6. Phase 3 — Single-Step Structured Read (System One Primitive)
 
 Goal:
 
-Implement one semantically correct denoising step.
+Implement one semantically correct structured read over a seeded canvas.
 
-The important question is:
+The core execution questions are:
 
 ```text
-Given the current canvas/state,
-what does one model evaluation produce,
-and how is the next state derived?
+1. Given an application state and typed query schema,
+   how is the 256-token canvas seeded with prompt context and pinned mask slots (mask_token_id = 4)?
+
+2. How does a single forward evaluation over the canvas
+   produce logits across candidate decision tokens?
+
+3. How are candidate probabilities and Shannon entropy
+   derived and calibrated at pinned indices?
 ```
 
-This phase is primarily about understanding.
+Validation strategy:
 
-Required validation should compare important intermediate results against a reference where practical.
+Compare intermediate activations, output logits, and entropy scores against **vLLM PR #57250** (`examples/features/structured_diffusion/structured_server.py`) and **llama.cpp PR #24423** (`llama-diffusion-cli`).
 
 Exit condition:
 
-One denoising step produces the expected semantic result.
+A seeded canvas query produces verified, calibrated classification decisions matching reference outputs on the CPU backend.
 
 ---
 
-## 7. Phase 4 — Iterative Denoising
+## 7. Phase 4 — Adaptive Decisions & Iterative Refinement
 
 Goal:
 
-Implement the complete iterative generation loop.
+Implement the complete structured decision runtime with adaptive step control.
 
 Conceptually:
 
 ```text
-initialize (place prompt tokens on 256 canvas, fill with mask tokens)
-    ↓
-step (evaluate canvas through model)
-    ↓
-update state (apply discrete diffusion / confidence rule)
-    ↓
-step
-    ↓
-update state
-    ↓
-...
-    ↓
-final decode (map converged canvas tokens to text)
+receive query schema (boolean, classification, score)
+                ↓
+seed 256 canvas with pinned mask slots
+                ↓
+step 1: parallel forward read
+                ↓
+evaluate Shannon entropy at pinned slot
+                ↓
+[entropy <= threshold?] ──► return immediate calibrated decision
+                │
+         (high entropy / multi-slot)
+                ↓
+adaptive step 2..N: refine pinned positions
+                ↓
+return resolved typed decision
 ```
 
 Focus on:
 
-* prompt-to-canvas layout;
-* state lifetime;
-* iteration control and convergence conditions;
-* temporary memory (arena allocator per step);
-* correctness;
-* final decoding.
-
-Performance is secondary.
+* schema-to-canvas template mapping;
+* adaptive step capping (1-step fast path vs multi-step fallback);
+* state lifetime and per-step arena allocators;
+* Jev-compatible `/v1/systemone` request/response interface;
+* typed schema validation.
 
 Exit condition:
 
-Zeno can generate text end-to-end on the reference path.
+Zeno can execute end-to-end structured decision queries (classification, boolean routing, scoring) with calibrated confidence scores on the CPU reference path.
 
 ---
 
-## 8. Phase 5 — CUDA Backend
+## 8. Phase 5 — CUDA & Multi-GPU Execution
 
 Goal:
 
-Move execution to CUDA while preserving the established semantic behavior.
+Accelerate structured reads using CUDA and multi-GPU tensor parallelism while strictly preserving the established semantic behavior.
+
+Key technical requirements (derived from the **Multi-GPU patch for llama.cpp PR #24423**):
+
+* **Preserve prompt cache**: ensure static prompt contexts are cached in GPU memory across queries without re-evaluation;
+* **Device-resident self-conditioning**: retain internal state on GPU devices across iterative steps without host synchronization;
+* **Balanced tensor splitting**: shard transformer layers and MoE weight matrices (128 experts) across available CUDA devices;
+* **Minimal collective overhead**: optimize all-reduce operations so single-step forward reads achieve low-latency execution.
 
 Approach:
 
 ```text
 CPU reference
       ↓
-identify hot operations
+CUDA single-device forward pass
       ↓
-CUDA implementation
+Multi-GPU tensor parallel sharding
       ↓
-compare results
+verify numerical equivalence with reference
       ↓
-profile
+latency profiling & benchmarking
 ```
-
-Do not port the entire system blindly to CUDA.
-
-Implement the smallest set of operations required for meaningful acceleration.
 
 Exit condition:
 
-CUDA execution produces behavior consistent with the reference implementation.
+CUDA and multi-GPU execution produces decisions and confidence metrics numerically consistent with the CPU reference implementation, with significant throughput and latency gains.
 
 ---
 
@@ -256,7 +263,7 @@ comparison
 
 ## 10. Research Track
 
-Zeno is also a research project.
+Zeno is also a research project into discrete diffusion as a decision paradigm.
 
 ### Verified Architectural Properties
 
@@ -272,19 +279,15 @@ Through model and GGUF inspection, several baseline facts are established:
 The following questions should remain visible during implementation:
 
 ```text
-What does a single denoising step predict (full categorical distribution, logits, or direct tokens)?
+Calibration & Entropy: How well-calibrated are pre-softmax / softmax logits for binary and multi-class decisions in a single pass?
 
-How does the canvas evolve between steps under the entropy / confidence bounding schedule?
+Step Capping: What is the empirical trade-off between single-step read latency and multi-step denoising accuracy?
 
-What information is preserved across iterations?
+Canvas Geometry: How does the positioning of the pinned decision slot within the 256 canvas affect attention and decision quality?
 
-How does uncertainty / entropy change during denoising?
+Multi-GPU Communication: What is the optimal tensor-parallel decomposition for 128 MoE experts during 1-step reads?
 
-Which parts of the computation are model semantics, and which are runtime mechanics?
-
-Why does this generation paradigm behave differently from autoregressive token-by-token generation?
-
-Why might this representation be useful for structured output or infilling?
+Comparison with Autoregressive Models: How does structured diffusion compare against grammar-constrained autoregressive decoding in latency, throughput, and error rates?
 ```
 
 Research findings should be written down in `specs/` when they become sufficiently supported.

@@ -2,16 +2,17 @@
 
 ## 1. Project Identity
 
-Zeno is a Zig-based inference runtime for DiffusionGemma.
+Zeno is a Zig-based, Jev-style structured decision engine built on DiffusionGemma.
 
-The project is primarily a research and systems-engineering project. Its purpose is to understand and implement the execution model of DiffusionGemma, with particular attention to:
+The project is a research and systems-engineering project. Rather than a generic text generation runtime, its purpose is to realize high-speed, deterministic "System One" decision execution using DiffusionGemma, with particular attention to:
 
-* the fixed token canvas;
-* iterative denoising;
+* seeded token canvases and pinned decision positions;
+* structured reads and single-step/few-step classification;
+* calibrated probabilities and entropy-based confidence scoring;
 * model state and tensor flow;
 * the boundary between compile-time structure and runtime data;
 * CPU reference execution;
-* CUDA execution;
+* CUDA and multi-GPU execution;
 * memory ownership and data movement.
 
 Zeno is not intended to become a general-purpose inference framework.
@@ -106,7 +107,10 @@ Any change that moves a significant boundary between compile time and runtime sh
 
 ## 4. Reference Implementation Policy
 
-Zeno may use llama.cpp and other existing implementations as behavioral references.
+Zeno specifically relies on two foundational open-source references for behavioral evidence:
+
+1. **vLLM PR #57250** (`examples/features/structured_diffusion/structured_server.py`): the reference for structured reads, seeded canvases, pinned canvas positions, read-only passes, and the Jev-compatible `/v1/systemone` decision API.
+2. **llama.cpp PR #24423 & Multi-GPU patch**: the reference for GGUF-based DiffusionGemma execution (`llama-diffusion-cli`), non-causal attention execution, device-resident self-conditioning, prompt cache preservation, and multi-GPU tensor splitting.
 
 Reference implementations are evidence about behavior, not automatic design templates.
 
