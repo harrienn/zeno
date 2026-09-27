@@ -52,7 +52,7 @@ The system is conceptually divided into the following layers:
 └────────────────────┬────────────────────┘
                      │
 ┌────────────────────▼────────────────────┐
-│               Model Graph               │
+│               Model Layer               │
 │   embeddings / transformer / outputs    │
 └────────────────────┬────────────────────┘
                      │
@@ -124,18 +124,20 @@ The model layer represents the computation performed by DiffusionGemma.
 Conceptually:
 
 ```text
-model configuration
+model configuration (GGUF metadata)
         +
-weights
+weights (quantized tensor storage)
         +
 runtime tensors
         ↓
-model computation
+model computation (embeddings, bidirectional attention, MoE blocks, RMSNorm)
         ↓
 denoising prediction / model output
 ```
 
 Model code should express model semantics rather than backend-specific optimization.
+
+DiffusionGemma weights and configuration are loaded from GGUF containers (e.g. Q4_K_M quantized tensors). The underlying architecture is a Gemma-based Mixture-of-Experts (MoE) network with bidirectional (non-causal) attention.
 
 The same model operation should have the same meaning regardless of whether it executes on CPU or CUDA.
 
@@ -210,10 +212,10 @@ token 3
 ...
 ```
 
-Instead, the runtime operates over a token canvas and repeatedly updates its state:
+Instead, the runtime operates over a fixed token canvas (256 tokens in DiffusionGemma) and repeatedly updates its state:
 
 ```text
-initial canvas
+initial canvas (prompt + mask tokens)
       ↓
 denoise step 1
       ↓
@@ -225,6 +227,11 @@ denoise step 3
       ↓
 converged canvas
 ```
+
+Key execution distinctions:
+* **Bidirectional attention**: the network attends across the entire token canvas without causal masking.
+* **No accumulating KV cache**: generation does not append new keys and values step-by-step; each step refines the canvas representation in parallel.
+* **Discrete token refinement**: positions transition from noise/mask placeholders into high-confidence token identities.
 
 The exact mathematical semantics of a denoising step belong in the dedicated denoising specification, not in this document.
 
@@ -365,6 +372,9 @@ Allocator / Memory
 
 Denoising Engine
     owns iterative generation semantics
+
+Tokenizer
+    owns encoding input text to tokens and decoding canvas tokens to text
 ```
 
 These responsibilities may be implemented with fewer concrete modules.

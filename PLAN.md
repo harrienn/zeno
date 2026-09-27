@@ -56,10 +56,10 @@ Create the smallest useful Zig project structure.
 
 Expected outcomes:
 
-* build system works;
+* build system works (`build.zig`);
 * tests work;
 * basic project conventions exist;
-* `AGENTS.md` and `ARCHITECTURE.md` are present;
+* `README.md`, `AGENTS.md`, and `ARCHITECTURE.md` are present and aligned;
 * reference material is documented;
 * no speculative framework code is introduced.
 
@@ -84,9 +84,9 @@ Likely areas:
 
 ```text
 types
-memory
-tensor representation
-dtype handling
+memory (ownership and arena allocation)
+tensor representation (shape, stride, layout)
+dtype handling (f32, quantized block formats like Q4_K, dequantization)
 basic operations
 error handling
 ```
@@ -107,17 +107,18 @@ Represent the required DiffusionGemma model structure in Zig.
 
 Focus on:
 
-* model configuration;
-* model weights;
-* tensor relationships;
-* model components;
+* GGUF container parsing (header, metadata, tensor descriptors);
+* model configuration decoding (`diffusion.canvas_length = 256`, 30 blocks, 128 MoE experts with 8 active);
+* tokenizer vocabulary and special tokens (`mask_token_id = 4`, `bos_token_id = 2`, `eos_token_id = 1`);
+* model weights and tensor mapping;
+* model components (token embeddings, bidirectional non-causal attention, MoE feed-forward blocks, RMSNorm);
 * data flow between components.
 
 Do not yet introduce broad multi-model abstractions.
 
 Exit condition:
 
-The model structure can be represented and inspected without executing the complete generation loop.
+The model structure and weights can be loaded, represented, and inspected without executing the complete generation loop.
 
 ---
 
@@ -154,24 +155,27 @@ Implement the complete iterative generation loop.
 Conceptually:
 
 ```text
-initialize
+initialize (place prompt tokens on 256 canvas, fill with mask tokens)
     ↓
-step
+step (evaluate canvas through model)
     ↓
-update state
+update state (apply discrete diffusion / confidence rule)
     ↓
 step
     ↓
 update state
     ↓
 ...
+    ↓
+final decode (map converged canvas tokens to text)
 ```
 
 Focus on:
 
+* prompt-to-canvas layout;
 * state lifetime;
-* iteration control;
-* temporary memory;
+* iteration control and convergence conditions;
+* temporary memory (arena allocator per step);
 * correctness;
 * final decoding.
 
@@ -254,29 +258,36 @@ comparison
 
 Zeno is also a research project.
 
+### Verified Architectural Properties
+
+Through model and GGUF inspection, several baseline facts are established:
+
+* **Canvas length**: 256 tokens (`diffusion.canvas_length = 256`).
+* **Non-causal attention**: attention is bidirectional (`diffusion-gemma.attention.causal = false`).
+* **Special tokens**: BOS is 2, EOS is 1, mask token is 4 (`tokenizer.ggml.mask_token_id = 4`).
+* **Backbone**: Gemma 4 MoE (30 transformer blocks, 128 experts with 8 active, embedding dimension 2816).
+
+### Open Research Questions
+
 The following questions should remain visible during implementation:
 
 ```text
-What exactly is the 256-token canvas?
+What does a single denoising step predict (full categorical distribution, logits, or direct tokens)?
 
-What does a denoising step predict?
-
-How does the canvas evolve between steps?
+How does the canvas evolve between steps under the entropy / confidence bounding schedule?
 
 What information is preserved across iterations?
 
 How does uncertainty / entropy change during denoising?
 
-Which parts of the computation are model semantics,
-and which are runtime mechanics?
+Which parts of the computation are model semantics, and which are runtime mechanics?
 
-Why does this generation paradigm behave differently
-from autoregressive token-by-token generation?
+Why does this generation paradigm behave differently from autoregressive token-by-token generation?
 
-Why might this representation be useful for structured output?
+Why might this representation be useful for structured output or infilling?
 ```
 
-Research findings should be written down when they become sufficiently supported.
+Research findings should be written down in `specs/` when they become sufficiently supported.
 
 Hypotheses must be clearly distinguished from verified behavior.
 
