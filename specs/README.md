@@ -12,8 +12,5 @@ As outlined in [ARCHITECTURE.md](../ARCHITECTURE.md) and [PLAN.md](../PLAN.md), 
 - [**`transformer.md`**](transformer.md): Detailed layer execution mechanics: bidirectional non-causal attention, dual RoPE frequency bases, global layer $V=K$ sharing, 128-expert MoE top-8 routing, and RMSNorm.
 - [**`tokenizer.md`**](tokenizer.md): Gemma 4 BPE vocabulary format, special token conventions (`bos=2`, `eos=1`, `mask=4`), single-token candidate validation, and native Zig tokenizer contracts.
 - [**`gguf-mapping.md`**](gguf-mapping.md): Concrete mapping of DiffusionGemma GGUF tensor names, shapes, and quantization types (Q4_K_M) verified against the local repository artifact (`models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf`).
-
-## Planned Specifications
-
-- **`denoising.md`**: Adaptive step-capping, confidence-guided thresholding, and discrete diffusion dynamics for high-entropy slots and multi-token structured infilling.
-- **`multi-gpu.md`**: Investigation of multi-GPU execution, sharding, device-resident self-conditioning, and cache lifetime.
+- [**`denoising.md`**](denoising.md): Adaptive step-capping, entropy thresholding, ambiguity resolution experimental strategies, discrete diffusion update rules, and self-conditioning injection.
+- [**`multi-gpu.md`**](multi-gpu.md): Multi-GPU architecture, pipeline layer splitting vs. tensor parallelism, VRAM budgets, prompt cache lifetimes, and numerical parity constraints.
