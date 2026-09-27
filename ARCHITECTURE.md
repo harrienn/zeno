@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-Zeno is a lightweight, Jev-style structured decision engine built on DiffusionGemma implemented in Zig.
+Zeno is a research project for a lightweight, Jev-style structured decision runtime built in Zig and based on DiffusionGemma.
 
 Rather than serving as a conversational text generator, the architecture is organized around **structured decision execution** (structured reads) over a seeded token canvas:
 
@@ -13,14 +13,14 @@ Seeded Token Canvas (pinned noisy decision slots)
                ↓
 Parallel Forward Read (single-step / capped diffusion)
                ↓
-Logit Extraction & Calibrated Confidence
+Candidate Logit Extraction & Entropy (calibration to be evaluated)
                ↓
 Structured Decision (typed label, boolean, or score)
 ```
 
-The runtime exists to make this execution process explicit, deterministic, inspectable, and high-performance.
+The intended runtime should make this execution process explicit, reproducible, inspectable, and efficient. These are design goals; implementation and performance have not yet been established.
 
-Zeno remains substantially simpler and faster than a general-purpose conversational framework.
+Zeno is intended to remain smaller in scope than a general-purpose conversational framework. Its relative speed has not yet been measured.
 
 ---
 
@@ -29,12 +29,12 @@ Zeno remains substantially simpler and faster than a general-purpose conversatio
 Zeno has five primary goals:
 
 1. reproduce the structured-reads and discrete diffusion behavior of DiffusionGemma (reference: vLLM PR #57250);
-2. execute deterministic, schema-constrained "System One" decisions with calibrated probabilities and entropy metrics;
+2. execute reproducible, schema-constrained "System One" decisions and report candidate scores and entropy, with calibration to be evaluated;
 3. provide a clean CPU/reference execution path for canvas seeding, forward evaluation, and logit extraction;
-4. provide an efficient CUDA and multi-GPU execution path (reference: Multi-GPU patch for llama.cpp PR #24423) that preserves prompt caching, device-resident self-conditioning, and tensor parallelism;
+4. investigate CUDA and multi-GPU execution, using llama.cpp PR #24423 and a separate experimental community patch as references; cache lifetime, self-conditioning placement, and sharding strategy remain design questions;
 5. maintain a small, understandable foundation without unnecessary abstraction layers.
 
-Performance is critical for System One decisions, but correctness, calibrated confidence, and model understanding come first.
+Performance matters for System One decisions, but semantic correctness and model understanding come first. Calibration and performance must be measured.
 
 ---
 
@@ -82,14 +82,14 @@ The implementation should remain free to collapse layers when doing so improves 
 
 ## 4. Frontend
 
-The frontend provides the interface for structured decision queries and runtime diagnostics.
+The planned frontend will provide the interface for structured decision queries and runtime diagnostics.
 
 Responsibilities include:
 
 * receiving structured query requests (e.g. Jev-compatible `/v1/systemone` format or native Zig API calls);
 * parsing query schemas (boolean judgments, multiple-choice classification, ordinal scoring);
 * configuring step limits (e.g. single-step read vs capped iterative refinement);
-* formatting responses with typed labels, calibrated probabilities, and Shannon entropy;
+* formatting responses with typed labels, candidate scores, normalized probabilities where appropriate, and Shannon entropy; calibration must be evaluated separately;
 * exposing basic runtime diagnostics and performance metrics.
 
 The frontend does not contain model execution semantics.
@@ -100,7 +100,7 @@ It should be possible to change the CLI without changing the denoising engine.
 
 ## 5. Model Runtime
 
-The model runtime owns the execution process.
+The planned model runtime will own the execution process.
 
 Its primary responsibility is to coordinate:
 
@@ -144,7 +144,7 @@ denoising prediction / model output
 
 Model code should express model semantics rather than backend-specific optimization.
 
-DiffusionGemma weights and configuration are loaded from GGUF containers (e.g. Q4_K_M quantized tensors). The underlying architecture is a Gemma-based Mixture-of-Experts (MoE) network with bidirectional (non-causal) attention.
+The target DiffusionGemma weights and configuration are expected in GGUF containers (for example, Q4_K_M quantized tensors). Model facts and tensor mappings should be tied to a named model artifact and revision before implementation. The target architecture uses a Gemma-based Mixture-of-Experts (MoE) network with bidirectional (non-causal) attention.
 
 The same model operation should have the same meaning regardless of whether it executes on CPU or CUDA.
 
@@ -186,14 +186,11 @@ CUDA (Single-GPU)
 CUDA (Multi-GPU Tensor Parallel)
 ```
 
-The CPU path serves as the reference implementation.
+The CPU path is intended to serve as the semantic reference implementation.
 
 CUDA implementations must preserve the exact semantic contract of the reference path.
 
-For multi-GPU execution, Zeno incorporates lessons from the **Multi-GPU patch for llama.cpp PR #24423**:
-* **Device-resident state**: self-conditioning tensors and layer activations remain resident on GPU devices to avoid host synchronization.
-* **Prompt-cache awareness**: static prompt contexts are cached across decision steps without being invalidated by multi-GPU layer splitting.
-* **Balanced tensor splitting**: transformer blocks and large MoE feed-forward weight tensors (128 experts) are split across available devices while minimizing cross-device collective communication overhead during single-step forward reads.
+For multi-GPU execution, Zeno may investigate lessons from the [separate community patch for llama.cpp PR #24423](https://github.com/readwrightexecute/llamacpp-diffusiongemma-multigpu). That patch describes device-resident self-conditioning and prompt-KV caching for a specific two-GPU layer-split setup. It does not establish a general tensor-splitting strategy or behavior across other hardware layouts. Zeno's cache lifetime, sharding, and communication strategy remain open design questions.
 
 ---
 
@@ -213,25 +210,25 @@ token 3
 ...
 ```
 
-Zeno operates over a seeded token canvas (256 tokens in DiffusionGemma) and executes **structured reads** (as pioneered in **vLLM PR #57250**):
+Zeno is intended to operate over a seeded token canvas (the inspected model metadata reports 256 tokens) and execute **structured reads**, using [vLLM PR #57250](https://github.com/vllm-project/vllm/pull/57250) as a behavioral reference. Treat the canvas length as model metadata, not a universal fixed width.
 
 ### 9.1 Structured Reads Mode (System One / Jev-Style Decisions)
 
 In structured-reads mode, the engine evaluates software decisions in a single or step-capped pass:
 
 ```text
-1. Seed Canvas: Place input context + schema template onto the 256 canvas.
-2. Pin Slots: Leave target decision positions as noise / mask tokens (mask_token_id = 4).
+1. Seed Canvas: Place input context and an answer template onto the configured canvas.
+2. Select Answer Positions: Mark the target positions and establish their exact seed/pinning behavior from the reference implementation.
 3. Forward Read: Execute a single parallel forward pass with bidirectional attention.
 4. Logit Readout: Read logits exclusively at the pinned slot index for allowed candidate tokens.
-5. Calibrate: Apply softmax over candidates and compute Shannon entropy.
+5. Score: Normalize candidate logits if appropriate and compute Shannon entropy. Calibration requires separate empirical validation.
 ```
 
-Because output is strictly constrained to the candidate tokens defined by the query schema, outputs are guaranteed to be type-safe and never go "off-schema."
+If the implementation restricts readout to the schema's candidate token IDs and validates the mapping, the selected label can be constrained to those choices. The vLLM reference requires each candidate answer to be a single token; clients can map longer labels to one-token codes. This constraint alone does not establish correctness or probability calibration.
 
-### 9.2 Confidence-Guided Iterative Denoising
+### 9.2 Follow-up Reads and Iterative Refinement (Research Question)
 
-When a decision slot exhibits high entropy (uncertainty) or when a query requests multi-token structured infilling, the engine can adaptively execute capped iterative steps:
+The project has not established whether a high-entropy result should trigger another read of the same canvas, a new noise draw, or a denoising step. These are distinct strategies and should be compared experimentally before one becomes runtime behavior. Multi-token structured infilling is also outside the currently established read semantics.
 
 ```text
 initial seeded canvas
@@ -240,17 +237,17 @@ read step 1 (evaluate entropy at pinned slots)
         ↓
 [entropy > threshold?]
         ↓
-refine step 2 (denoise ambiguous positions)
+perform a separately specified follow-up read or refinement
         ↓
 converged decision state
 ```
 
-Key execution distinctions:
+Questions to resolve:
 * **Bidirectional attention**: the network attends across the entire token canvas without causal masking.
-* **No accumulating KV cache**: generation does not append new keys and values step-by-step; each step refines the canvas representation in parallel.
+* **Cache behavior**: determine which prompt/model state can be reused and for what lifetime; do not assume caching across queries.
 * **Direct logit readout**: classification judgments are extracted directly from logits at pinned positions without free-form token emission.
 
-The exact mathematical semantics of structured reads and denoising belong in dedicated specifications in `specs/`.
+The exact mathematical semantics of structured reads and any denoising behavior belong in dedicated specifications in `specs/` before those behaviors are implemented.
 
 ---
 
@@ -318,11 +315,11 @@ This distinction is especially important while the model semantics are still bei
 
 Zeno relies on two key external implementations as behavioral references:
 
-1. **vLLM PR #57250** (`examples/features/structured_diffusion/structured_server.py`):
-   - Reference for **structured-reads mode**, seeded canvas construction, pinned mask positions, and the Jev-compatible `/v1/systemone` decision API.
+1. **[vLLM PR #57250](https://github.com/vllm-project/vllm/pull/57250)** (`examples/features/structured_diffusion/structured_server.py`):
+   - Reference for a prototype **structured-reads mode**, seeded canvas construction, selected answer positions, and a sample interposer providing the Jev-compatible `/v1/systemone` API. The PR notes that this is not a standard vLLM endpoint and that candidate answers must be single tokens.
 
-2. **llama.cpp PR #24423 & Multi-GPU patch**:
-   - Reference for DiffusionGemma GGUF execution (`llama-diffusion-cli`), non-causal attention implementation, and multi-GPU tensor splitting with preserved self-conditioning.
+2. **[llama.cpp PR #24423](https://github.com/ggml-org/llama.cpp/pull/24423)** and the [separate experimental Multi-GPU patch](https://github.com/readwrightexecute/llamacpp-diffusiongemma-multigpu):
+   - PR reference for DiffusionGemma GGUF execution (`llama-diffusion-cli`) and non-causal attention. The community patch explores a specific two-GPU setup; its behavior should not be generalized without independent validation.
 
 However:
 
@@ -353,9 +350,9 @@ Parallel Model Evaluation (bidirectional attention)
               ↓
 Pinned Slot Logit Readout (restricted to candidate tokens)
               ↓
-Softmax Normalization & Shannon Entropy
+Candidate Normalization & Shannon Entropy (calibration evaluated separately)
               ↓
-Calibrated Decision & Confidence Output
+Decision Output with Candidate Scores and Entropy (calibration to be evaluated)
 ```
 
 Each transition corresponds to a mechanically verifiable runtime step.
@@ -371,7 +368,7 @@ Frontend
     owns user interaction, HTTP endpoints, and CLI queries
 
 Decision Engine / Schema Mapper
-    owns schema-to-canvas mapping, pinned slot placement, logit extraction, and calibration
+    owns schema-to-canvas mapping, answer-position selection, logit extraction, and any empirically validated calibration
 
 Runtime
     owns execution state, canvas lifetime, and step control flow

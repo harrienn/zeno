@@ -8,7 +8,7 @@ The project is a research and systems-engineering project. Rather than a generic
 
 * seeded token canvases and pinned decision positions;
 * structured reads and single-step/few-step classification;
-* calibrated probabilities and entropy-based confidence scoring;
+* candidate probabilities, entropy, and the empirical evaluation of calibration;
 * model state and tensor flow;
 * the boundary between compile-time structure and runtime data;
 * CPU reference execution;
@@ -109,8 +109,8 @@ Any change that moves a significant boundary between compile time and runtime sh
 
 Zeno specifically relies on two foundational open-source references for behavioral evidence:
 
-1. **vLLM PR #57250** (`examples/features/structured_diffusion/structured_server.py`): the reference for structured reads, seeded canvases, pinned canvas positions, read-only passes, and the Jev-compatible `/v1/systemone` decision API.
-2. **llama.cpp PR #24423 & Multi-GPU patch**: the reference for GGUF-based DiffusionGemma execution (`llama-diffusion-cli`), non-causal attention execution, device-resident self-conditioning, prompt cache preservation, and multi-GPU tensor splitting.
+1. **vLLM PR #57250** (`examples/features/structured_diffusion/structured_server.py`): a reference for structured reads, seeded canvases, selected answer positions, read-only passes, and a prototype Jev-compatible `/v1/systemone` decision API. Candidate answers in that reference must be single tokens (or mapped to one-token codes), and raw log-probabilities do not establish calibration.
+2. **llama.cpp PR #24423**: a reference for GGUF-based DiffusionGemma execution (`llama-diffusion-cli`) and non-causal attention. A separate community multi-GPU patch explores device-resident self-conditioning and prompt-KV caching for a specific two-GPU layer-split setup; treat it as experimental evidence, not a general design requirement.
 
 Reference implementations are evidence about behavior, not automatic design templates.
 

@@ -1,16 +1,16 @@
 # Zeno
 
-A lightweight Zig-based, **Jev-style structured decision engine** built on **DiffusionGemma**.
+A research project exploring a lightweight Zig-based, **Jev-style structured decision engine** built on **DiffusionGemma**.
 
 ---
 
 ## 1. Overview
 
-Zeno is a research and systems-engineering runtime developed in Zig. Rather than serving as a generic conversational text generation engine, Zeno is designed as a deterministic, high-speed **"System One" decision engine**—inspired by TypeSafe AI's Jev architecture and powered by Google DeepMind's DiffusionGemma discrete diffusion model.
+Zeno is a research and systems-engineering project intended to become a Zig runtime. Rather than serving as a generic conversational text generation engine, it explores a reproducible, low-latency **"System One" decision engine**—inspired by TypeSafe AI's Jev architecture and powered by Google DeepMind's DiffusionGemma discrete diffusion model. These are project goals; the runtime is not implemented yet.
 
-In modern agentic workflows and production software pipelines, applications constantly require low-latency, schema-constrained evaluations (routing queries, tool-use safety checks, intent classification, guardrails, and scoring). Traditional autoregressive LLMs are poorly matched for these tasks: they generate text token-by-token sequentially, suffer from parsing errors and hallucinations, and incur significant latency.
+Agentic workflows and software pipelines can use low-latency, schema-constrained evaluations for routing, intent classification, safety checks, and scoring. Zeno investigates whether discrete diffusion can serve these workloads effectively; comparisons with autoregressive approaches remain to be measured.
 
-Zeno leverages DiffusionGemma's parallel discrete diffusion architecture to perform **structured reads**: evaluating an entire token canvas in parallel to return calibrated, typed decisions in a single pass.
+The intended structured-read path evaluates candidate decision positions in a DiffusionGemma token canvas. It may produce normalized candidate probabilities and entropy; whether those probabilities are calibrated and how many reads are useful remain research questions.
 
 ---
 
@@ -20,12 +20,12 @@ Zeno draws directly upon two foundational open-source milestones:
 
 1. **vLLM PR #57250** (`examples/features/structured_diffusion/structured_server.py`):
    - Introduced "DiffusionGemma-as-Jev" / structured diffusion in vLLM.
-   - Defines the **structured-reads** paradigm: seeding a 256-token canvas with response templates, pinning decision slots as noisy mask tokens, and performing read-only diffusion passes.
-   - Implements the Jev-compatible `/v1/systemone` server interface, outputting calibrated log-probabilities, confidence scores, and entropy metrics without generating free-form text.
+   - Demonstrates structured reads using a seeded canvas, selected answer positions, and read-only diffusion requests. Candidate answers must be single tokens; multi-token labels can be represented by one-token codes.
+   - Includes a prototype interposer for the Jev-compatible `/v1/systemone` API. It returns token log-probabilities for the client to interpret; calibrated confidence is not implied by the raw scores. The endpoint is not a standard vLLM API.
 
-2. **Multi-GPU Patch for llama.cpp PR #24423**:
+2. **Experimental community patch for llama.cpp PR #24423**:
    - PR #24423 introduced `llama-diffusion-cli` and GGUF runtime support for DiffusionGemma's block-diffusion architecture.
-   - The community Multi-GPU patch resolves critical limitations when distributing DiffusionGemma across multiple CUDA devices: maintaining device-resident self-conditioning, prompt-KV cache awareness, and balanced tensor splitting across GPUs without cross-device stalls.
+   - A separate community patch explores device-resident self-conditioning and prompt-KV caching for a particular two-GPU layer-split setup. Treat its results as experimental and topology-specific, not as general multi-GPU support.
 
 ---
 
@@ -35,10 +35,10 @@ Zeno draws directly upon two foundational open-source milestones:
 | :--- | :--- | :--- |
 | **Generation Mode** | Sequential token-by-token rollout | Parallel whole-canvas evaluation |
 | **Attention** | Causal mask (past tokens only) | Bidirectional (attends across all canvas positions) |
-| **Decision Speed** | Multi-step token rollout (100–500ms+) | Single-step forward read (1 pass, low latency) |
-| **Schema Integrity** | Relies on regex/grammar masks, prone to formatting errors | Seeded canvas with pinned slots; guaranteed on-schema |
-| **Output** | Free-form unstructured text | Calibrated probabilities, confidence scores, and typed decisions |
-| **KV Cache** | Growing causal cache | No KV cache accumulation; prompt cache + self-conditioning |
+| **Decision Speed** | Sequential token generation | Structured reads may evaluate answer positions in parallel; latency remains to be measured |
+| **Schema Integrity** | Often uses constrained decoding or post-processing | Candidate-token restriction can limit the decision to supplied single-token choices |
+| **Output** | Often free-form text | Intended output: typed decisions with candidate scores and entropy; calibration remains to be measured |
+| **KV Cache** | Often grows with generated tokens | Diffusion execution does not append tokens autoregressively; cache behavior depends on the runtime and execution path |
 
 ### The Structured-Read Lifecycle
 
@@ -51,7 +51,7 @@ Bidirectional Forward Read (Single pass or capped diffusion steps)
               ↓
 Logit Extraction at Pinned Positions (Restricted to candidate tokens)
               ↓
-Calibrated Probabilities & Entropy Calculation
+Candidate Scores, Normalization & Entropy (calibration to be evaluated)
               ↓
 Typed Decision Output (Boolean, Categorical, or Ordinal Score)
 ```
@@ -73,25 +73,22 @@ Typed Decision Output (Boolean, Categorical, or Ordinal Score)
 - [AGENTS.md](AGENTS.md) — Operational instructions, engineering principles, and coding standards for agents and contributors.
 - [ARCHITECTURE.md](ARCHITECTURE.md) — Architectural layers, structured-reads execution flow, compile-time/runtime boundaries, and component responsibilities.
 - [PLAN.md](PLAN.md) — Implementation roadmap (Phases 0 through 6), current milestones, and research questions.
-- [specs/](specs/) — Detailed technical specifications for the System One decision API, canvas templates, structured-read dynamics, and multi-GPU tensor mapping.
+- [specs/](specs/) — Index of planned technical specifications for the System One decision API, canvas templates, structured-read dynamics, and multi-GPU execution.
 
 ---
 
 ## 6. Status & Development
 
-The project is currently in **Phase 0 (Repository Foundation)**.
+The project is currently in **Phase 0 (Repository Foundation)**. No Zig build configuration or source files are present yet.
 
 ### Prerequisites
 
-- **Zig**: `0.14+` or current development branch (`0.17.0-dev`).
-- **Model**: DiffusionGemma weights in GGUF format (e.g. stored locally under `models/`, ignored by git).
+- **Zig**: A supported version will be specified when the build configuration is added.
+- **Model**: DiffusionGemma weights in GGUF format will be needed for model execution; the repository does not currently define a model directory or ignore rule.
 
 ### Build & Test
 
-```bash
-zig build
-zig test
-```
+Build and test commands will be added when the Zig project scaffold exists.
 
 ---
 

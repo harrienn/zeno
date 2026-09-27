@@ -2,7 +2,7 @@
 
 ## 1. North Star
 
-Build a lightweight Zig runtime implementing a **Jev-style structured decision engine** on DiffusionGemma, delivering deterministic, calibrated decisions over seeded token canvases.
+Build a lightweight Zig runtime implementing a **Jev-style structured decision engine** on DiffusionGemma. Reproducible decisions are a goal; probability calibration must be measured rather than assumed.
 
 The first successful milestone is not maximum conversational output.
 
@@ -11,16 +11,16 @@ The first successful milestone is:
 ```text
 application state + query
           ↓
-seeded 256-token canvas
+seeded canvas using the model's configured width
           ↓
 single-step forward read (pinned mask slot)
           ↓
-logit extraction & calibration
+candidate logit extraction and entropy (calibration to be evaluated)
           ↓
-typed decision + confidence score
+typed decision + candidate scores and entropy
 ```
 
-running through Zeno with behavior validated against **vLLM PR #57250** (`examples/features/structured_diffusion/structured_server.py`) and **llama.cpp PR #24423** (`llama-diffusion-cli`).
+running through Zeno with behavior compared against [vLLM PR #57250](https://github.com/vllm-project/vllm/pull/57250) and [llama.cpp PR #24423](https://github.com/ggml-org/llama.cpp/pull/24423). These references do not by themselves validate Zeno's implementation.
 
 ---
 
@@ -132,22 +132,22 @@ The core execution questions are:
 
 ```text
 1. Given an application state and typed query schema,
-   how is the 256-token canvas seeded with prompt context and pinned mask slots (mask_token_id = 4)?
+   how is the configured canvas seeded, and how are answer positions represented and pinned?
 
 2. How does a single forward evaluation over the canvas
    produce logits across candidate decision tokens?
 
 3. How are candidate probabilities and Shannon entropy
-   derived and calibrated at pinned indices?
+   derived at answer positions, and how well do those probabilities calibrate?
 ```
 
 Validation strategy:
 
-Compare intermediate activations, output logits, and entropy scores against **vLLM PR #57250** (`examples/features/structured_diffusion/structured_server.py`) and **llama.cpp PR #24423** (`llama-diffusion-cli`).
+Compare intermediate activations, output logits, and entropy scores against [vLLM PR #57250](https://github.com/vllm-project/vllm/pull/57250) and [llama.cpp PR #24423](https://github.com/ggml-org/llama.cpp/pull/24423), while documenting differences between their execution paths. The vLLM reference requires each candidate answer to be a single token (or represented by a one-token code).
 
 Exit condition:
 
-A seeded canvas query produces verified, calibrated classification decisions matching reference outputs on the CPU backend.
+A seeded canvas query produces CPU results that match the chosen reference behavior within documented tolerances; calibration is evaluated on a labeled dataset and reported separately from normalization and entropy.
 
 ---
 
@@ -155,24 +155,24 @@ A seeded canvas query produces verified, calibrated classification decisions mat
 
 Goal:
 
-Implement the complete structured decision runtime with adaptive step control.
+Investigate whether follow-up reads or iterative refinement improve structured decisions, then implement only the empirically supported step-control behavior.
 
 Conceptually:
 
 ```text
 receive query schema (boolean, classification, score)
                 ↓
-seed 256 canvas with pinned mask slots
+seed configured canvas and select answer positions
                 ↓
 step 1: parallel forward read
                 ↓
-evaluate Shannon entropy at pinned slot
+evaluate candidate entropy at answer positions
                 ↓
-[entropy <= threshold?] ──► return immediate calibrated decision
+[entropy <= threshold?] ──► return decision with measured candidate scores
                 │
          (high entropy / multi-slot)
                 ↓
-adaptive step 2..N: refine pinned positions
+follow-up read, new noise draw, or specified refinement (select by experiment)
                 ↓
 return resolved typed decision
 ```
@@ -180,14 +180,14 @@ return resolved typed decision
 Focus on:
 
 * schema-to-canvas template mapping;
-* adaptive step capping (1-step fast path vs multi-step fallback);
+* compare one read, repeated reads with new noise, and same-canvas refinement before selecting a step policy;
 * state lifetime and per-step arena allocators;
 * Jev-compatible `/v1/systemone` request/response interface;
 * typed schema validation.
 
 Exit condition:
 
-Zeno can execute end-to-end structured decision queries (classification, boolean routing, scoring) with calibrated confidence scores on the CPU reference path.
+Zeno can execute end-to-end structured decision queries on the CPU reference path, with candidate probabilities and entropy reported separately from any calibration metrics.
 
 ---
 
@@ -197,12 +197,12 @@ Goal:
 
 Accelerate structured reads using CUDA and multi-GPU tensor parallelism while strictly preserving the established semantic behavior.
 
-Key technical requirements (derived from the **Multi-GPU patch for llama.cpp PR #24423**):
+Research topics informed by the [separate experimental community patch for llama.cpp PR #24423](https://github.com/readwrightexecute/llamacpp-diffusiongemma-multigpu):
 
-* **Preserve prompt cache**: ensure static prompt contexts are cached in GPU memory across queries without re-evaluation;
-* **Device-resident self-conditioning**: retain internal state on GPU devices across iterative steps without host synchronization;
-* **Balanced tensor splitting**: shard transformer layers and MoE weight matrices (128 experts) across available CUDA devices;
-* **Minimal collective overhead**: optimize all-reduce operations so single-step forward reads achieve low-latency execution.
+* **Prompt cache lifetime**: establish which context can be reused and whether reuse applies within a query, across steps, or across queries;
+* **Device-resident self-conditioning**: measure whether retaining state on GPU devices across steps helps the chosen execution path;
+* **Sharding strategy**: compare layer and tensor splits for the target model and supported hardware; the community patch tests a specific two-GPU layer split;
+* **Communication cost**: measure transfer and collective costs before choosing an optimization.
 
 Approach:
 
@@ -220,7 +220,7 @@ latency profiling & benchmarking
 
 Exit condition:
 
-CUDA and multi-GPU execution produces decisions and confidence metrics numerically consistent with the CPU reference implementation, with significant throughput and latency gains.
+CUDA and multi-GPU execution produces decisions and candidate metrics within documented tolerances of the CPU reference implementation; any throughput and latency gains are demonstrated by reproducible benchmarks.
 
 ---
 
@@ -265,11 +265,11 @@ comparison
 
 Zeno is also a research project into discrete diffusion as a decision paradigm.
 
-### Verified Architectural Properties
+### Reported Model Metadata (Artifact Provenance Needed)
 
-Through model and GGUF inspection, several baseline facts are established:
+The following values are reported from model/GGUF inspection, but the inspected artifact and revision must be recorded before treating them as project-wide invariants:
 
-* **Canvas length**: 256 tokens (`diffusion.canvas_length = 256`).
+* **Canvas length**: 256 tokens (`diffusion.canvas_length = 256`); serving implementations may support a shorter request canvas.
 * **Non-causal attention**: attention is bidirectional (`diffusion-gemma.attention.causal = false`).
 * **Special tokens**: BOS is 2, EOS is 1, mask token is 4 (`tokenizer.ggml.mask_token_id = 4`).
 * **Backbone**: Gemma 4 MoE (30 transformer blocks, 128 experts with 8 active, embedding dimension 2816).
@@ -283,7 +283,7 @@ Calibration & Entropy: How well-calibrated are pre-softmax / softmax logits for 
 
 Step Capping: What is the empirical trade-off between single-step read latency and multi-step denoising accuracy?
 
-Canvas Geometry: How does the positioning of the pinned decision slot within the 256 canvas affect attention and decision quality?
+Canvas Geometry: How does answer-position placement within the configured canvas affect attention and decision quality?
 
 Multi-GPU Communication: What is the optimal tensor-parallel decomposition for 128 MoE experts during 1-step reads?
 
