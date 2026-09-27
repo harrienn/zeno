@@ -84,7 +84,7 @@ The project is currently in **Phase 0 (Repository Foundation)**. No Zig build co
 ### Prerequisites
 
 - **Zig**: A supported version will be specified when the build configuration is added.
-- **Model**: DiffusionGemma weights in GGUF format will be needed for model execution; the repository does not currently define a model directory or ignore rule.
+- **Model**: DiffusionGemma weights in GGUF format will be needed for model execution; `.gitignore` already ignores `/models/` and `*.gguf` for local storage.
 
 ### Build & Test
 
