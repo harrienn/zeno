@@ -108,10 +108,10 @@ pub fn dequantizeRowQ6_K(blocks: []const BlockQ6_K, dst: []f32) void {
 
             for (0..32) |l| {
                 const is = l / 16;
-                const q1: i32 = @as(i32, @intCast(ql[l + 0] & 0x0F)) | (@as(i32, @intCast((qh[l] >> 0) & 3)) << 4) - 32;
-                const q2: i32 = @as(i32, @intCast(ql[l + 32] & 0x0F)) | (@as(i32, @intCast((qh[l] >> 2) & 3)) << 4) - 32;
-                const q3: i32 = @as(i32, @intCast(ql[l + 0] >> 4)) | (@as(i32, @intCast((qh[l] >> 4) & 3)) << 4) - 32;
-                const q4: i32 = @as(i32, @intCast(ql[l + 32] >> 4)) | (@as(i32, @intCast((qh[l] >> 6) & 3)) << 4) - 32;
+                const q1: i32 = @as(i32, @intCast((ql[l + 0] & 0x0F) | (((qh[l] >> 0) & 3) << 4))) - 32;
+                const q2: i32 = @as(i32, @intCast((ql[l + 32] & 0x0F) | (((qh[l] >> 2) & 3) << 4))) - 32;
+                const q3: i32 = @as(i32, @intCast((ql[l + 0] >> 4) | (((qh[l] >> 4) & 3) << 4))) - 32;
+                const q4: i32 = @as(i32, @intCast((ql[l + 32] >> 4) | (((qh[l] >> 6) & 3) << 4))) - 32;
 
                 dst[out_idx + l + 0] = d * @as(f32, @floatFromInt(sc[is + 0])) * @as(f32, @floatFromInt(q1));
                 dst[out_idx + l + 32] = d * @as(f32, @floatFromInt(sc[is + 2])) * @as(f32, @floatFromInt(q2));
@@ -163,10 +163,10 @@ pub fn dotRowQ6_K(blocks: []const BlockQ6_K, x: []const f32) f32 {
 
             for (0..32) |l| {
                 const is = l / 16;
-                const q1: i32 = @as(i32, @intCast(ql[l + 0] & 0x0F)) | (@as(i32, @intCast((qh[l] >> 0) & 3)) << 4) - 32;
-                const q2: i32 = @as(i32, @intCast(ql[l + 32] & 0x0F)) | (@as(i32, @intCast((qh[l] >> 2) & 3)) << 4) - 32;
-                const q3: i32 = @as(i32, @intCast(ql[l + 0] >> 4)) | (@as(i32, @intCast((qh[l] >> 4) & 3)) << 4) - 32;
-                const q4: i32 = @as(i32, @intCast(ql[l + 32] >> 4)) | (@as(i32, @intCast((qh[l] >> 6) & 3)) << 4) - 32;
+                const q1: i32 = @as(i32, @intCast((ql[l + 0] & 0x0F) | (((qh[l] >> 0) & 3) << 4))) - 32;
+                const q2: i32 = @as(i32, @intCast((ql[l + 32] & 0x0F) | (((qh[l] >> 2) & 3) << 4))) - 32;
+                const q3: i32 = @as(i32, @intCast((ql[l + 0] >> 4) | (((qh[l] >> 4) & 3) << 4))) - 32;
+                const q4: i32 = @as(i32, @intCast((ql[l + 32] >> 4) | (((qh[l] >> 6) & 3) << 4))) - 32;
 
                 const v1 = d * @as(f32, @floatFromInt(sc[is + 0])) * @as(f32, @floatFromInt(q1));
                 const v2 = d * @as(f32, @floatFromInt(sc[is + 2])) * @as(f32, @floatFromInt(q2));

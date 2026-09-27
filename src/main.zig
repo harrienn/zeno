@@ -71,6 +71,7 @@ pub fn main(init: std.process.Init) !void {
         try stdout_writer.print("Normalized Entropy:  {d:.4}\n", .{resp.normalized_entropy});
         try stdout_writer.print("Uncertain:           {}\n", .{resp.uncertain});
         try stdout_writer.print("Steps:               {d}\n", .{resp.steps_executed});
+        try stdout_writer.print("Canvas Tokens:       {d}\n", .{resp.canvas_tokens_used});
         try stdout_writer.print("Candidates:\n", .{});
         for (resp.candidates) |c| {
             try stdout_writer.print("  - {s} (ID {d}): prob={d:.4}, raw_logit={d:.4}\n", .{

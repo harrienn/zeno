@@ -118,6 +118,7 @@ pub const DecisionEngine = struct {
             .uncertain = uncertain,
             .candidates = candidate_results,
             .steps_executed = 1,
+            .canvas_tokens_used = @intCast(canvas.prompt_len + 1),
         };
     }
 };
@@ -157,5 +158,6 @@ test "DecisionEngine: end-to-end boolean decision execution on local model if pr
     try std.testing.expect(resp.entropy_nats >= 0.0);
     try std.testing.expect(resp.normalized_entropy >= 0.0 and resp.normalized_entropy <= 1.0);
     try std.testing.expectEqual(@as(u32, 1), resp.steps_executed);
+    try std.testing.expectEqual(@as(u32, 2), resp.canvas_tokens_used);
     try std.testing.expectEqual(@as(usize, 2), resp.candidates.len);
 }

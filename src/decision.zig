@@ -61,6 +61,8 @@ pub const DecisionResponse = struct {
     candidates: []const CandidateResult,
     /// Number of diffusion/forward steps executed (always 1 in v0).
     steps_executed: u32,
+    /// Number of canvas tokens populated up to and including the answer token.
+    canvas_tokens_used: u32,
 };
 
 /// Validation errors for DecisionRequest.
