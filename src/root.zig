@@ -4,6 +4,20 @@
 
 const std = @import("std");
 
+pub const decision = @import("decision.zig");
+pub const tensor = @import("tensor.zig");
+pub const quant = @import("quant.zig");
+pub const ops = @import("ops.zig");
+
+// Re-export common types
+pub const Tensor = tensor.Tensor;
+pub const DType = tensor.DType;
+pub const DecisionRequest = decision.DecisionRequest;
+pub const DecisionResponse = decision.DecisionResponse;
+pub const CandidateSpec = decision.CandidateSpec;
+pub const CandidateResult = decision.CandidateResult;
+pub const SchemaType = decision.SchemaType;
+
 /// Semantic version of the Zeno runtime.
 pub const version = std.SemanticVersion{
     .major = 0,
@@ -37,6 +51,13 @@ pub const SpecialTokens = struct {
     pub const unk: u32 = 3;
     pub const mask: u32 = 4;
 };
+
+test {
+    _ = decision;
+    _ = tensor;
+    _ = quant;
+    _ = ops;
+}
 
 test "model configuration invariants" {
     try std.testing.expectEqual(@as(usize, 256), ModelConfig.canvas_length);
