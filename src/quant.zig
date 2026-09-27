@@ -188,6 +188,66 @@ pub fn dotRowQ6_K(blocks: []const BlockQ6_K, x: []const f32) f32 {
     return sum;
 }
 
+/// Computes dot product between a row of Q4_K blocks and an f32 vector x of equal element length.
+pub fn dotRowQ4_K(blocks: []const BlockQ4_K, x: []const f32) f32 {
+    const total_elements = blocks.len * QK_K;
+    std.debug.assert(x.len == total_elements);
+
+    var sum: f32 = 0.0;
+    var x_idx: usize = 0;
+    for (blocks) |block| {
+        const d: f32 = @floatCast(block.d);
+        const min: f32 = @floatCast(block.dmin);
+
+        var is: usize = 0;
+        var q_idx: usize = 0;
+        var j: usize = 0;
+        while (j < QK_K) : (j += 64) {
+            var sc: u8 = undefined;
+            var m: u8 = undefined;
+
+            getScaleMinK4(is + 0, &block.scales, &sc, &m);
+            const d1 = d * @as(f32, @floatFromInt(sc));
+            const m1 = min * @as(f32, @floatFromInt(m));
+
+            getScaleMinK4(is + 1, &block.scales, &sc, &m);
+            const d2 = d * @as(f32, @floatFromInt(sc));
+            const m2 = min * @as(f32, @floatFromInt(m));
+
+            const q_slice = block.qs[q_idx .. q_idx + 32];
+            for (0..32) |l| {
+                const val1 = d1 * @as(f32, @floatFromInt(q_slice[l] & 0x0F)) - m1;
+                sum += val1 * x[x_idx + l];
+            }
+            for (0..32) |l| {
+                const val2 = d2 * @as(f32, @floatFromInt(q_slice[l] >> 4)) - m2;
+                sum += val2 * x[x_idx + 32 + l];
+            }
+
+            x_idx += 64;
+            q_idx += 32;
+            is += 2;
+        }
+    }
+    return sum;
+}
+
+/// Computes dot product between a row of Q8_0 blocks and an f32 vector x of equal element length.
+pub fn dotRowQ8_0(blocks: []const BlockQ8_0, x: []const f32) f32 {
+    const total_elements = blocks.len * QK8_0;
+    std.debug.assert(x.len == total_elements);
+
+    var sum: f32 = 0.0;
+    for (blocks, 0..) |block, i| {
+        const d: f32 = @floatCast(block.d);
+        const x_start = i * QK8_0;
+        for (0..QK8_0) |j| {
+            sum += (@as(f32, @floatFromInt(block.qs[j])) * d) * x[x_start + j];
+        }
+    }
+    return sum;
+}
+
 test "Block sizes match GGML specifications" {
     try std.testing.expectEqual(@as(usize, 144), @sizeOf(BlockQ4_K));
     try std.testing.expectEqual(@as(usize, 210), @sizeOf(BlockQ6_K));
@@ -252,3 +312,56 @@ test "dequantizeRowQ6_K and dotRowQ6_K equivalence" {
     const computed_dot = dotRowQ6_K(&blocks, &x);
     try std.testing.expectApproxEqAbs(expected_dot, computed_dot, 1e-4);
 }
+
+test "dequantizeRowQ4_K and dotRowQ4_K equivalence" {
+    const block = BlockQ4_K{
+        .d = @floatCast(0.5),
+        .dmin = @floatCast(0.1),
+        .scales = @splat(3),
+        .qs = @splat(0x57),
+    };
+    var dst: [256]f32 = undefined;
+    const blocks = [_]BlockQ4_K{block};
+    dequantizeRowQ4_K(&blocks, &dst);
+
+    var x: [256]f32 = undefined;
+    for (&x, 0..) |*val, idx| {
+        val.* = if (idx % 3 == 0) 1.5 else -0.5;
+    }
+
+    var expected_dot: f32 = 0.0;
+    for (dst, x) |d_val, x_val| {
+        expected_dot += d_val * x_val;
+    }
+
+    const computed_dot = dotRowQ4_K(&blocks, &x);
+    try std.testing.expectApproxEqAbs(expected_dot, computed_dot, 1e-3);
+}
+
+test "dequantizeRowQ8_0 and dotRowQ8_0 equivalence" {
+    var block = BlockQ8_0{
+        .d = @floatCast(0.25),
+        .qs = @splat(0),
+    };
+    block.qs[0] = 5;
+    block.qs[1] = -10;
+    block.qs[31] = 20;
+
+    var dst: [32]f32 = undefined;
+    const blocks = [_]BlockQ8_0{block};
+    dequantizeRowQ8_0(&blocks, &dst);
+
+    var x: [32]f32 = undefined;
+    for (&x, 0..) |*val, idx| {
+        val.* = @as(f32, @floatFromInt(idx)) * 0.1;
+    }
+
+    var expected_dot: f32 = 0.0;
+    for (dst, x) |d_val, x_val| {
+        expected_dot += d_val * x_val;
+    }
+
+    const computed_dot = dotRowQ8_0(&blocks, &x);
+    try std.testing.expectApproxEqAbs(expected_dot, computed_dot, 1e-4);
+}
+

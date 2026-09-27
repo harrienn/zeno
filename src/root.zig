@@ -12,6 +12,8 @@ pub const gguf = @import("gguf.zig");
 pub const model = @import("model.zig");
 pub const tokenizer = @import("tokenizer.zig");
 pub const canvas = @import("canvas.zig");
+pub const infer = @import("infer.zig");
+pub const engine = @import("engine.zig");
 
 // Re-export common types
 pub const Tensor = tensor.Tensor;
@@ -26,6 +28,7 @@ pub const DiffusionGemmaModel = model.DiffusionGemmaModel;
 pub const Tokenizer = tokenizer.Tokenizer;
 pub const TokenId = tokenizer.TokenId;
 pub const Canvas = canvas.Canvas;
+pub const DecisionEngine = engine.DecisionEngine;
 
 /// Semantic version of the Zeno runtime.
 pub const version = std.SemanticVersion{
@@ -70,6 +73,8 @@ test {
     _ = model;
     _ = tokenizer;
     _ = canvas;
+    _ = infer;
+    _ = engine;
 }
 
 test "model configuration invariants" {

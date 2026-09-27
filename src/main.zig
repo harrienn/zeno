@@ -15,17 +15,72 @@ pub fn main(init: std.process.Init) !void {
         zeno.version.minor,
         zeno.version.patch,
     });
-    try stdout_writer.print("Config: canvas={d} tokens | vocab={d} | d_model={d} | layers={d} | experts={d} (top-{d})\n", .{
-        zeno.ModelConfig.canvas_length,
-        zeno.ModelConfig.vocab_size,
-        zeno.ModelConfig.embedding_dim,
-        zeno.ModelConfig.num_layers,
-        zeno.ModelConfig.num_experts,
-        zeno.ModelConfig.num_active_experts,
-    });
 
     const args = try init.minimal.args.toSlice(arena);
-    if (args.len > 1) {
+    if (args.len > 1 and std.mem.eql(u8, args[1], "decide")) {
+        if (args.len < 4) {
+            try stdout_writer.print("Usage: zeno decide <path/to/model.gguf> <query> [cand1] [cand2] ...\n", .{});
+            try stdout_writer.flush();
+            return;
+        }
+
+        const model_path = args[2];
+        const query = args[3];
+
+        var candidates_list: std.ArrayList(zeno.CandidateSpec) = .empty;
+        if (args.len > 4) {
+            for (args[4..]) |cand_str| {
+                try candidates_list.append(arena, .{ .token = cand_str, .label = cand_str });
+            }
+        } else {
+            // Default boolean candidates
+            try candidates_list.append(arena, .{ .token = "Yes", .label = "Yes" });
+            try candidates_list.append(arena, .{ .token = "No", .label = "No" });
+        }
+
+        try stdout_writer.print("Initializing decision engine with model: {s}...\n", .{model_path});
+        try stdout_writer.flush();
+
+        var engine = zeno.DecisionEngine.init(arena, model_path) catch |err| {
+            try stdout_writer.print("Error initializing engine: {}\n", .{err});
+            try stdout_writer.flush();
+            return;
+        };
+        defer engine.deinit();
+
+        const req = zeno.DecisionRequest{
+            .query = query,
+            .schema_type = .boolean,
+            .candidates = candidates_list.items,
+            .step_cap = 1,
+            .temperature = 1.0,
+            .entropy_threshold = 0.5,
+        };
+
+        const resp = engine.decide(arena, req) catch |err| {
+            try stdout_writer.print("Decision evaluation error: {}\n", .{err});
+            try stdout_writer.flush();
+            return;
+        };
+
+        try stdout_writer.print("\n--- Decision Result ---\n", .{});
+        try stdout_writer.print("Query:               \"{s}\"\n", .{query});
+        try stdout_writer.print("Decision:            {s}\n", .{resp.decision});
+        try stdout_writer.print("Decision Prob:       {d:.4}\n", .{resp.decision_probability});
+        try stdout_writer.print("Entropy (nats):      {d:.4}\n", .{resp.entropy_nats});
+        try stdout_writer.print("Normalized Entropy:  {d:.4}\n", .{resp.normalized_entropy});
+        try stdout_writer.print("Uncertain:           {}\n", .{resp.uncertain});
+        try stdout_writer.print("Steps:               {d}\n", .{resp.steps_executed});
+        try stdout_writer.print("Candidates:\n", .{});
+        for (resp.candidates) |c| {
+            try stdout_writer.print("  - {s} (ID {d}): prob={d:.4}, raw_logit={d:.4}\n", .{
+                c.label,
+                c.token_id,
+                c.probability,
+                c.raw_logit,
+            });
+        }
+    } else if (args.len > 1) {
         var model_path: []const u8 = args[1];
         if (std.mem.eql(u8, args[1], "info") and args.len > 2) {
             model_path = args[2];
@@ -73,7 +128,17 @@ pub fn main(init: std.process.Init) !void {
         });
         try stdout_writer.print("Model inspection successful.\n", .{});
     } else {
-        try stdout_writer.print("\nUsage: zeno [info] <path/to/model.gguf>\n", .{});
+        try stdout_writer.print("Config: canvas={d} tokens | vocab={d} | d_model={d} | layers={d} | experts={d} (top-{d})\n", .{
+            zeno.ModelConfig.canvas_length,
+            zeno.ModelConfig.vocab_size,
+            zeno.ModelConfig.embedding_dim,
+            zeno.ModelConfig.num_layers,
+            zeno.ModelConfig.num_experts,
+            zeno.ModelConfig.num_active_experts,
+        });
+        try stdout_writer.print("\nUsage:\n", .{});
+        try stdout_writer.print("  zeno [info] <path/to/model.gguf>\n", .{});
+        try stdout_writer.print("  zeno decide <path/to/model.gguf> \"<query>\" [cand1] [cand2] ...\n", .{});
     }
 
     try stdout_writer.flush();
