@@ -14,6 +14,7 @@ pub const tokenizer = @import("tokenizer.zig");
 pub const canvas = @import("canvas.zig");
 pub const infer = @import("infer.zig");
 pub const engine = @import("engine.zig");
+pub const fixture = @import("fixture.zig");
 
 // Re-export common types
 pub const Tensor = tensor.Tensor;
@@ -29,6 +30,7 @@ pub const Tokenizer = tokenizer.Tokenizer;
 pub const TokenId = tokenizer.TokenId;
 pub const Canvas = canvas.Canvas;
 pub const DecisionEngine = engine.DecisionEngine;
+pub const GoldenFixture = fixture.GoldenFixture;
 
 /// Semantic version of the Zeno runtime.
 pub const version = std.SemanticVersion{

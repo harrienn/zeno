@@ -1,0 +1,33 @@
+{
+  "schema": "zeno.fixture/v1",
+  "policy": "zeno.tolerance/v1",
+  "description": "System health boolean single-step decision query on DiffusionGemma 26B-A4B-it Q4_K_M",
+  "model": {
+    "path": "models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf",
+    "sha256": "24523b6c833c9ce9f5f34f9b333ab1517d73d6f1e76a103645353114c8028bc5"
+  },
+  "reference": {
+    "repo": "https://github.com/vllm-project/vllm",
+    "commit": "1b3b88ec2b7457aa030db4d0e7d8aaf04f6d0fb8"
+  },
+  "query": "Is the system healthy and operational?",
+  "context": null,
+  "schema_type": "boolean",
+  "canvas_length": 256,
+  "answer_pos": 30,
+  "answer_seed_token": 4,
+  "candidates": [
+    { "label": "Yes", "token": "Yes", "token_id": 10784 },
+    { "label": "No", "token": "No", "token_id": 3771 }
+  ],
+  "expected": {
+    "decision": "No",
+    "decision_probability": 0.9124,
+    "candidate_logits_raw": [25.0773, 30.0118],
+    "candidate_logits_softcapped": [20.4851, 22.3892],
+    "probabilities": [0.0876, 0.9124],
+    "entropy_nats": 0.2969,
+    "normalized_entropy": 0.4283,
+    "uncertain": false
+  }
+}

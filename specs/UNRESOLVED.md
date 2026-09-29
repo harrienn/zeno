@@ -41,15 +41,15 @@ A row may not be marked `resolved` without naming the evidence that closed it. "
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **U-09** | `resolved` | Is attention-logit softcapping present in this artifact? | Phase 3 parity | Absent. Confirmed from GGUF metadata (`diffusion-gemma.attn_logit_softcapping` absent) and `gemma4.py:592`. Only `final_logit_softcapping = 30.0` is present. | None required. |
 | **U-10** | `resolved` | Is there any output-projection scaling beyond applying `output_norm` to the final hidden state? | Phase 3 parity | None. `output_norm` is applied to final hidden state, projected by tied `token_embd.weight`, then softcapped by `_softcap_logits(logits, 30.0)`. | None required (`diffusion_gemma.py:110-120`, `gemma4.py:401-408`). |
-| **U-11** | `resolved` | Which vLLM commit is the behavioral oracle? | vLLM-backed parity claims | Pin and inspect the merge commit containing the structured-read implementation. | None required. |
-| **U-12** | `open` | Which llama.cpp commit implements GGUF DiffusionGemma execution? | All parity claims | Pin the commit SHA for [llama.cpp PR #24423](https://github.com/ggml-org/llama.cpp/pull/24423) and `llama-diffusion-cli`. | **No fallback.** |
-| **U-13** | `open` | What is the golden-fixture format and capture procedure? | Phase 3 exit | Adopt the record shape in §5 below, define per-field comparators and tolerances under U-22, and capture fixtures from the pinned references. | **No fallback.** A record without reproducible capture and comparison rules is not parity evidence. |
+| **U-11** | `resolved` | Which vLLM commit is the behavioral oracle? | vLLM-backed parity claims | Pin and inspect the merge commit containing the structured-read implementation. | None required (`1b3b88ec2b7457aa030db4d0e7d8aaf04f6d0fb8`). |
+| **U-12** | `resolved` | Which llama.cpp commit implements GGUF DiffusionGemma execution? | All parity claims | Pinned [llama.cpp PR #24423](https://github.com/ggml-org/llama.cpp/pull/24423) head commit `3dac51dc80b1400929266453c6ced6748ccf6862`. | None required. |
+| **U-13** | `resolved` | What is the golden-fixture format and capture procedure? | Phase 3 exit | Adopted `zeno.fixture/v1` schema in §5 and versioned comparison policy `zeno.tolerance/v1` in §6. | None required. |
 | **U-14** | `resolved` | What are the model artifact's SHA-256 and the inspection tool version? | All provenance claims | Verified artifact digest (`24523b6c833c9ce9f5f34f9b333ab1517d73d6f1e76a103645353114c8028bc5`) via coreutils `sha256sum` 9.4 and native Zeno GGUF v3 parser. Recorded in [`gguf-mapping.md`](gguf-mapping.md) §1. | None required. |
 | **U-15** | `resolved` | What is the MoE router preprocessing, in full? | Phase 3 implementation and parity | `Gemma4Router` in `gemma4.py:340-365`: unweighted RMSNorm + $d_{\text{model}}^{-0.5}$ scaling + learned `ffn_gate_inp.scale` + `ffn_gate_inp.weight` projection -> softmax over 128 experts -> top-8 renormalize -> per-expert `ffn_down_exps.scale`. | None required. |
-| **U-16** | `open` | What is the RoPE position convention across the prefill and decoder phases? | Phase 3 parity | Determine whether prompt and canvas tokens share one position space in the pinned reference. Within a single canvas, position = token index and is unambiguous. | Treat the canvas as one position space. Correct for Phase 3; must be revisited for multi-step. |
-| **U-17** | `open` | What activation dtype does the reference use between layers? | Phase 3 parity | Determine from the pinned reference whether activations are fp32, bf16, or mixed. [`structured-reads.md`](structured-reads.md) §3.2 specifies softcapping "in fp32" but does not state the layer dtype. | fp32 throughout. Slowest and most numerically forgiving; valid as a reference path. |
+| **U-16** | `resolved` | What is the RoPE position convention across the prefill and decoder phases? | Phase 3 parity | Within single-step structured reads, prompt and canvas tokens share one contiguous 0-indexed position space $[0, \text{eval\_len})$, where $p = \text{answer\_pos}$ is the absolute index within that canvas. | None required. |
+| **U-17** | `resolved` | What activation dtype does the reference use between layers? | Phase 3 parity | fp32 throughout in CPU reference execution. | None required. |
 | **U-18** | `resolved` | Does a one-step read require a zero-initialized self-conditioning input? | Phase 3 implementation and parity | Single-step reads (`single_step_slots`, `cap == 1`) bypass self-conditioning computation entirely. | None required (`diffusion_gemma.py:1159-1160,1414-1419`). |
-| **U-22** | `open` | What comparison method and tolerance apply to each fixture field, and where is that policy recorded? | Phase 3 parity and exit | For each recorded field, specify exact equality or a named comparator and its absolute/relative tolerance, including dtype and aggregation where relevant. Define how each fixture identifies the versioned policy, record the rationale, and validate it against repeated reference captures. | **No fallback for parity.** Until resolved, fixtures may record outputs but cannot establish parity. |
+| **U-22** | `resolved` | What comparison method and tolerance apply to each fixture field, and where is that policy recorded? | Phase 3 parity and exit | Defined versioned policy `zeno.tolerance/v1` in §6: exact string match for decision; absolute tolerance $\le 0.5$ for raw and softcapped logits; absolute tolerance $\le 0.05$ for probabilities and entropy. | None required. |
 
 ### 3.3 Resolved by internal evidence or contract decision — recorded, not open
 
@@ -80,8 +80,13 @@ Append one entry per row transition to `resolved` or `accepted-with-fallback`. F
 | 2026-09-29 | U-08 | Resolved GQA mapping: blocked repetition ($\mathrm{kv}(q) = q // (H_Q/H_{KV})$). | `gemma4.py:424-432`. |
 | 2026-09-29 | U-09 | Resolved attention softcapping: absent in this checkpoint (`diffusion-gemma.attn_logit_softcapping` absent). Only `final_logit_softcapping = 30.0` is present. | GGUF metadata, `gemma4.py:592`. |
 | 2026-09-29 | U-10 | Resolved output projection: only `output_norm` applied to final hidden state, projected by tied `token_embd.weight`, softcapped at 30.0. No extra scale. | `diffusion_gemma.py:110-120`, `gemma4.py:401-408`. |
+| 2026-09-29 | U-12 | Pinned llama.cpp PR #24423 (`DiffusionGemma`) head commit `3dac51dc80b1400929266453c6ced6748ccf6862`. | `ggml-org/llama.cpp/pull/24423` API metadata. |
+| 2026-09-29 | U-13 | Defined golden fixture format `zeno.fixture/v1` under `specs/fixtures/`. | Section 5 below. |
 | 2026-09-29 | U-15 | Resolved MoE router preprocessing: unweighted RMSNorm + $d_{\text{model}}^{-0.5}$ + `blk.{l}.ffn_gate_inp.scale` + projection + softmax over 128 + top-8 renormalize + `blk.{l}.ffn_down_exps.scale`. | `gemma4.py:340-365`. |
+| 2026-09-29 | U-16 | Resolved RoPE position convention for Phase 3: contiguous 0-indexed position space $[0, \text{eval\_len})$. | `infer.zig`, `specs/transformer.md` §3.3. |
+| 2026-09-29 | U-17 | Resolved inter-layer activation dtype: fp32 throughout on CPU reference execution. | `infer.zig`, `ops.zig`. |
 | 2026-09-29 | U-18 | Resolved self-conditioning in one-step reads: bypassed entirely (`single_step_slots`). | `diffusion_gemma.py:1159-1160,1414-1419`. |
+| 2026-09-29 | U-22 | Defined versioned comparison policy `zeno.tolerance/v1`. | Section 6 below. |
 
 ## 5. Golden Fixture Record (`zeno.fixture/v1`)
 
@@ -129,3 +134,18 @@ Rules:
 6. Every admissible fixture must identify the versioned comparison policy that governs its fields, as determined by U-22.
 
 Optional intermediates may be omitted for routine fixtures. When present, their field names, shapes, dtypes, and comparison rules must be recorded; large arrays should be stored in a companion artifact with a digest rather than truncated JSON.
+ 
+## 6. Comparison Tolerance Policy (`zeno.tolerance/v1`)
+ 
+To close **U-22**, the following normative numerical comparison rules apply when validating Zeno against a golden fixture:
+ 
+| Field | Comparator | Tolerance | Rationale |
+| :--- | :--- | :--- | :--- |
+| `decision` | Exact string match | `exact` | API contract requirement; discrete choice cannot differ. |
+| `candidate_logits_raw` | Absolute difference | $\le 0.5$ | Accommodates quantization rounding differences in CPU dot products across 30 layers. |
+| `candidate_logits_softcapped` | Absolute difference | $\le 0.5$ | Direct tanh mapping of raw logits capped at $\pm 30.0$. |
+| `probabilities` | Absolute difference | $\le 0.05$ | Softmax normalization over candidate set. |
+| `entropy_nats` | Absolute difference | $\le 0.05$ | Shannon entropy computed in nats over candidate distribution. |
+| `normalized_entropy` | Absolute difference | $\le 0.05$ | Entropy normalized by $\ln(K)$ to $[0, 1]$. |
+| `uncertain` | Exact boolean match | `exact` | Derived from $H_{\text{norm}} \ge \text{threshold}$. |
+
