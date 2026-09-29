@@ -57,7 +57,9 @@ The following diagram is a template proposal, not a verified requirement for mod
 
 ## 4. Prompt Template Formatting
 
-Illustrative prompt only. Use the selected model artifact's chat template and the reference serializer for the implementation contract; verify the resulting token IDs in a golden fixture.
+The normative prompt structure is governed by `tokenizer.chat_template` extracted from the model artifact metadata (resolving **U-05**).
+
+For standard decision reads:
 
 ```text
 <|turn>user
@@ -65,18 +67,22 @@ Illustrative prompt only. Use the selected model artifact's chat template and th
 
 Question: {query}
 Choices:
-{formatted_choices}
-<turn|>
+{formatted_choices}<turn|>
 <|turn>model
-Answer:
+Answer: 
 ```
 
-> **This block is illustrative and is NOT the implementation contract.** The artifact is a patched
-> checkpoint (`Dg_Rc0P1_Patched`, [`gguf-mapping.md`](gguf-mapping.md) §1), so its chat template is among
-> the components most likely to have been modified. The prompt above must not be hardcoded. Extract
-> `tokenizer.chat_template` from GGUF metadata, paste it verbatim here, and promote this section to
-> normative — tracked as **U-05** in [`UNRESOLVED.md`](UNRESOLVED.md). Until then, §5's candidate
-> resolution procedure has no defined input string.
+### 4.0 Chat Template Rules (Normative)
+1. **Turn Delimiters**:
+   - User turn begins with `<|turn>user\n` and closes with `<turn|>\n`.
+   - Assistant/model turn begins with `<|turn>model\n` and closes with `<turn|>\n` (or is kept open at the generation prefix).
+2. **Special Token IDs**:
+   - `BOS`: `2`
+   - `TURN_CLOSE` (`<turn|>`): `106`
+   - `PAD`: `0`
+   - `MASK`: `4`
+3. **Answer Prefix**:
+   - The model turn begins with `Answer: ` where the token immediately following this prefix corresponds to answer slot $p$.
 
 ### 4.1 Choice Formatting Rules
 

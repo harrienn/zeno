@@ -148,31 +148,27 @@ The block is not specified by a single sum of attention, dense FFN, and MoE outp
 
 | # | Operation | Input source | Norm applied | Residual added | Status |
 | :-- | :--- | :--- | :--- | :--- | :--- |
-| 1 | Input RMSNorm | block input $x_l$ | `attn_norm` | — | `unverified` |
-| 2 | Q/K projection | post-norm $x$ | — | — | `unverified` |
-| 3 | Per-head Q/K norm | projected Q, K | `attn_q_norm`, `attn_k_norm` | — | `verified` (structure only) |
-| 4 | RoPE | Q, K | — | — | `verified` (structure only) |
-| 5 | Attention + $W_O$ | Q, K, V | — | — | `unverified` |
-| 6 | Post-attention norm | attention output | `post_attention_norm` | — | `unverified` |
-| 7 | Attention residual add | slot 6 output | — | $x_l$ | `unverified` |
-| 8 | FFN input norm | slot 7 output | `ffn_norm` | — | `unverified` |
-| 9 | Dense MLP branch | slot 8 output | per config | — | `unverified` (activation: U-07) |
-| 10 | MoE router input | **slot 7 output** (residual input, not slot 8) | router preprocessing | — | `unverified` (op: U-15) |
-| 11 | Expert branch | expert input with own pre-FFN norm | `pre_ffw_norm_2`? | — | `unverified` |
-| 12 | Branch combination | slots 9 + 11 | — | — | `unverified` |
-| 13 | Post-FFN norms | slot 12 output | `post_ffw_norm`, `_1`, `_2` | — | `unverified` |
-| 14 | Layer output scale | slot 13 output | `layer_output_scale` | — | `unverified` |
-| 15 | FFN residual add | slot 14 output | — | slot 7 output | `unverified` |
+| 1 | Input RMSNorm | block input $x_l$ | `attn_norm` | — | `verified` (`gemma4.py:713`) |
+| 2 | Q/K/V projection | post-norm $x$ | — | — | `verified` (`gemma4.py:539-540`; Global ties $V=K$ before $K$-norm) |
+| 3 | Per-head Q/K norm | projected Q, K, V | `attn_q_norm`, `attn_k_norm` | — | `verified` (`gemma4.py:543,547`; $V$ receives unweighted RMSNorm `:552`) |
+| 4 | RoPE | Q, K | — | — | `verified` (`gemma4.py:549`; NeoX style on Q and K; V has no RoPE) |
+| 5 | Attention + $W_O$ | Q, K, V | — | — | `verified` (`gemma4.py:554-556`; blocked GQA repeat, $W_O$ projection) |
+| 6 | Post-attention norm | attention output | `post_attention_norm` | — | `verified` (`gemma4.py:719`) |
+| 7 | Attention residual add | slot 6 output | — | $x_l$ | `verified` (`gemma4.py:720`, produces $x_{\text{mid}}$) |
+| 8 | Dense FFN input norm | slot 7 output ($x_{\text{mid}}$) | `ffn_norm` | — | `verified` (`gemma4.py:725`) |
+| 9 | Dense MLP + post-norm 1 | slot 8 output | `post_ffw_norm_1` | — | `verified` (`gemma4.py:726-727`; GeGLU `gelu_pytorch_tanh`) |
+| 10 | MoE router | slot 7 output ($x_{\text{mid}}$) | unweighted RMSNorm + `ffn_gate_inp.scale` | — | `verified` (`gemma4.py:360-363,732`; top-8 renormalize + `ffn_down_exps.scale`) |
+| 11 | Expert branch + post-norm 2 | slot 7 output ($x_{\text{mid}}$) | `pre_ffw_norm_2` (pre), `post_ffw_norm_2` (post) | — | `verified` (`gemma4.py:730,735`; 8 experts evaluated) |
+| 12 | Branch combination | slots 9 + 11 | — | — | `verified` (`gemma4.py:736`; `hidden_states_1 + hidden_states_2`) |
+| 13 | Combined post-FFN norm | slot 12 output | `post_ffw_norm` | — | `verified` (`gemma4.py:740`) |
+| 14 | FFN residual add | slot 13 output | — | slot 7 output ($x_{\text{mid}}$) | `verified` (`gemma4.py:741`) |
+| 15 | Layer output scale | slot 14 output | — | — | `verified` (`gemma4.py:748`; `layer_output_scale.weight`) |
 
-Two entries are worth flagging because they are the ones most implementations get wrong:
+The exact sequence was established from `vllm/model_executor/models/gemma4.py` (commit `1b3b88e`):
 
-* **Slot 10** — the MoE router consumes the *attention residual* (slot 7), not the FFN-normalized input (slot 8). The expert input separately receives its own pre-FFN norm. Using slot 8 for routing is a plausible-looking error.
-* **Slots 13–15** — three distinct post-FFN norms exist in the artifact, plus an encoder output scale
-  (`enc_layer_output_scale`). Their count is known from [`gguf-mapping.md`](gguf-mapping.md) §4.1; their
-  order and whether the encoder scale applies during a decode read are not.
-
-Four of these per-block tensors are not currently mapped into any runtime structure, so slots 11, 13, and
-14 cannot be executed as specified until that mapping exists.
+* **Slot 10** — the MoE router consumes the *attention residual* $x_{\text{mid}}$ (slot 7), not the FFN-normalized input (slot 8). Router preprocessing applies unweighted RMSNorm, scales by $d_{\text{model}}^{-0.5}$, multiplies by learned dimension scale `blk.{l}.ffn_gate_inp.scale`, projects via `blk.{l}.ffn_gate_inp.weight`, computes softmax over all 128 experts, selects top 8, renormalizes top-8 weights to sum to 1.0, and scales by per-expert `blk.{l}.ffn_down_exps.scale`.
+* **Slots 8–13** — Dense MLP has `pre_feedforward_layernorm` (`ffn_norm`) before MLP and `post_feedforward_layernorm_1` (`post_ffw_norm_1`) after MLP. MoE has `pre_feedforward_layernorm_2` (`pre_ffw_norm_2`) before MoE and `post_feedforward_layernorm_2` (`post_ffw_norm_2`) after MoE. The two branches are summed (slot 12), and the sum is normalized by `post_feedforward_layernorm` (`post_ffw_norm`, slot 13).
+* **Slots 14–15** — The attention residual $x_{\text{mid}}$ is added to slot 13 output (slot 14), and the layer output is scaled by `blk.{l}.layer_output_scale.weight` (slot 15). Decoder reads use `layer_output_scale`; `enc_layer_output_scale` is strictly for encoder mode.
 
 ---
 
