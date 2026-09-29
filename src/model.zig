@@ -26,20 +26,27 @@ pub const TransformerLayer = struct {
     k_weight: TensorInfo,
     v_weight: ?TensorInfo, // Null for global layers (layers 5, 11, 17, 23, 29) where V = K weights
     o_weight: TensorInfo,
-    post_attention_norm: ?TensorInfo = null,
+    post_attention_norm: TensorInfo,
 
     // Shared dense FFN sub-layer
     ffn_norm: TensorInfo,
     ffn_gate: TensorInfo,
     ffn_up: TensorInfo,
     ffn_down: TensorInfo,
+    post_ffw_norm_1: TensorInfo,
 
     // MoE routed sub-layer
+    pre_ffw_norm_2: TensorInfo,
     router_gate: TensorInfo,
-    router_scale: ?TensorInfo = null,
+    router_scale: TensorInfo,
     expert_gate_up: TensorInfo,
     expert_down: TensorInfo,
-    expert_down_scale: ?TensorInfo = null,
+    expert_down_scale: TensorInfo,
+    post_ffw_norm_2: TensorInfo,
+
+    // Block-level output norm and scale
+    post_ffw_norm: TensorInfo,
+    layer_output_scale: TensorInfo,
 };
 
 pub const ModelLoadError = error{
@@ -151,7 +158,7 @@ pub const DiffusionGemmaModel = struct {
             const o_weight = gfile.findTensor(o_weight_name) orelse return error.MissingTensor;
 
             const post_attn_name = try std.fmt.bufPrint(&name_buf, "blk.{d}.post_attention_norm.weight", .{l});
-            const post_attn = gfile.findTensor(post_attn_name);
+            const post_attn = gfile.findTensor(post_attn_name) orelse return error.MissingTensor;
 
             const ffn_norm_name = try std.fmt.bufPrint(&name_buf, "blk.{d}.ffn_norm.weight", .{l});
             const ffn_norm = gfile.findTensor(ffn_norm_name) orelse return error.MissingTensor;
@@ -165,11 +172,17 @@ pub const DiffusionGemmaModel = struct {
             const ffn_down_name = try std.fmt.bufPrint(&name_buf, "blk.{d}.ffn_down.weight", .{l});
             const ffn_down = gfile.findTensor(ffn_down_name) orelse return error.MissingTensor;
 
+            const post_ffw_1_name = try std.fmt.bufPrint(&name_buf, "blk.{d}.post_ffw_norm_1.weight", .{l});
+            const post_ffw_1 = gfile.findTensor(post_ffw_1_name) orelse return error.MissingTensor;
+
+            const pre_ffw_2_name = try std.fmt.bufPrint(&name_buf, "blk.{d}.pre_ffw_norm_2.weight", .{l});
+            const pre_ffw_2 = gfile.findTensor(pre_ffw_2_name) orelse return error.MissingTensor;
+
             const router_gate_name = try std.fmt.bufPrint(&name_buf, "blk.{d}.ffn_gate_inp.weight", .{l});
             const router_gate = gfile.findTensor(router_gate_name) orelse return error.MissingTensor;
 
             const router_scale_name = try std.fmt.bufPrint(&name_buf, "blk.{d}.ffn_gate_inp.scale", .{l});
-            const router_scale = gfile.findTensor(router_scale_name);
+            const router_scale = gfile.findTensor(router_scale_name) orelse return error.MissingTensor;
 
             const exp_gate_up_name = try std.fmt.bufPrint(&name_buf, "blk.{d}.ffn_gate_up_exps.weight", .{l});
             const exp_gate_up = gfile.findTensor(exp_gate_up_name) orelse return error.MissingTensor;
@@ -178,7 +191,16 @@ pub const DiffusionGemmaModel = struct {
             const exp_down = gfile.findTensor(exp_down_name) orelse return error.MissingTensor;
 
             const exp_down_scale_name = try std.fmt.bufPrint(&name_buf, "blk.{d}.ffn_down_exps.scale", .{l});
-            const exp_down_scale = gfile.findTensor(exp_down_scale_name);
+            const exp_down_scale = gfile.findTensor(exp_down_scale_name) orelse return error.MissingTensor;
+
+            const post_ffw_2_name = try std.fmt.bufPrint(&name_buf, "blk.{d}.post_ffw_norm_2.weight", .{l});
+            const post_ffw_2 = gfile.findTensor(post_ffw_2_name) orelse return error.MissingTensor;
+
+            const post_ffw_name = try std.fmt.bufPrint(&name_buf, "blk.{d}.post_ffw_norm.weight", .{l});
+            const post_ffw = gfile.findTensor(post_ffw_name) orelse return error.MissingTensor;
+
+            const layer_out_scale_name = try std.fmt.bufPrint(&name_buf, "blk.{d}.layer_output_scale.weight", .{l});
+            const layer_out_scale = gfile.findTensor(layer_out_scale_name) orelse return error.MissingTensor;
 
             layers[l] = .{
                 .layer_index = l,
@@ -195,11 +217,16 @@ pub const DiffusionGemmaModel = struct {
                 .ffn_gate = ffn_gate,
                 .ffn_up = ffn_up,
                 .ffn_down = ffn_down,
+                .post_ffw_norm_1 = post_ffw_1,
+                .pre_ffw_norm_2 = pre_ffw_2,
                 .router_gate = router_gate,
                 .router_scale = router_scale,
                 .expert_gate_up = exp_gate_up,
                 .expert_down = exp_down,
                 .expert_down_scale = exp_down_scale,
+                .post_ffw_norm_2 = post_ffw_2,
+                .post_ffw_norm = post_ffw,
+                .layer_output_scale = layer_out_scale,
             };
         }
 
