@@ -64,7 +64,7 @@ pub const Tokenizer = struct {
         if (tokens_entry.offset + 12 > data.len) return error.MalformedTokensMetadata;
 
         const sub_type = std.mem.readInt(u32, data[tokens_entry.offset..][0..4], .little);
-        if (sub_type != @intFromEnum(gguf.MetadataValueType.string)) {
+        if (sub_type != @backingInt(gguf.MetadataValueType.string)) {
             return error.MalformedTokensMetadata;
         }
 
@@ -440,4 +440,3 @@ test "Tokenizer: verify encode() handles control tokens and BPE merges" {
     }
     try std.testing.expect(found_turn_close);
 }
-

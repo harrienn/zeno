@@ -115,6 +115,17 @@ pub inline fn geluTanh(x: f32) f32 {
     return 0.5 * x * (1.0 + std.math.tanh(inner));
 }
 
+/// GeGLU activation branch (used in Gemma 4 MLP and MoE experts):
+/// out_i = geluTanh(gate_i) * up_i
+pub fn geglu(gate: []const f32, up: []const f32, out: []f32) void {
+    std.debug.assert(gate.len == up.len);
+    std.debug.assert(gate.len == out.len);
+
+    for (gate, up, 0..) |g, u, i| {
+        out[i] = geluTanh(g) * u;
+    }
+}
+
 /// SwiGLU activation branch:
 /// out_i = (gate_i * sigmoid(gate_i)) * up_i
 pub fn swiglu(gate: []const f32, up: []const f32, out: []f32) void {

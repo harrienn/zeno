@@ -32,11 +32,22 @@ pub const BlockQ8_0 = extern struct {
     qs: [QK8_0]i8,
 };
 
+/// Number of values in a Q5_0 block.
+pub const QK5_0: usize = 32;
+
+/// Q5_0 block format: 32 5-bit values per block (22 bytes).
+pub const BlockQ5_0 = extern struct {
+    d: f16,
+    qh: [4]u8,
+    qs: [QK5_0 / 2]u8,
+};
+
 // Compile-time byte size assertions matching GGML binary layout.
 comptime {
     std.debug.assert(@sizeOf(BlockQ4_K) == 144);
     std.debug.assert(@sizeOf(BlockQ6_K) == 210);
     std.debug.assert(@sizeOf(BlockQ8_0) == 34);
+    std.debug.assert(@sizeOf(BlockQ5_0) == 22);
 }
 
 /// Helper extracting scale and min factors from Q4_K 12-byte packed scale array.
@@ -248,10 +259,63 @@ pub fn dotRowQ8_0(blocks: []const BlockQ8_0, x: []const f32) f32 {
     return sum;
 }
 
+/// Dequantizes a row of Q5_0 blocks into an f32 destination buffer.
+pub fn dequantizeRowQ5_0(blocks: []const BlockQ5_0, dst: []f32) void {
+    std.debug.assert(dst.len >= blocks.len * QK5_0);
+
+    for (blocks, 0..) |block, b_idx| {
+        const d: f32 = @floatCast(block.d);
+        const qh = std.mem.readInt(u32, &block.qh, .little);
+        const base = b_idx * QK5_0;
+
+        for (0..16) |j| {
+            const shift0 = @as(u5, @intCast(j));
+            const shift1 = @as(u5, @intCast(j + 12));
+            const xh_0: u8 = @as(u8, @truncate((qh >> shift0) << 4)) & 0x10;
+            const xh_1: u8 = @as(u8, @truncate(qh >> shift1)) & 0x10;
+
+            const x0: i32 = @as(i32, (block.qs[j] & 0x0F) | xh_0) - 16;
+            const x1: i32 = @as(i32, (block.qs[j] >> 4) | xh_1) - 16;
+
+            dst[base + j] = @as(f32, @floatFromInt(x0)) * d;
+            dst[base + j + 16] = @as(f32, @floatFromInt(x1)) * d;
+        }
+    }
+}
+
+/// Computes dot product between a row of Q5_0 blocks and an f32 vector x of equal element length.
+pub fn dotRowQ5_0(blocks: []const BlockQ5_0, x: []const f32) f32 {
+    const total_elements = blocks.len * QK5_0;
+    std.debug.assert(x.len == total_elements);
+
+    var total: f32 = 0.0;
+    for (blocks, 0..) |block, b_idx| {
+        const d: f32 = @floatCast(block.d);
+        const qh = std.mem.readInt(u32, &block.qh, .little);
+        const base = b_idx * QK5_0;
+
+        var block_sum: f32 = 0.0;
+        for (0..16) |j| {
+            const shift0 = @as(u5, @intCast(j));
+            const shift1 = @as(u5, @intCast(j + 12));
+            const xh_0: u8 = @as(u8, @truncate((qh >> shift0) << 4)) & 0x10;
+            const xh_1: u8 = @as(u8, @truncate(qh >> shift1)) & 0x10;
+
+            const x0: f32 = @floatFromInt(@as(i32, (block.qs[j] & 0x0F) | xh_0) - 16);
+            const x1: f32 = @floatFromInt(@as(i32, (block.qs[j] >> 4) | xh_1) - 16);
+
+            block_sum += x0 * x[base + j] + x1 * x[base + j + 16];
+        }
+        total += block_sum * d;
+    }
+    return total;
+}
+
 test "Block sizes match GGML specifications" {
     try std.testing.expectEqual(@as(usize, 144), @sizeOf(BlockQ4_K));
     try std.testing.expectEqual(@as(usize, 210), @sizeOf(BlockQ6_K));
     try std.testing.expectEqual(@as(usize, 34), @sizeOf(BlockQ8_0));
+    try std.testing.expectEqual(@as(usize, 22), @sizeOf(BlockQ5_0));
 }
 
 test "dequantizeRowQ8_0: basic correctness" {
@@ -365,3 +429,30 @@ test "dequantizeRowQ8_0 and dotRowQ8_0 equivalence" {
     try std.testing.expectApproxEqAbs(expected_dot, computed_dot, 1e-4);
 }
 
+test "dequantizeRowQ5_0 and dotRowQ5_0 equivalence" {
+    var block = BlockQ5_0{
+        .d = @floatCast(0.125),
+        .qh = [_]u8{ 0b00000001, 0b00000010, 0b00000100, 0b00001000 },
+        .qs = @splat(0),
+    };
+    block.qs[0] = 0x53; // low=3, high=5
+    block.qs[1] = 0x8a; // low=10, high=8
+    block.qs[15] = 0x1f; // low=15, high=1
+
+    var dst: [32]f32 = undefined;
+    const blocks = [_]BlockQ5_0{block};
+    dequantizeRowQ5_0(&blocks, &dst);
+
+    var x: [32]f32 = undefined;
+    for (&x, 0..) |*val, idx| {
+        val.* = @as(f32, @floatFromInt(idx)) * 0.2 - 3.0;
+    }
+
+    var expected_dot: f32 = 0.0;
+    for (dst, x) |d_val, x_val| {
+        expected_dot += d_val * x_val;
+    }
+
+    const computed_dot = dotRowQ5_0(&blocks, &x);
+    try std.testing.expectApproxEqAbs(expected_dot, computed_dot, 1e-4);
+}
