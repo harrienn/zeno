@@ -6,7 +6,7 @@ A research project exploring a lightweight Zig-based, **Jev-style structured dec
 
 ## 1. Overview
 
-Zeno is a research and systems-engineering project intended to become a Zig runtime. Rather than serving as a generic conversational text generation engine, it explores a reproducible, low-latency **"System One" decision engine**—inspired by TypeSafe AI's Jev architecture and powered by Google DeepMind's DiffusionGemma discrete diffusion model. These are project goals; the runtime is not implemented yet.
+Zeno is a research and systems-engineering project building a Zig runtime for reproducible, low-latency **"System One" decisions**—inspired by TypeSafe AI's Jev architecture and powered by Google DeepMind's DiffusionGemma discrete diffusion model. The repository contains an evolving prototype; complete end-to-end inference and reference parity are not yet established.
 
 Agentic workflows and software pipelines can use low-latency, schema-constrained evaluations for routing, intent classification, safety checks, and scoring. Zeno investigates whether discrete diffusion can serve these workloads effectively; comparisons with autoregressive approaches remain to be measured.
 
@@ -79,7 +79,7 @@ Typed Decision Output (Boolean, Categorical, or Ordinal Score)
 
 ## 6. Status & Development
 
-The repository has a minimal Zig build scaffold, a CLI that reports model constants, and basic configuration tests. GGUF loading, tokenization, model execution, and the decision API are not implemented yet.
+The repository has moved beyond the initial build scaffold and includes Zig modules for GGUF parsing, tokenizer data, tensors, quantization, operations, model representation, canvas handling, and an early decision path. These modules do not yet constitute a complete, reference-validated DiffusionGemma inference path. In particular, the input-side tokenizer contract and chat template remain unresolved, and end-to-end correctness, performance, and probability calibration have not been established. See [`PLAN.md`](PLAN.md) and [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) for current gates.
 
 ### Prerequisites
 

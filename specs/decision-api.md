@@ -182,11 +182,11 @@ Reject malformed schemas, fewer than two or more than 32 candidates, duplicate r
 
 A candidate string that is absent from the vocabulary must **not** be reported as `MultiTokenCandidateNotAllowed`; the two conditions have different remediations (choose a different label versus map the label to a one-token code). See [`UNRESOLVED.md`](UNRESOLVED.md).
 
-## 7. Known Gaps in This Specification
+## 6. Known Gaps in This Specification
 
 This contract is not yet implementable end-to-end. The following dependencies are tracked in [`UNRESOLVED.md`](UNRESOLVED.md):
 
-* **U-04** — no `encode()` exists in any phase of [`PLAN.md`](../PLAN.md); the query text cannot yet be tokenized.
+* **U-04** — `encode()` is assigned to Phase 2 of [`PLAN.md`](../PLAN.md), but its pre-tokenization and BPE contract remains unresolved, so query text cannot yet be tokenized faithfully.
 * **U-05** — the artifact's chat template is not captured, so §3 rendering has no normative source.
 * **U-01 / U-02 / U-03** — canvas seeding and tail contents are undefined, so `canvas_tokens_used` and `steps_executed` semantics rest on an unresolved basis.
 

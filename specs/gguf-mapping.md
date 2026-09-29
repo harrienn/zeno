@@ -15,7 +15,7 @@ All values, shapes, and quantization types documented here are directly extracte
 
 These claims are specific to that local file. Its SHA-256 digest and the exact inspection tool/version are not recorded yet; add both before using this table as reproducible provenance. Dimensions below are GGUF/GGML tensor dimensions in stored order, not an implicit row-major `[rows, columns]` convention. Any conversion to a runtime matrix layout must state the transpose/stride mapping explicitly.
 
-> **Provenance is incomplete (U-14).** Until the SHA-256 digest and the inspection tool/version are recorded, every value in this document is a claim about an unnamed file and is not reproducible. The omission is already acknowledged above; it is tracked here so that it cannot be forgotten. Until it is closed, a golden fixture built from this artifact may not cite this document as its evidence (see [`UNRESOLVED.md`](UNRESOLVED.md) §5).
+> **Provenance is incomplete (U-14).** Until the SHA-256 digest and the inspection tool/version are recorded, the file identity and the values attributed to it are not reproducible. Until this is closed, a golden fixture built from this artifact may not cite this document as its evidence (see [`UNRESOLVED.md`](UNRESOLVED.md) §5).
 
 ---
 
@@ -93,7 +93,7 @@ DiffusionGemma alternates between two block types based on `sliding_window_patte
 Each SWA block contains **23 tensors**.
 Each Global block contains **22 tensors** (omits `attn_v.weight`).
 
-Sanity check: $7 + 25 \times 23 + 5 \times 22 = 692$, matching the tensor count in §1. A reader can therefore confirm this inventory is complete rather than trusting it.
+Arithmetic consistency check: $7 + 25 \times 23 + 5 \times 22 = 692$, matching the reported tensor count in §1. This checks the claimed counts against each other; it does not prove that every tensor name, shape, or type is correct. Verify the inventory against the identified artifact when closing U-14.
 
 > **Runtime mapping gap**: the table below lists 23 tensors per block, but a conforming runtime structure must expose *all* of them. If any of `post_ffw_norm`, `post_ffw_norm_1`, `post_ffw_norm_2`, `pre_ffw_norm_2`, `enc_layer_output_scale`, or `layer_output_scale` is absent from the runtime, slots 11 and 13–15 of the ordering table in [`transformer.md`](transformer.md) §4.3 cannot be executed. Six per-block tensors are commonly skipped; none of them are optional for parity.
 

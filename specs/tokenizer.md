@@ -20,20 +20,20 @@ Parameters and special token IDs are extracted directly from `models/diffusionge
 | `tokenizer.ggml.unknown_token_id` | `3` | Unknown token fallback (`<unk>`) |
 | `tokenizer.ggml.padding_token_id` | `0` | Padding placeholder (`<pad>`) |
 | `tokenizer.ggml.mask_token_id` | `4` | Discrete diffusion mask token (`<mask>`); answer-slot seeding is defined separately |
-| `tokenizer.ggml.add_bos_token` | `true` | See §2.2 for the normative insertion rule. This flag governs the raw-text path only. |
+| `tokenizer.ggml.add_bos_token` | `true` | BOS behavior must be verified against the pinned tokenizer/template path; see §2.1 and U-05. |
 | `tokenizer.ggml.add_space_prefix` | `false` | Do not prepend space prefix |
 
-### 2.2 BOS Insertion Rule (normative)
+### 2.1 BOS Insertion Rule (verification required)
 
-The artifact requests BOS insertion (`add_bos_token = true`) **and** carries a chat template that may itself emit BOS. Zeno resolves this with a single rule:
+The artifact requests BOS insertion (`add_bos_token = true`) and carries a chat template that may itself emit BOS. The correct behavior is not established until the template and reference tokenizer path are inspected (U-05). Apply this implementation constraint:
 
-> **The chat template is the sole serializer for structured reads.** It owns BOS insertion end to end. The `add_bos_token` flag applies only when raw text is encoded *without* a chat template. Zeno must never apply both.
+> **Do not add or remove BOS independently of the pinned reference behavior.** Inspect whether the captured chat template emits BOS and whether the chosen encoder adds BOS; reproduce the effective sequence exactly once. Record the resulting prompt token IDs in reference fixtures.
 
-Rationale: the template's own BOS handling is part of the artifact's behavior and is the thing that was compared against the reference. Applying the flag on top would produce a duplicated `<bos>`, changing every downstream token ID and silently invalidating every candidate resolution in §4.
+This prevents both a duplicated BOS and an omitted BOS. The `add_bos_token` metadata flag alone does not establish whether the chat-template path inserts BOS.
 
-This rule depends on U-05 in [`UNRESOLVED.md`](UNRESOLVED.md): until the template is captured, "the template owns BOS" is unverified.
+This rule depends on U-05 and U-04 in [`UNRESOLVED.md`](UNRESOLVED.md); capture template text, effective encoder behavior, and prompt token IDs before claiming parity.
 
-### 2.1 First Five Control Tokens
+### 2.2 First Five Control Tokens
 * `0`: `<pad>`
 * `1`: `<eos>`
 * `2`: `<bos>`
@@ -62,9 +62,9 @@ This document specifies the **vocabulary** contract: token inventory, special ID
 * byte-fallback behavior for out-of-vocabulary input;
 * the chat template that supplies the rendered prompt.
 
-These are tracked as U-04 and U-05 in [`UNRESOLVED.md`](UNRESOLVED.md), and U-04 additionally blocks any phase in [`PLAN.md`](../PLAN.md) from delivering `encode()`.
+These are tracked as U-04 and U-05 in [`UNRESOLVED.md`](UNRESOLVED.md). `encode()` is assigned to Phase 2 in [`PLAN.md`](../PLAN.md), but its tokenizer behavior remains unresolved.
 
-**Consequence**: §4's validation procedure is correctly specified but not yet executable, because it requires tokenizing a rendered prompt and no encoder is specified or scheduled.
+**Consequence**: §4's validation procedure is specified but not yet executable end-to-end: it requires the unresolved input-side contract and an implementation of the Phase 2 encoder.
 
 ## 4. Candidate Validation Contract
 

@@ -72,7 +72,7 @@ zig build test
 
 work reliably in the development environment.
 
-The initial build scaffold and configuration constants are present. GGUF loading, tokenizer support, and model execution remain future work.
+The repository has progressed beyond the initial scaffold: source modules now cover GGUF parsing, tokenizer data, tensors, quantization, operations, model representation, canvases, and early decision flow. These components are not yet evidence of a complete or reference-validated inference path; Phase 3 remains the end-to-end structured-read milestone.
 
 ---
 
@@ -152,7 +152,9 @@ Exit condition:
 
 A seeded canvas query produces CPU results that match the chosen reference behavior within documented tolerances; calibration is evaluated on a labeled dataset and reported separately from normalization and entropy.
 
-**Entry gate.** Phase 3 may not begin forward-pass work until U-01 through U-08 in [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) are each `resolved` or `accepted-with-fallback`, and U-11 through U-14 (pinned references, fixture format, artifact digest) are `resolved`. The Phase 3 specifications are not yet executable: the answer-position seed value and the canvas tail contents are both undefined, and neither is inferable from the spec set. Coding against them produces code that matches the specs and is still wrong.
+**Implementation gate.** Before forward-pass implementation, U-01 through U-08, U-15, and U-18 in [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) must be `resolved` or explicitly `accepted-with-fallback`. U-04 also gates completion of Phase 2 `encode()`. Accepted fallbacks must be recorded with scope and risk; they permit implementation only and do not establish semantic correctness or parity. U-11 through U-14 must be `resolved` before parity fixtures are admissible.
+
+**Parity gate.** A parity claim requires all Phase 3 implementation questions and parity questions U-09 through U-18 and U-22 to be `resolved` with evidence, plus the required reference fixtures and documented per-field comparisons. U-11 pins the vLLM oracle; U-12 pins llama.cpp. An accepted fallback never satisfies this gate. Until U-01/U-02 are resolved, the canvas input is underspecified and forward-pass output cannot be treated as a meaningful parity result.
 
 Parity is asserted exclusively through the golden-fixture format in [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) §5.
 
@@ -332,10 +334,10 @@ Implement and validate the CPU representation of one denoising step.
 **Current objective:**
 
 ```text
-Pin the two reference revisions and capture the first golden fixture, closing U-11 through U-14.
+Pin the llama.cpp revision and artifact provenance, then capture initial reference fixtures and define per-field comparisons, closing U-12 through U-14 and U-22. The vLLM oracle is pinned at U-11.
 ```
 
-This is deliberately a verification task rather than an implementation task. It is first in sequence because five of the eight Phase 3 blockers (U-05, U-06, U-07, U-08, and partially U-01/U-02) are *transcription* problems: the answers already exist in the pinned references and only need reading. Nothing else in Phase 3 can be validated until this objective is met.
+This is deliberately a verification task rather than a model implementation task. Several open questions may be answerable by inspecting the pinned references, but their answers must be recorded with concrete source evidence. No Phase 3 parity claim is valid until the relevant contracts, artifact provenance, fixtures, and comparison rules are in place.
 
 Avoid parallel architectural changes while the active objective is unresolved.
 
