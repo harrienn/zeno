@@ -28,10 +28,11 @@ Prefer a small, understandable implementation over a broad abstraction layer.
 Before making a non-trivial change:
 
 1. inspect the existing implementation;
-2. identify the relevant invariants;
-3. explain the intended change;
-4. modify only the components required by the task;
-5. compile and test the affected path.
+2. consult [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) for open questions bearing on the change;
+3. identify the relevant invariants;
+4. explain the intended change;
+5. modify only the components required by the task;
+6. compile and test the affected path.
 
 Do not infer project behavior from generic Zig patterns when the repository already defines that behavior.
 
@@ -174,6 +175,7 @@ When the behavior of DiffusionGemma is uncertain:
 * distinguish documented behavior from hypotheses;
 * prefer small experiments over speculative framework design;
 * record important findings in project documentation;
+* register deferred questions in [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) rather than leaving them as inline prose, so that they are countable and gate the phases they block;
 * keep experimental code isolated from stable runtime semantics.
 
 A failed experiment is useful information and should not be hidden by unnecessary abstraction.

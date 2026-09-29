@@ -6,6 +6,8 @@ This document specifies candidate scoring for **Structured Reads**. It is not ye
 
 A structured read extracts logits at selected answer positions of a seeded canvas, restricts scoring to the requested candidate token IDs, and computes candidate-normalized scores and entropy. The request must provide a reproducible seeded canvas if deterministic results are required.
 
+**Parity is asserted only through the golden-fixture format defined in [`UNRESOLVED.md`](UNRESOLVED.md) §5.** A fixture whose `model.sha256` or `reference.commit` field is absent is not admissible as evidence.
+
 ---
 
 ## 2. Forward Evaluation Pipeline
@@ -23,7 +25,7 @@ The reference execution path is not a single undifferentiated bidirectional pass
 2. **Bidirectional decoder/denoising phase** evaluates the canvas while reading the encoder KV state. Multi-step execution also carries self-conditioning state between steps.
 3. **Read-only structured read** limits the requested work to the configured step cap and returns logits from the read step without the normal commit forward pass.
 
-See [transformer.md](transformer.md) for the model layer structure. Exact attention masks, canvas seeding, embedding scaling, output norm placement, and one-step state initialization remain parity requirements; do not infer them from the abbreviated equations in this document.
+See [transformer.md](transformer.md) for the model layer structure. Exact attention masks, canvas seeding, embedding scaling, output norm placement, and one-step state initialization are **not** inferable from this document. They are enumerated as U-02, U-06, U-10, U-16, U-17, and U-18 in [`UNRESOLVED.md`](UNRESOLVED.md), each with a resolution procedure. Do not implement them from the abbreviated equations below.
 
 ---
 
@@ -35,6 +37,8 @@ $$h_p = H_{\text{final}}[p, :] \in \mathbb{R}^{2816}$$
 ### 3.1 Candidate Logit Projection
 For each candidate token ID $c_k \in C$:
 $$z_k = h_p \cdot W_{\text{token\_embd}}[c_k, :]$$
+
+The projection weights are tied to the input embedding table ([`gguf-mapping.md`](gguf-mapping.md) §3). **No input-side normalizer is applied on the output path in this equation** — the Gemma embedding scale $\sqrt{d_{\text{model}}}$ is an input-embedding property and does not carry to logits. This is stated explicitly because its absence is otherwise indistinguishable from an oversight; it remains to be confirmed against the pinned reference (U-10 in [`UNRESOLVED.md`](UNRESOLVED.md)).
 
 ### 3.2 Logit Softcapping
 When configured by the selected model artifact, apply final logit softcapping in fp32 with cap parameter $C_{\text{cap}} = 30.0$ (from GGUF metadata `diffusion-gemma.final_logit_softcapping`):
@@ -54,6 +58,8 @@ $$p_k = \frac{\exp(\tilde{z}_k - \max_j \tilde{z}_j)}{\sum_{m=1}^K \exp(\tilde{z
 The decision outcome is the argmax:
 $$k^* = \arg\max_{k \in \{1 \dots K\}} p_k$$
 $$\text{decision} = \text{label}(c_{k^*})$$
+
+Ties are resolved to the **lowest candidate index**, per the normative rule in [`decision-api.md`](decision-api.md) §3.2. Because §3.2 saturates raw logits, exact ties are reachable whenever two raw logits exceed the softcap in the same direction; such a tie reflects numerical saturation, not model preference, and is tracked as U-19 in [`UNRESOLVED.md`](UNRESOLVED.md).
 
 ### 4.2 Shannon Entropy (Uncertainty Metric)
 To assess whether the model is decisive or uncertain among the supplied choices, compute the Shannon entropy over the candidate distribution:

@@ -48,6 +48,11 @@ Each block $l$ applies RMSNorm at distinct stages:
 
 DiffusionGemma has distinct execution modes: causal prompt prefill/encoder execution and bidirectional decoder/denoising execution. The decoder reads KV state established by prefill and uses self-conditioning on later denoising steps. Attention behavior therefore depends on the execution phase; “bidirectional attention over the canvas” is not a complete forward-pass specification.
 
+> **Windowing is inoperative at Phase 3.** `sliding_window = 1024` against `canvas_length = 256`
+> ([`gguf-mapping.md`](gguf-mapping.md) §2): the window never binds. Do not implement sliding-window
+> bookkeeping for Phase 3, and do not treat its absence as a parity gap. Recorded as U-20 in
+> [`UNRESOLVED.md`](UNRESOLVED.md).
+
 ### 3.1 Layer Specialization: SWA vs. Global
 
 The 30 blocks follow a recurring 5:1 pattern:
@@ -81,6 +86,9 @@ RoPE is applied to Query and Key head vectors with dual frequency bases:
 2. Apply per-head normalization and RoPE in the reference-defined order. For shared K/V weights, preserve distinct K and V processing.
 3. Apply the configured attention mask and KV read/write mode for the current encoder or decoder phase; do not assume full-canvas unmasked attention for every phase.
 4. Expand $K, V$ via Grouped-Query Attention (GQA) factor ($2$ for SWA, $8$ for Global), as confirmed for the selected model artifact.
+   > **The expansion *order* is unresolved (U-08).** The factor alone does not determine the map. Naive repetition gives $\mathrm{kv}(q) = q \bmod H_{KV}$; blocked repetition gives $\mathrm{kv}(q) = q \div (H_Q / H_{KV})$. For Global layers ($H_Q{=}16, H_{KV}{=}2$) these differ, and the wrong choice yields plausible-looking attention that is silently incorrect. Resolve from the pinned reference before implementing.
+> **Attention logit softcapping is unspecified (U-09).** [`gguf-mapping.md`](gguf-mapping.md) §2 lists `final_logit_softcapping` but is silent on an attention equivalent. The Gemma lineage typically applies one. Silence is not evidence of absence; check the artifact metadata.
+
 5. Compute attention scores under the phase's mask:
    $$\text{Attn}(Q, K, V) = \text{Softmax}\left(\frac{Q K^T}{\sqrt{d_k}}\right) V$$
 6. Project back to model dimension:
@@ -99,6 +107,8 @@ $$\text{Up} = x \cdot W_{\text{up}} \quad (W_{\text{up}} \in \mathbb{R}^{2816 \t
 $$\text{FFN}_{\text{shared}} = (\text{ConfiguredActivation}(\text{Gate}, \text{Up})) \cdot W_{\text{down}} \quad (W_{\text{down}} \in \mathbb{R}^{2112 \times 2816})$$
 
 For the cited vLLM Gemma4 implementation, the dense branch uses the configured `hidden_activation`; confirm its concrete value from the selected artifact/config.
+
+> **This value is unresolved (U-07).** The expert branch activation *is* stated (§4.2, `gelu_tanh`); the dense branch activation is not, and the instruction above defers it without ever supplying it. A layer whose two branches use differently-specified activations is not implementable. Resolve from the pinned config and record the value in this table. Do not infer it from tensor names — the tensor names in [`gguf-mapping.md`](gguf-mapping.md) §4.1 are identical across both branches.
 
 ### 4.2 MoE Branch (128 Experts, Top-8 Routing)
 
@@ -125,9 +135,51 @@ For the cited vLLM Gemma4 implementation, the dense branch uses the configured `
 
 ### 4.3 Norm and Residual Ordering
 
-The block is not specified by a single sum of attention, dense FFN, and MoE outputs. The cited Gemma4 implementation applies input RMSNorm, attention, post-attention RMSNorm, then the attention residual; it then evaluates the dense MLP and MoE branches with their configured pre/post norms, combines the branches, applies post-FFN RMSNorm, and adds the FFN residual. MoE routing uses the residual input, while the expert input has its own pre-FFN norm. Preserve this ordering and the artifact's layer scales when implementing.
+The block is not specified by a single sum of attention, dense FFN, and MoE outputs (**U-06**). The cited Gemma4 implementation applies input RMSNorm, attention, post-attention RMSNorm, then the attention residual; it then evaluates the dense MLP and MoE branches with their configured pre/post norms, combines the branches, applies post-FFN RMSNorm, and adds the FFN residual. MoE routing uses the residual input, while the expert input has its own pre-FFN norm. Preserve this ordering and the artifact's layer scales when implementing.
+
+> **This ordering is unresolved (U-06) and is the highest-consequence gap in this document.** Thirty blocks
+> carry roughly six norms, two residual adds, and two FFN branches each. An ordering error compiles, runs,
+> produces finite numbers, and diverges silently — no test in the current suite can detect it, and it will
+> not surface until logits are compared against a pinned reference.
+>
+> The prose above is a summary, not an executable order. The slot table below is the implementation
+> checklist. **Fill each slot from the pinned reference and flip its status; do not guess an order and then
+> mark it verified.** Until a slot reads `verified`, the forward pass is not parity-assertable.
+
+| # | Operation | Input source | Norm applied | Residual added | Status |
+| :-- | :--- | :--- | :--- | :--- | :--- |
+| 1 | Input RMSNorm | block input $x_l$ | `attn_norm` | — | `unverified` |
+| 2 | Q/K projection | post-norm $x$ | — | — | `unverified` |
+| 3 | Per-head Q/K norm | projected Q, K | `attn_q_norm`, `attn_k_norm` | — | `verified` (structure only) |
+| 4 | RoPE | Q, K | — | — | `verified` (structure only) |
+| 5 | Attention + $W_O$ | Q, K, V | — | — | `unverified` |
+| 6 | Post-attention norm | attention output | `post_attention_norm` | — | `unverified` |
+| 7 | Attention residual add | slot 6 output | — | $x_l$ | `unverified` |
+| 8 | FFN input norm | slot 7 output | `ffn_norm` | — | `unverified` |
+| 9 | Dense MLP branch | slot 8 output | per config | — | `unverified` (activation: U-07) |
+| 10 | MoE router input | **slot 7 output** (residual input, not slot 8) | router preprocessing | — | `unverified` (op: U-15) |
+| 11 | Expert branch | expert input with own pre-FFN norm | `pre_ffw_norm_2`? | — | `unverified` |
+| 12 | Branch combination | slots 9 + 11 | — | — | `unverified` |
+| 13 | Post-FFN norms | slot 12 output | `post_ffw_norm`, `_1`, `_2` | — | `unverified` |
+| 14 | Layer output scale | slot 13 output | `layer_output_scale` | — | `unverified` |
+| 15 | FFN residual add | slot 14 output | — | slot 7 output | `unverified` |
+
+Two entries are worth flagging because they are the ones most implementations get wrong:
+
+* **Slot 10** — the MoE router consumes the *attention residual* (slot 7), not the FFN-normalized input (slot 8). The expert input separately receives its own pre-FFN norm. Using slot 8 for routing is a plausible-looking error.
+* **Slots 13–15** — three distinct post-FFN norms exist in the artifact, plus an encoder output scale
+  (`enc_layer_output_scale`). Their count is known from [`gguf-mapping.md`](gguf-mapping.md) §4.1; their
+  order and whether the encoder scale applies during a decode read are not.
+
+Four of these per-block tensors are not currently mapped into any runtime structure, so slots 11, 13, and
+14 cannot be executed as specified until that mapping exists.
 
 ---
+
+> **Phase 3 scope**: a one-step read may not need this sub-layer at all. Whether the gated
+> self-conditioning MLP is evaluated at step 1 with a zero soft-embedding, or bypassed entirely, is
+> unresolved (**U-18** in [`UNRESOLVED.md`](UNRESOLVED.md)). Establish this *before* implementing, because
+> if the reference does evaluate it, omitting it is a parity failure rather than an optimization.
 
 ## 5. Self-Conditioning Sub-layer
 

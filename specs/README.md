@@ -6,6 +6,8 @@ As outlined in [ARCHITECTURE.md](../ARCHITECTURE.md) and [PLAN.md](../PLAN.md), 
 
 ## Authored Specifications
 
+- [**`UNRESOLVED.md`**](UNRESOLVED.md): **Read this first.** The register of every specification question Zeno has deliberately not answered, with the procedure that closes each one, the golden fixture format, and a resolution log. Any phase whose entry gate cites a `U-nn` identifier depends on it.
+
 - [**`decision-api.md`**](decision-api.md): Specification of the Jev-compatible `/v1/systemone` HTTP REST and native Zig library interfaces, query schemas, single-token choice constraints, response formats, and entropy reporting.
 - [**`canvas-templates.md`**](canvas-templates.md): Proposed canvas layout and prompt construction, with answer pinning and padding semantics marked for reference validation.
 - [**`structured-reads.md`**](structured-reads.md): Candidate logit extraction and scoring, including the causal prefill/bidirectional decoder distinction and open parity requirements.

@@ -89,13 +89,15 @@ The decision engine strictly validates that all candidate choices resolve to sin
 #### Response Semantics
 
 * **`decision`**: The candidate label with the highest normalized candidate score ($p_{\text{max}}$).
+  **Tie rule (normative)**: when two or more candidates share the maximum score exactly, the **lowest candidate index** in request order wins. This guarantees determinism for a System One engine and must not be left to floating-point comparison order. Note that ties are *reachable* in practice — logit softcapping (§3.2 of [`structured-reads.md`](structured-reads.md)) saturates distinct raw logits to an identical value, which is a numerical degenerate case rather than a genuine model judgement. See [`UNRESOLVED.md`](UNRESOLVED.md) U-19.
 * **`decision_probability`**: Candidate-normalized softmax score for the selected label. It is not an empirically calibrated probability:
   $$p_i = \frac{\exp(z_i / T)}{\sum_{j=1}^N \exp(z_j / T)}$$
   *(Empirical calibration requires separate labeled evaluation.)*
 * **`entropy_nats`**: Shannon entropy over the candidate distribution, in nats:
   $$H(P) = -\sum_{i=1}^N p_i \ln(p_i)$$
 * **`normalized_entropy`**: $H(P) / \ln(N)$, in $[0,1]$ for $N \ge 2$.
-* **`uncertain`**: Set to `true` when a threshold was supplied or defaulted and `normalized_entropy >= entropy_threshold`. Entropy is a dispersion measure, not a correctness estimate.
+* **`uncertain`**: Set to `true` **only when `options.entropy_threshold` was supplied** and `normalized_entropy >= entropy_threshold`. If the threshold is omitted, `uncertain` is always `false`. Entropy is a dispersion measure, not a correctness estimate. *An earlier revision of this document stated "supplied or defaulted", contradicting the field table in §3.1. The field table is normative, and this reading is corroborated by [`denoising.md`](denoising.md) §2.1. See [`UNRESOLVED.md`](UNRESOLVED.md) U-21.*
+* **`canvas_tokens_used`**: The number of canvas positions carrying prompt or answer content, i.e. `answer_pos + 1`. Trailing canvas fill is excluded, because whether trailing positions hold `PAD`, `MASK`, or noise is an open question ([`UNRESOLVED.md`](UNRESOLVED.md) U-02). This field therefore measures *seeded content length*, not canvas occupancy.
 
 ---
 
@@ -177,3 +179,15 @@ pub const DecisionEngine = struct {
 ### Initial Error Contract
 
 Reject malformed schemas, fewer than two or more than 32 candidates, duplicate resolved token IDs, candidates that do not resolve to one token in their rendered answer context, non-finite or non-positive temperatures, canvas overflow, and `step_cap` values other than `1`. HTTP status codes and a stable JSON error envelope must be specified before exposing the endpoint.
+
+A candidate string that is absent from the vocabulary must **not** be reported as `MultiTokenCandidateNotAllowed`; the two conditions have different remediations (choose a different label versus map the label to a one-token code). See [`UNRESOLVED.md`](UNRESOLVED.md).
+
+## 7. Known Gaps in This Specification
+
+This contract is not yet implementable end-to-end. The following dependencies are tracked in [`UNRESOLVED.md`](UNRESOLVED.md):
+
+* **U-04** — no `encode()` exists in any phase of [`PLAN.md`](../PLAN.md); the query text cannot yet be tokenized.
+* **U-05** — the artifact's chat template is not captured, so §3 rendering has no normative source.
+* **U-01 / U-02 / U-03** — canvas seeding and tail contents are undefined, so `canvas_tokens_used` and `steps_executed` semantics rest on an unresolved basis.
+
+The request/response shape, the single-token constraint (§2), and the scoring fields are specified and may be implemented. The **engine that produces the `expected` values is not**.

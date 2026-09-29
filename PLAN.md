@@ -112,6 +112,7 @@ Focus on:
 * GGUF container parsing (header, metadata, tensor descriptors);
 * model configuration decoding (`diffusion.canvas_length = 256`, 30 blocks, 128 MoE experts with 8 active);
 * tokenizer vocabulary and special tokens (`mask_token_id = 4`, `bos_token_id = 2`, `eos_token_id = 1`);
+* **tokenizer `encode()`** — the BPE encoder itself: pre-tokenization, merge rank semantics, and byte fallback. *Added after review: the vocabulary alone cannot place query text on the canvas, and this deliverable was previously owned by no phase.* See [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) U-04;
 * model weights and tensor mapping;
 * model components (token embeddings, bidirectional non-causal attention, MoE feed-forward blocks, RMSNorm);
 * data flow between components.
@@ -150,6 +151,10 @@ Compare intermediate activations, output logits, and entropy scores against [vLL
 Exit condition:
 
 A seeded canvas query produces CPU results that match the chosen reference behavior within documented tolerances; calibration is evaluated on a labeled dataset and reported separately from normalization and entropy.
+
+**Entry gate.** Phase 3 may not begin forward-pass work until U-01 through U-08 in [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) are each `resolved` or `accepted-with-fallback`, and U-11 through U-14 (pinned references, fixture format, artifact digest) are `resolved`. The Phase 3 specifications are not yet executable: the answer-position seed value and the canvas tail contents are both undefined, and neither is inferable from the spec set. Coding against them produces code that matches the specs and is still wrong.
+
+Parity is asserted exclusively through the golden-fixture format in [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) §5.
 
 ---
 
@@ -324,6 +329,14 @@ Example:
 Implement and validate the CPU representation of one denoising step.
 ```
 
+**Current objective:**
+
+```text
+Pin the two reference revisions and capture the first golden fixture, closing U-11 through U-14.
+```
+
+This is deliberately a verification task rather than an implementation task. It is first in sequence because five of the eight Phase 3 blockers (U-05, U-06, U-07, U-08, and partially U-01/U-02) are *transcription* problems: the answers already exist in the pinned references and only need reading. Nothing else in Phase 3 can be validated until this objective is met.
+
 Avoid parallel architectural changes while the active objective is unresolved.
 
 ---
@@ -367,3 +380,5 @@ Update `PLAN.md` when:
 Do not put low-level API details in this file.
 
 Detailed behavior belongs in `specs/`.
+
+In particular: when a specification defers a question, the deferral must be registered in [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) rather than left as inline prose. Unregistered deferrals are not visible from the plan, do not gate any phase, and are the mechanism by which a faithful implementation ends up incorrect.

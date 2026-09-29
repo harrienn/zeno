@@ -6,13 +6,15 @@ This document records a proposed layout for the model's configured canvas width 
 
 In structured-reads mode, a seeded canvas contains prompt tokens and answer positions whose logits are read. In [vLLM PR #57250](https://github.com/vllm-project/vllm/pull/57250), pinning holds a selected position at its seeded token value across denoising steps. Pinning is an update rule; it does not by itself mean that the seed token must be `MASK` (`4`).
 
+> **Known circularity.** This document and [`structured-reads.md`](structured-reads.md) §2 both defer the answer-position seed value to *"the structured-read procedure"*, but neither document *is* that procedure. The value of $x_p$ — the single most consequential byte in the system — is therefore undefined. This is tracked as **U-01** in [`UNRESOLVED.md`](UNRESOLVED.md), and it blocks Phase 3. Note that the correct answer may well be `MASK`; what is missing is the evidence that distinguishes *"seeded with MASK"* from *"pinned to its seed across steps"*, which are different properties.
+
 ---
 
 ## 2. Canvas Geometry & Special Tokens
 
 The canvas is a fixed-width array of token identifiers:
 
-* **Default Canvas Length ($L$)**: `256` tokens (matching `diffusion.canvas_length` in [`specs/gguf-mapping.md`](gguf-mapping.md)); implementations may accept a shorter request canvas if they preserve the reference semantics.
+* **Default Canvas Length ($L$)**: `256` tokens (matching `diffusion.canvas_length` in [`specs/gguf-mapping.md`](gguf-mapping.md)). Whether a shorter request canvas is legal — and if so, what the model attends over beyond the answer slot — is unresolved (**U-03** in [`UNRESOLVED.md`](UNRESOLVED.md)) and is coupled to U-02 above. Do not implement a truncated canvas until both are resolved.
 * **Token Identifier Type**: 32-bit unsigned integer (`u32`).
 * **Special Token IDs**:
   - `BOS` (Beginning of Sequence): `2`
@@ -45,9 +47,11 @@ The following diagram is a template proposal, not a verified requirement for mod
    - Model turn delimiter (`<|turn>model\n`).
    - Prefix cue (e.g. `Answer:`).
 4. **Answer Position**: Position $p$ is seeded with the token specified by the chosen structured-read procedure and selected for logit readout. Pin it if the selected step policy requires preserving its seed value.
-5. **Remaining Canvas**: Seed contents and attention treatment are not specified here. Establish them from the reference path and a parity fixture.
+5. **Remaining Canvas**: Seed contents and attention treatment are not specified here (**U-02**). Establish them from the reference path and a golden fixture ([`UNRESOLVED.md`](UNRESOLVED.md) §5).
 
-> **Open requirement**: A `PAD` token is still a token embedding. Define whether unused positions are masked from attention, contain padding IDs, or contain diffusion noise. Do not assume that filling them with `0` prevents them from influencing bidirectional attention.
+> **Open requirement (U-02)**: A `PAD` token is still a token embedding. Define whether unused positions are masked from attention, contain padding IDs, or contain diffusion noise. Do not assume that filling them with `0` prevents them from influencing bidirectional attention.
+>
+> This is **not** a low-risk default. Global full attention occurs at blocks {5, 11, 17, 23, 29} ([`transformer.md`](transformer.md) §3.1), so a canvas whose trailing ~250 positions are filled with `PAD` is *not* equivalent to a shorter canvas. The two produce different hidden states at position $p$. Which one the reference performs determines the entire numeric result of a structured read, so this must be resolved by evidence rather than preference.
 
 ---
 
@@ -66,6 +70,13 @@ Choices:
 <|turn>model
 Answer:
 ```
+
+> **This block is illustrative and is NOT the implementation contract.** The artifact is a patched
+> checkpoint (`Dg_Rc0P1_Patched`, [`gguf-mapping.md`](gguf-mapping.md) §1), so its chat template is among
+> the components most likely to have been modified. The prompt above must not be hardcoded. Extract
+> `tokenizer.chat_template` from GGUF metadata, paste it verbatim here, and promote this section to
+> normative — tracked as **U-05** in [`UNRESOLVED.md`](UNRESOLVED.md). Until then, §5's candidate
+> resolution procedure has no defined input string.
 
 ### 4.1 Choice Formatting Rules
 

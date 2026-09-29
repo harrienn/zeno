@@ -15,9 +15,18 @@ All values, shapes, and quantization types documented here are directly extracte
 
 These claims are specific to that local file. Its SHA-256 digest and the exact inspection tool/version are not recorded yet; add both before using this table as reproducible provenance. Dimensions below are GGUF/GGML tensor dimensions in stored order, not an implicit row-major `[rows, columns]` convention. Any conversion to a runtime matrix layout must state the transpose/stride mapping explicitly.
 
+> **Provenance is incomplete (U-14).** Until the SHA-256 digest and the inspection tool/version are recorded, every value in this document is a claim about an unnamed file and is not reproducible. The omission is already acknowledged above; it is tracked here so that it cannot be forgotten. Until it is closed, a golden fixture built from this artifact may not cite this document as its evidence (see [`UNRESOLVED.md`](UNRESOLVED.md) §5).
+
 ---
 
 ## 2. Model Metadata & Structural Invariants
+
+**Reading this table.** Entries divide into two classes, and the distinction is load-bearing:
+
+* **Invariants** — values a runtime must *validate on load* and reject the artifact if violated. Hardcoding a value the artifact contradicts produces silently wrong computation rather than a clean failure, so these belong in the loader's acceptance check.
+* **Descriptive** — values that document the artifact but are not yet contractually enforced.
+
+As of this revision the loader validates `block_count` and `embedding_length` only. The most consequential unvalidated invariant is **`diffusion-gemma.attention.causal`**, which must be `false` for Zeno's structured-read semantics to apply at all; it is currently unchecked, and every remaining `diffusion-gemma.*` structural key below is descriptive only.
 
 | Parameter Key | Value | Description |
 | :--- | :--- | :--- |
@@ -28,12 +37,12 @@ These claims are specific to that local file. Its SHA-256 digest and the exact i
 | `diffusion-gemma.feed_forward_length` | `2112` | Shared FFN intermediate dimension |
 | `diffusion-gemma.attention.causal` | `false` | **Non-causal bidirectional attention** |
 | `diffusion-gemma.attention.head_count` | `16` | Number of Query heads ($H_Q$) |
-| `diffusion-gemma.attention.head_count_kv` | *array[30]* | KV heads: 8 for SWA layers, 2 for Global layers |
+| `diffusion-gemma.attention.head_count_kv` | *array[30]* | KV heads: 8 for SWA layers, 2 for Global layers. The 30 literal values are not recorded; the pattern (5×8 then 2, repeating 6×) is asserted in [`transformer.md`](transformer.md) §3.1. Record the array so the pattern can be verified rather than assumed. |
 | `diffusion-gemma.attention.key_length` | `512` | Head dimension for Global layers ($d_k$) |
 | `diffusion-gemma.attention.value_length` | `512` | Head dimension for Global layers ($d_v$) |
 | `diffusion-gemma.attention.key_length_swa` | `256` | Head dimension for SWA layers ($d_{k,\text{swa}}$) |
 | `diffusion-gemma.attention.value_length_swa` | `256` | Head dimension for SWA layers ($d_{v,\text{swa}}$) |
-| `diffusion-gemma.attention.sliding_window` | `1024` | Sliding window attention horizon |
+| `diffusion-gemma.attention.sliding_window` | `1024` | Sliding window attention horizon. Inoperative at `canvas_length = 256`; do not implement windowing for Phase 3 (U-20). |
 | `diffusion-gemma.rope.freq_base` | `1000000.0` | Global RoPE frequency base |
 | `diffusion-gemma.rope.freq_base_swa` | `10000.0` | SWA RoPE frequency base |
 | `diffusion-gemma.rope.dimension_count` | `512` | RoPE dimension for Global layers |
@@ -47,8 +56,12 @@ These claims are specific to that local file. Its SHA-256 digest and the exact i
 | `tokenizer.ggml.eos_token_id` | `1` | End-of-sequence token |
 | `tokenizer.ggml.mask_token_id` | `4` | Discrete diffusion mask / noise token |
 | `tokenizer.ggml.padding_token_id` | `0` | Padding token |
+| `tokenizer.ggml.chat_template` | **not yet extracted** | Chat template. Required for prompt construction; see [`canvas-templates.md`](canvas-templates.md) §4. Tracked as **U-05**. |
 
 ---
+
+> **Phase scope**: the `self_cond_*` tensors below are Phase 4+ territory. Whether a one-step read
+> evaluates the self-conditioning MLP at all is unresolved (U-18 in [`UNRESOLVED.md`](UNRESOLVED.md)).
 
 ## 3. Global Tensors (7 Tensors)
 
@@ -79,6 +92,10 @@ DiffusionGemma alternates between two block types based on `sliding_window_patte
 
 Each SWA block contains **23 tensors**.
 Each Global block contains **22 tensors** (omits `attn_v.weight`).
+
+Sanity check: $7 + 25 \times 23 + 5 \times 22 = 692$, matching the tensor count in §1. A reader can therefore confirm this inventory is complete rather than trusting it.
+
+> **Runtime mapping gap**: the table below lists 23 tensors per block, but a conforming runtime structure must expose *all* of them. If any of `post_ffw_norm`, `post_ffw_norm_1`, `post_ffw_norm_2`, `pre_ffw_norm_2`, `enc_layer_output_scale`, or `layer_output_scale` is absent from the runtime, slots 11 and 13–15 of the ordering table in [`transformer.md`](transformer.md) §4.3 cannot be executed. Six per-block tensors are commonly skipped; none of them are optional for parity.
 
 | Component | Tensor Pattern | Shape (SWA) | Shape (Global) | Type | Role |
 | :--- | :--- | :--- | :--- | :--- | :--- |
