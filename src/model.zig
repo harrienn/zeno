@@ -109,6 +109,12 @@ pub const DiffusionGemmaModel = struct {
             return error.IncompatibleDimensions;
         }
 
+        // Validate non-causal bidirectional attention invariant
+        const is_causal = gfile.getMetadataBool("diffusion-gemma.attention.causal") orelse return error.IncompatibleDimensions;
+        if (is_causal) {
+            return error.IncompatibleDimensions;
+        }
+
         // Locate global tensors
         const token_embd = gfile.findTensor("token_embd.weight") orelse return error.MissingTensor;
         const output_norm = gfile.findTensor("output_norm.weight") orelse return error.MissingTensor;

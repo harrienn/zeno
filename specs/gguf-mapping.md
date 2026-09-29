@@ -12,10 +12,13 @@ All values, shapes, and quantization types documented here are directly extracte
 * **Reported Model Name**: `Dg_Rc0P1_Patched` (Size label: `128x2.6B`)
 * **Total Tensors**: 692
 * **Total Metadata Key-Values**: 44
+* **SHA-256 Digest**: `24523b6c833c9ce9f5f34f9b333ab1517d73d6f1e76a103645353114c8028bc5`
+* **File Size**: `16,561,048,512` bytes
+* **Inspection Tools**:
+  - `sha256sum` (GNU coreutils 9.4)
+  - Zeno native GGUF v3 parser (`zeno metadata`, commit `8dbebf9`)
 
-These claims are specific to that local file. Its SHA-256 digest and the exact inspection tool/version are not recorded yet; add both before using this table as reproducible provenance. Dimensions below are GGUF/GGML tensor dimensions in stored order, not an implicit row-major `[rows, columns]` convention. Any conversion to a runtime matrix layout must state the transpose/stride mapping explicitly.
-
-> **Provenance is incomplete (U-14).** Until the SHA-256 digest and the inspection tool/version are recorded, the file identity and the values attributed to it are not reproducible. Until this is closed, a golden fixture built from this artifact may not cite this document as its evidence (see [`UNRESOLVED.md`](UNRESOLVED.md) §5).
+> **Provenance established (U-14 resolved).** The artifact identity is cryptographic and reproducible under the SHA-256 digest above. Dimensions below are GGUF/GGML tensor dimensions in stored order, not an implicit row-major `[rows, columns]` convention. Any conversion to a runtime matrix layout must state the transpose/stride mapping explicitly.
 
 ---
 
