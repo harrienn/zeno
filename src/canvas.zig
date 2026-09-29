@@ -11,6 +11,7 @@ pub const CanvasError = error{
     CanvasOverflow,
     MultiTokenCandidateNotAllowed,
     DuplicateCandidateToken,
+    TokenNotFound,
 };
 
 /// 256-token canvas buffer holding seeded tokens, answer position, and pinning status.
@@ -92,9 +93,7 @@ pub const Canvas = struct {
         std.debug.assert(out_token_ids.len >= candidates.len);
 
         for (candidates, 0..) |cand, i| {
-            const token_id = tok.resolveCandidateToken(cand.token) catch {
-                return error.MultiTokenCandidateNotAllowed;
-            };
+            const token_id = try tok.resolveCandidateToken(cand.token);
 
             // Check for duplicate token ID among earlier resolved candidates
             for (out_token_ids[0..i]) |prev_id| {

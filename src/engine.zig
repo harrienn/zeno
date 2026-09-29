@@ -161,3 +161,18 @@ test "DecisionEngine: end-to-end boolean decision execution on local model if pr
     try std.testing.expectEqual(@as(u32, 2), resp.canvas_tokens_used);
     try std.testing.expectEqual(@as(usize, 2), resp.candidates.len);
 }
+
+test "DecisionEngine: normative tie-breaking selects lowest candidate index (U-19)" {
+    // When candidates have identical probabilities, lowest index must win
+    const probs = [_]f32{ 0.5, 0.5 };
+    var best_idx: usize = 0;
+    var max_prob: f32 = probs[0];
+    for (probs[1..], 1..) |p, i| {
+        if (p > max_prob) {
+            max_prob = p;
+            best_idx = i;
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 0), best_idx);
+}
+

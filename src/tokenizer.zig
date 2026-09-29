@@ -9,6 +9,11 @@ const root = @import("root.zig");
 
 pub const TokenId = u32;
 
+pub const TokenResolutionError = error{
+    MultiTokenCandidateNotAllowed,
+    TokenNotFound,
+};
+
 pub const TokenizerError = error{
     MissingTokensMetadata,
     MalformedTokensMetadata,
@@ -107,9 +112,9 @@ pub const Tokenizer = struct {
 
     /// Validates and resolves a candidate string into a single token ID.
     /// Checks both exact token match and leading-space prefixed match (' ' = U+2581 = \xe2\x96\x81).
-    pub fn resolveCandidateToken(self: Tokenizer, text: []const u8) TokenizerError!TokenId {
+    pub fn resolveCandidateToken(self: Tokenizer, text: []const u8) TokenResolutionError!TokenId {
         if (text.len == 0) {
-            return error.MultiTokenCandidateNotAllowed;
+            return error.TokenNotFound;
         }
 
         // 1. Try exact match
@@ -129,7 +134,12 @@ pub const Tokenizer = struct {
             }
         }
 
-        return error.MultiTokenCandidateNotAllowed;
+        // If string contains whitespace, it is demonstrably multi-token
+        if (std.mem.indexOfScalar(u8, text, ' ') != null) {
+            return error.MultiTokenCandidateNotAllowed;
+        }
+
+        return error.TokenNotFound;
     }
 };
 
@@ -164,6 +174,7 @@ test "Tokenizer: verify special control tokens and candidate resolution on local
     const id_a = try tokenizer.resolveCandidateToken("A");
     try std.testing.expect(id_a == 236776);
 
-    // Verify multi-token candidate rejection
+    // Verify multi-token candidate rejection vs token not found
     try std.testing.expectError(error.MultiTokenCandidateNotAllowed, tokenizer.resolveCandidateToken("A Very Long Nonexistent String That Cannot Be One Token"));
+    try std.testing.expectError(error.TokenNotFound, tokenizer.resolveCandidateToken("nonexistenttokenxyz123"));
 }

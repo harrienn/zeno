@@ -81,6 +81,41 @@ pub fn main(init: std.process.Init) !void {
                 c.raw_logit,
             });
         }
+    } else if (args.len > 1 and (std.mem.eql(u8, args[1], "metadata") or std.mem.eql(u8, args[1], "meta"))) {
+        if (args.len < 3) {
+            try stdout_writer.print("Usage: zeno metadata <path/to/model.gguf>\n", .{});
+            try stdout_writer.flush();
+            return;
+        }
+        const model_path = args[2];
+        var model = zeno.DiffusionGemmaModel.loadFromFile(arena, model_path) catch |err| {
+            try stdout_writer.print("Error loading model: {}\n", .{err});
+            try stdout_writer.flush();
+            return;
+        };
+        defer model.deinit();
+
+        try stdout_writer.print("GGUF Metadata Entries ({d} keys):\n", .{model.gguf_file.metadata.len});
+        for (model.gguf_file.metadata) |entry| {
+            try stdout_writer.print("  - {s} ({s}): ", .{ entry.key, @tagName(entry.value_type) });
+            switch (entry.value_type) {
+                .uint32 => try stdout_writer.print("{d}\n", .{model.gguf_file.getMetadataU32(entry.key) orelse 0}),
+                .float32 => try stdout_writer.print("{d}\n", .{model.gguf_file.getMetadataF32(entry.key) orelse 0.0}),
+                .bool_val => try stdout_writer.print("{}\n", .{model.gguf_file.getMetadataBool(entry.key) orelse false}),
+                .string => {
+                    const s = model.gguf_file.getMetadataString(entry.key) orelse "";
+                    if (s.len > 120) {
+                        try stdout_writer.print("\"{s}...\" (len={d})\n", .{ s[0..120], s.len });
+                    } else {
+                        try stdout_writer.print("\"{s}\"\n", .{s});
+                    }
+                },
+                .array => try stdout_writer.print("<array>\n", .{}),
+                else => try stdout_writer.print("<other>\n", .{}),
+            }
+        }
+        try stdout_writer.flush();
+        return;
     } else if (args.len > 1) {
         var model_path: []const u8 = args[1];
         if (std.mem.eql(u8, args[1], "info") and args.len > 2) {
