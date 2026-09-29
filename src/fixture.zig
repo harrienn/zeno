@@ -46,6 +46,7 @@ pub const GoldenFixture = struct {
     canvas_length: usize,
     answer_pos: usize,
     answer_seed_token: u32,
+    entropy_threshold: ?f32 = null,
     candidates: []const FixtureCandidate,
     expected: FixtureExpected,
 };
@@ -124,7 +125,7 @@ pub fn validateFixture(
         .candidates = candidate_specs,
         .step_cap = 1,
         .temperature = 1.0,
-        .entropy_threshold = 0.5,
+        .entropy_threshold = fix.entropy_threshold,
     };
 
     var arena = std.heap.ArenaAllocator.init(allocator);
@@ -172,6 +173,8 @@ test "loadFixture: parses zeno.fixture/v1 correctly" {
 }
 
 test "validateFixture: compares local model with stored fixture values if present" {
+    if (!root.shouldRunModelTests()) return error.SkipZigTest;
+
     const allocator = std.testing.allocator;
     const model_path = "models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf";
     const fixture_path = "specs/fixtures/system_health_boolean.json";

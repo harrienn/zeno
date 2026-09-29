@@ -15,6 +15,13 @@ pub const canvas = @import("canvas.zig");
 pub const infer = @import("infer.zig");
 pub const engine = @import("engine.zig");
 pub const fixture = @import("fixture.zig");
+pub const build_options = @import("build_options");
+
+/// Returns true if heavy 26B full-model forward pass tests are enabled.
+/// Controlled via `zig build test -Dtest-model=true` or `zig build test-model`.
+pub fn shouldRunModelTests() bool {
+    return build_options.test_model;
+}
 
 // Re-export common types
 pub const Tensor = tensor.Tensor;
@@ -78,6 +85,7 @@ test {
     _ = canvas;
     _ = infer;
     _ = engine;
+    _ = fixture;
 }
 
 test "model configuration invariants" {

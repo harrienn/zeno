@@ -22,12 +22,12 @@
   ],
   "expected": {
     "decision": "No",
-    "decision_probability": 0.9124,
-    "candidate_logits_raw": [25.0773, 30.0118],
-    "candidate_logits_softcapped": [20.4851, 22.3892],
-    "probabilities": [0.0876, 0.9124],
-    "entropy_nats": 0.2969,
-    "normalized_entropy": 0.4283,
+    "decision_probability": 0.8731,
+    "candidate_logits_raw": [27.1048, 31.5362],
+    "candidate_logits_softcapped": [21.5403, 23.4674],
+    "probabilities": [0.1269, 0.8731],
+    "entropy_nats": 0.3805,
+    "normalized_entropy": 0.5489,
     "uncertain": false
   }
 }

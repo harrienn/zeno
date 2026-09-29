@@ -139,6 +139,8 @@ pub const DecisionEngine = struct {
 };
 
 test "DecisionEngine: end-to-end boolean decision execution on local model if present" {
+    if (!root.shouldRunModelTests()) return error.SkipZigTest;
+
     const allocator = std.testing.allocator;
     const model_path = "models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf";
 
