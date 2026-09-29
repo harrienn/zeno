@@ -154,7 +154,7 @@ A seeded canvas query produces CPU results that match the chosen reference behav
 
 **Implementation gate.** Before forward-pass implementation, U-01 through U-08, U-15, and U-18 in [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) must be `resolved` or explicitly `accepted-with-fallback`. U-04 also gates completion of Phase 2 `encode()`. Accepted fallbacks must be recorded with scope and risk; they permit implementation only and do not establish semantic correctness or parity. U-11 through U-14 must be `resolved` before parity fixtures are admissible.
 
-**Parity gate.** A parity claim requires all Phase 3 implementation questions and parity questions U-09 through U-18 and U-22 to be `resolved` with evidence, plus the required reference fixtures and documented per-field comparisons. U-11 pins the vLLM oracle; U-12 pins llama.cpp. An accepted fallback never satisfies this gate. Until U-01/U-02 are resolved, the canvas input is underspecified and forward-pass output cannot be treated as a meaningful parity result.
+**Parity gate.** A parity claim requires all Phase 3 implementation questions and parity questions U-09 through U-18 and U-22/U-23 to be `resolved` with evidence, plus independently captured reference fixtures and validated per-field comparisons. U-11 pins the vLLM oracle; U-12 pins llama.cpp. An accepted fallback never satisfies this gate. U-05, U-13, and U-22 are currently open, so the prompt and fixture evidence do not support a parity claim.
 
 Parity is asserted exclusively through the golden-fixture format in [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) §5.
 
@@ -334,7 +334,7 @@ Implement and validate the CPU representation of one denoising step.
 **Current objective:**
 
 ```text
-Pin the llama.cpp revision and artifact provenance, then capture initial reference fixtures and define per-field comparisons, closing U-12 through U-14 and U-22. The vLLM oracle is pinned at U-11.
+Record the exact artifact chat template and reproduce its prompt/canvas layout, then capture independent reference fixtures and establish evidence-based comparison bounds, closing U-05, U-13, and U-22.
 ```
 
 This is deliberately a verification task rather than a model implementation task. Several open questions may be answerable by inspecting the pinned references, but their answers must be recorded with concrete source evidence. No Phase 3 parity claim is valid until the relevant contracts, artifact provenance, fixtures, and comparison rules are in place.

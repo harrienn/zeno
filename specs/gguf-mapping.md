@@ -13,7 +13,7 @@ All values, shapes, and quantization types documented here are directly extracte
 * **Total Tensors**: 692
 * **Total Metadata Key-Values**: 44
 * **SHA-256 Digest**: `24523b6c833c9ce9f5f34f9b333ab1517d73d6f1e76a103645353114c8028bc5`
-* **File Size**: `16,561,048,512` bytes
+* **File Size**: `16,806,810,208` bytes
 * **Inspection Tools**:
   - `sha256sum` (GNU coreutils 9.4)
   - Zeno native GGUF v3 parser (`zeno metadata`, commit `8dbebf9`)
@@ -59,12 +59,11 @@ As of this revision the loader validates `block_count` and `embedding_length` on
 | `tokenizer.ggml.eos_token_id` | `1` | End-of-sequence token |
 | `tokenizer.ggml.mask_token_id` | `4` | Discrete diffusion mask / noise token |
 | `tokenizer.ggml.padding_token_id` | `0` | Padding token |
-| `tokenizer.ggml.chat_template` | **not yet extracted** | Chat template. Required for prompt construction; see [`canvas-templates.md`](canvas-templates.md) §4. Tracked as **U-05**. |
+| `tokenizer.chat_template` | **not recorded in this specification** | Chat template. Required for prompt construction; see [`canvas-templates.md`](canvas-templates.md) §4. Tracked as **U-05**. |
 
 ---
 
-> **Phase scope**: the `self_cond_*` tensors below are Phase 4+ territory. Whether a one-step read
-> evaluates the self-conditioning MLP at all is unresolved (U-18 in [`UNRESOLVED.md`](UNRESOLVED.md)).
+> **Phase scope**: the `self_cond_*` tensors below are Phase 4+ territory. U-18 resolves that the one-step read bypasses the self-conditioning MLP.
 
 ## 3. Global Tensors (7 Tensors)
 

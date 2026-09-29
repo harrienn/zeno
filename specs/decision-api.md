@@ -97,7 +97,7 @@ The decision engine strictly validates that all candidate choices resolve to sin
   $$H(P) = -\sum_{i=1}^N p_i \ln(p_i)$$
 * **`normalized_entropy`**: $H(P) / \ln(N)$, in $[0,1]$ for $N \ge 2$.
 * **`uncertain`**: Set to `true` **only when `options.entropy_threshold` was supplied** and `normalized_entropy >= entropy_threshold`. If the threshold is omitted, `uncertain` is always `false`. Entropy is a dispersion measure, not a correctness estimate. *An earlier revision of this document stated "supplied or defaulted", contradicting the field table in §3.1. The field table is normative, and this reading is corroborated by [`denoising.md`](denoising.md) §2.1. See [`UNRESOLVED.md`](UNRESOLVED.md) U-21.*
-* **`canvas_tokens_used`**: The number of canvas positions carrying prompt or answer content, i.e. `answer_pos + 1`. Trailing canvas fill is excluded, because whether trailing positions hold `PAD`, `MASK`, or noise is an open question ([`UNRESOLVED.md`](UNRESOLVED.md) U-02). This field therefore measures *seeded content length*, not canvas occupancy.
+* **`canvas_tokens_used`**: The number of prompt and answer positions, i.e. `answer_pos + 1`. It excludes the `TURN_CLOSE` and padded tail positions specified by U-02 in [`UNRESOLVED.md`](UNRESOLVED.md).
 
 ---
 
@@ -184,10 +184,9 @@ A candidate string that is absent from the vocabulary must **not** be reported a
 
 ## 6. Known Gaps in This Specification
 
-This contract is not yet implementable end-to-end. The following dependencies are tracked in [`UNRESOLVED.md`](UNRESOLVED.md):
+The request path is implemented as a CPU prototype, but it is not yet reference-validated end-to-end. Remaining dependencies are tracked in [`UNRESOLVED.md`](UNRESOLVED.md):
 
-* **U-04** — `encode()` is assigned to Phase 2 of [`PLAN.md`](../PLAN.md), but its pre-tokenization and BPE contract remains unresolved, so query text cannot yet be tokenized faithfully.
-* **U-05** — the artifact's chat template is not captured, so §3 rendering has no normative source.
-* **U-01 / U-02 / U-03** — canvas seeding and tail contents are undefined, so `canvas_tokens_used` and `steps_executed` semantics rest on an unresolved basis.
+* **U-05** — the artifact's exact chat template is not recorded as reproducible specification evidence.
+* **U-13 / U-22** — the checked-in fixture is not accompanied by an independently captured reference output, and its tolerance policy remains provisional.
 
-The request/response shape, the single-token constraint (§2), and the scoring fields are specified and may be implemented. The **engine that produces the `expected` values is not**.
+The request/response shape, single-token constraint (§2), and scoring fields are specified. RoPE pairing is resolved to NeoX-style half-split under U-23 and implemented accordingly. The local engine runs, but its outputs must not be presented as reference parity until the remaining dependencies are closed.

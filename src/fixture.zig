@@ -1,4 +1,4 @@
-//! Zeno — Golden fixture parser and parity validation against pinned references.
+//! Zeno — Golden fixture parser and local-engine comparison against stored values.
 //!
 //! Conforms to zeno.fixture/v1 and zeno.tolerance/v1 defined in specs/UNRESOLVED.md.
 
@@ -94,8 +94,9 @@ pub fn loadFixture(allocator: std.mem.Allocator, path: []const u8) !std.json.Par
     return parsed;
 }
 
-/// Executes a decision query defined in a golden fixture and asserts numerical
-/// parity according to the zeno.tolerance/v1 specification in specs/UNRESOLVED.md §6.
+/// Executes a decision query defined in a fixture and compares the local engine
+/// with its stored values. This is a regression check; it establishes reference
+/// parity only when the fixture values have independently recorded provenance.
 pub fn validateFixture(
     allocator: std.mem.Allocator,
     fixture_path: []const u8,
@@ -170,7 +171,7 @@ test "loadFixture: parses zeno.fixture/v1 correctly" {
     try std.testing.expectEqual(@as(usize, 2), parsed.value.candidates.len);
 }
 
-test "validateFixture: verifies parity on local model if present" {
+test "validateFixture: compares local model with stored fixture values if present" {
     const allocator = std.testing.allocator;
     const model_path = "models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf";
     const fixture_path = "specs/fixtures/system_health_boolean.json";

@@ -31,9 +31,9 @@ pub const Canvas = struct {
         };
     }
 
-    /// Seeds canvas with prompt tokens and places a seeded token at pinned answer position p.
+    /// Seeds the prompt, answer token, following TURN_CLOSE, and PAD tail.
     pub fn seedSingleStep(prompt_tokens: []const u32, seed_token: u32) CanvasError!Canvas {
-        if (prompt_tokens.len + 1 > root.ModelConfig.canvas_length) {
+        if (prompt_tokens.len + 2 > root.ModelConfig.canvas_length) {
             return error.CanvasOverflow;
         }
 
@@ -46,6 +46,7 @@ pub const Canvas = struct {
 
         @memcpy(canvas.tokens[0..prompt_tokens.len], prompt_tokens);
         canvas.tokens[canvas.answer_pos] = seed_token;
+        canvas.tokens[canvas.answer_pos + 1] = root.SpecialTokens.turn_close;
 
         return canvas;
     }
@@ -123,8 +124,10 @@ test "Canvas: seedSingleStep geometry and padding" {
     try std.testing.expectEqual(@as(u32, 300), canvas.tokens[3]);
     try std.testing.expectEqual(@as(u32, 4), canvas.tokens[4]); // Answer slot
 
-    // Remaining slots must be PAD (0)
-    for (canvas.tokens[5..]) |tok| {
+    try std.testing.expectEqual(root.SpecialTokens.turn_close, canvas.tokens[5]);
+
+    // Slots after TURN_CLOSE must be PAD (0)
+    for (canvas.tokens[6..]) |tok| {
         try std.testing.expectEqual(@as(u32, root.SpecialTokens.pad), tok);
     }
 }

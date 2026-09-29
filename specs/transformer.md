@@ -80,14 +80,15 @@ The 30 blocks follow a recurring 5:1 pattern:
 RoPE is applied to Query and Key head vectors with dual frequency bases:
 * **SWA Layers**: Base frequency $\theta_{\text{swa}} = 10,000.0$, dimension $d_{\text{rope}} = 256$.
 * **Global Layers**: Base frequency $\theta_{\text{global}} = 1,000,000.0$, dimension $d_{\text{rope}} = 512$.
+* **Coordinate pairing**: NeoX-style half-split. For rotary dimension $d$, rotate coordinate pairs $(x_i, x_{i+d/2})$ using inverse frequency $\theta^{-2i/d}$. Interleaved adjacent-pair rotation does not match the pinned reference (U-23).
 
 ### 3.4 Attention Dot-Product & Output
 1. Reshape $Q$ into $[B, L, H_Q, d_k]$ and $K, V$ into $[B, L, H_{KV}, d_k]$.
 2. Apply per-head normalization and RoPE in the reference-defined order. For shared K/V weights, preserve distinct K and V processing.
 3. Apply the configured attention mask and KV read/write mode for the current encoder or decoder phase; do not assume full-canvas unmasked attention for every phase.
 4. Expand $K, V$ via Grouped-Query Attention (GQA) factor ($2$ for SWA, $8$ for Global), as confirmed for the selected model artifact.
-   > **The expansion *order* is unresolved (U-08).** The factor alone does not determine the map. Naive repetition gives $\mathrm{kv}(q) = q \bmod H_{KV}$; blocked repetition gives $\mathrm{kv}(q) = q \div (H_Q / H_{KV})$. For Global layers ($H_Q{=}16, H_{KV}{=}2$) these differ, and the wrong choice yields plausible-looking attention that is silently incorrect. Resolve from the pinned reference before implementing.
-> **Attention logit softcapping is unspecified (U-09).** [`gguf-mapping.md`](gguf-mapping.md) §2 lists `final_logit_softcapping` but is silent on an attention equivalent. The Gemma lineage typically applies one. Silence is not evidence of absence; check the artifact metadata.
+   > **Resolved (U-08):** use blocked repetition, $\mathrm{kv}(q) = q \div (H_Q / H_{KV})$, as in the pinned Gemma4 reference.
+> **Resolved (U-09):** this artifact has no attention-logit softcap metadata; final-logit softcapping is specified separately in [`UNRESOLVED.md`](UNRESOLVED.md).
 
 5. Compute attention scores under the phase's mask:
    $$\text{Attn}(Q, K, V) = \text{Softmax}\left(\frac{Q K^T}{\sqrt{d_k}}\right) V$$
@@ -106,9 +107,9 @@ $$\text{Gate} = x \cdot W_{\text{gate}} \quad (W_{\text{gate}} \in \mathbb{R}^{2
 $$\text{Up} = x \cdot W_{\text{up}} \quad (W_{\text{up}} \in \mathbb{R}^{2816 \times 2112})$$
 $$\text{FFN}_{\text{shared}} = (\text{ConfiguredActivation}(\text{Gate}, \text{Up})) \cdot W_{\text{down}} \quad (W_{\text{down}} \in \mathbb{R}^{2112 \times 2816})$$
 
-For the cited vLLM Gemma4 implementation, the dense branch uses the configured `hidden_activation`; confirm its concrete value from the selected artifact/config.
+For the cited vLLM Gemma4 implementation, the dense branch uses the configured `hidden_activation`, resolved as `gelu_pytorch_tanh` for this model.
 
-> **This value is unresolved (U-07).** The expert branch activation *is* stated (§4.2, `gelu_tanh`); the dense branch activation is not, and the instruction above defers it without ever supplying it. A layer whose two branches use differently-specified activations is not implementable. Resolve from the pinned config and record the value in this table. Do not infer it from tensor names — the tensor names in [`gguf-mapping.md`](gguf-mapping.md) §4.1 are identical across both branches.
+> **Resolved (U-07):** the dense branch uses `gelu_pytorch_tanh` (GeGLU), matching the pinned `Gemma4MLP` implementation. Do not infer this from tensor names.
 
 ### 4.2 MoE Branch (128 Experts, Top-8 Routing)
 
@@ -135,23 +136,14 @@ For the cited vLLM Gemma4 implementation, the dense branch uses the configured `
 
 ### 4.3 Norm and Residual Ordering
 
-The block is not specified by a single sum of attention, dense FFN, and MoE outputs (**U-06**). The cited Gemma4 implementation applies input RMSNorm, attention, post-attention RMSNorm, then the attention residual; it then evaluates the dense MLP and MoE branches with their configured pre/post norms, combines the branches, applies post-FFN RMSNorm, and adds the FFN residual. MoE routing uses the residual input, while the expert input has its own pre-FFN norm. Preserve this ordering and the artifact's layer scales when implementing.
-
-> **This ordering is unresolved (U-06) and is the highest-consequence gap in this document.** Thirty blocks
-> carry roughly six norms, two residual adds, and two FFN branches each. An ordering error compiles, runs,
-> produces finite numbers, and diverges silently — no test in the current suite can detect it, and it will
-> not surface until logits are compared against a pinned reference.
->
-> The prose above is a summary, not an executable order. The slot table below is the implementation
-> checklist. **Fill each slot from the pinned reference and flip its status; do not guess an order and then
-> mark it verified.** Until a slot reads `verified`, the forward pass is not parity-assertable.
+The verified 15-slot sequence below records the pinned decoder block order (U-06). Preserve the branch-specific norms, residuals, and layer output scale exactly.
 
 | # | Operation | Input source | Norm applied | Residual added | Status |
 | :-- | :--- | :--- | :--- | :--- | :--- |
 | 1 | Input RMSNorm | block input $x_l$ | `attn_norm` | — | `verified` (`gemma4.py:713`) |
 | 2 | Q/K/V projection | post-norm $x$ | — | — | `verified` (`gemma4.py:539-540`; Global ties $V=K$ before $K$-norm) |
-| 3 | Per-head Q/K norm | projected Q, K, V | `attn_q_norm`, `attn_k_norm` | — | `verified` (`gemma4.py:543,547`; $V$ receives unweighted RMSNorm `:552`) |
-| 4 | RoPE | Q, K | — | — | `verified` (`gemma4.py:549`; NeoX style on Q and K; V has no RoPE) |
+| 3 | Per-head Q/K/V norm | projected Q, K, V | `attn_q_norm`, `attn_k_norm`; unweighted RMSNorm for V | — | `verified` (pinned `gemma4.py`: V norm definition and forward application) |
+| 4 | RoPE | Q, K | — | — | `verified` (pinned `gemma4.py`, `is_neox_style=True`; NeoX style on Q/K; V has no RoPE) |
 | 5 | Attention + $W_O$ | Q, K, V | — | — | `verified` (`gemma4.py:554-556`; blocked GQA repeat, $W_O$ projection) |
 | 6 | Post-attention norm | attention output | `post_attention_norm` | — | `verified` (`gemma4.py:719`) |
 | 7 | Attention residual add | slot 6 output | — | $x_l$ | `verified` (`gemma4.py:720`, produces $x_{\text{mid}}$) |
@@ -164,7 +156,7 @@ The block is not specified by a single sum of attention, dense FFN, and MoE outp
 | 14 | FFN residual add | slot 13 output | — | slot 7 output ($x_{\text{mid}}$) | `verified` (`gemma4.py:741`) |
 | 15 | Layer output scale | slot 14 output | — | — | `verified` (`gemma4.py:748`; `layer_output_scale.weight`) |
 
-The exact sequence was established from `vllm/model_executor/models/gemma4.py` (commit `1b3b88e`):
+The exact sequence was established from [`vllm/model_executor/models/gemma4.py`](https://github.com/vllm-project/vllm/blob/1b3b88ec2b7457aa030db4d0e7d8aaf04f6d0fb8/vllm/model_executor/models/gemma4.py) at commit `1b3b88ec2b7457aa030db4d0e7d8aaf04f6d0fb8`:
 
 * **Slot 10** — the MoE router consumes the *attention residual* $x_{\text{mid}}$ (slot 7), not the FFN-normalized input (slot 8). Router preprocessing applies unweighted RMSNorm, scales by $d_{\text{model}}^{-0.5}$, multiplies by learned dimension scale `blk.{l}.ffn_gate_inp.scale`, projects via `blk.{l}.ffn_gate_inp.weight`, computes softmax over all 128 experts, selects top 8, renormalizes top-8 weights to sum to 1.0, and scales by per-expert `blk.{l}.ffn_down_exps.scale`.
 * **Slots 8–13** — Dense MLP has `pre_feedforward_layernorm` (`ffn_norm`) before MLP and `post_feedforward_layernorm_1` (`post_ffw_norm_1`) after MLP. MoE has `pre_feedforward_layernorm_2` (`pre_ffw_norm_2`) before MoE and `post_feedforward_layernorm_2` (`post_ffw_norm_2`) after MoE. The two branches are summed (slot 12), and the sum is normalized by `post_feedforward_layernorm` (`post_ffw_norm`, slot 13).
@@ -172,10 +164,7 @@ The exact sequence was established from `vllm/model_executor/models/gemma4.py` (
 
 ---
 
-> **Phase 3 scope**: a one-step read may not need this sub-layer at all. Whether the gated
-> self-conditioning MLP is evaluated at step 1 with a zero soft-embedding, or bypassed entirely, is
-> unresolved (**U-18** in [`UNRESOLVED.md`](UNRESOLVED.md)). Establish this *before* implementing, because
-> if the reference does evaluate it, omitting it is a parity failure rather than an optimization.
+> **Phase 3 behavior (U-18):** one-step reads bypass the self-conditioning MLP. This sub-layer is reserved for the multi-step path and must not be run by the single-step implementation.
 
 ## 5. Self-Conditioning Sub-layer
 

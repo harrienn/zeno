@@ -2,11 +2,11 @@
 
 ## 1. Purpose & Scope
 
-This document records a proposed layout for the model's configured canvas width (256 tokens in the inspected GGUF artifact). The exact prompt serialization and padding behavior remain subject to comparison with the selected reference implementation.
+This document records the resolved canvas layout for the configured 256-token width. Exact prompt serialization remains open under U-05; the current text format is provisional.
 
 In structured-reads mode, a seeded canvas contains prompt tokens and answer positions whose logits are read. In [vLLM PR #57250](https://github.com/vllm-project/vllm/pull/57250), pinning holds a selected position at its seeded token value across denoising steps. Pinning is an update rule; it does not by itself mean that the seed token must be `MASK` (`4`).
 
-> **Known circularity.** This document and [`structured-reads.md`](structured-reads.md) §2 both defer the answer-position seed value to *"the structured-read procedure"*, but neither document *is* that procedure. The value of $x_p$ — the single most consequential byte in the system — is therefore undefined. This is tracked as **U-01** in [`UNRESOLVED.md`](UNRESOLVED.md), and it blocks Phase 3. Note that the correct answer may well be `MASK`; what is missing is the evidence that distinguishes *"seeded with MASK"* from *"pinned to its seed across steps"*, which are different properties.
+**Resolved canvas behavior:** the Phase 3 read seeds the answer position with `MASK` (4), places `TURN_CLOSE` (106) immediately after it, then fills later canvas positions with `PAD` (0). The canvas width is 256; the evaluated prefix is rounded up to a 16-token multiple. See U-01 through U-03 in [`UNRESOLVED.md`](UNRESOLVED.md). The implementation must preserve this exact layout.
 
 ---
 
@@ -14,7 +14,7 @@ In structured-reads mode, a seeded canvas contains prompt tokens and answer posi
 
 The canvas is a fixed-width array of token identifiers:
 
-* **Default Canvas Length ($L$)**: `256` tokens (matching `diffusion.canvas_length` in [`specs/gguf-mapping.md`](gguf-mapping.md)). Whether a shorter request canvas is legal — and if so, what the model attends over beyond the answer slot — is unresolved (**U-03** in [`UNRESOLVED.md`](UNRESOLVED.md)) and is coupled to U-02 above. Do not implement a truncated canvas until both are resolved.
+* **Default Canvas Length ($L$)**: `256` tokens (matching `diffusion.canvas_length` in [`gguf-mapping.md`](gguf-mapping.md)). The Phase 3 evaluated prefix is rounded up to a 16-token multiple to include the answer slot, capped at 256 (U-03).
 * **Token Identifier Type**: 32-bit unsigned integer (`u32`).
 * **Special Token IDs**:
   - `BOS` (Beginning of Sequence): `2`
@@ -26,14 +26,14 @@ The canvas is a fixed-width array of token identifiers:
 
 ## 3. Seeded Canvas Memory Layout
 
-The following diagram is a template proposal, not a verified requirement for model inputs:
+The following diagram shows the resolved canvas geometry. The exact user/model prompt text remains provisional under U-05:
 
 ```text
 ┌─────────┬──────────────────────┬──────────────────────┬─────────────┬─────────────┐
-│ BOS?    │    Prompt Context    │   Response Template  │ Answer seed │ Remaining   │
-│template │  user query & state  │    "Answer:" label   │ token + pin │   canvas    │
-└─────────┴──────────────────────┴──────────────────────┴─────────────┴─────────────┘
-0         1                      k                      p             p+1         255
+│ BOS?    │    Prompt Context    │   Response Template  │ Answer seed │ TURN_CLOSE │ PAD tail │
+│template │  user query & state  │    "Answer:" label   │ token + pin │    token   │          │
+└─────────┴──────────────────────┴──────────────────────┴─────────────┴────────────┴──────────┘
+0         1                      k                      p             p+1          p+2        255
 ```
 
 ### 3.1 Region Definitions
@@ -47,17 +47,15 @@ The following diagram is a template proposal, not a verified requirement for mod
    - Model turn delimiter (`<|turn>model\n`).
    - Prefix cue (e.g. `Answer:`).
 4. **Answer Position**: Position $p$ is seeded with the token specified by the chosen structured-read procedure and selected for logit readout. Pin it if the selected step policy requires preserving its seed value.
-5. **Remaining Canvas**: Seed contents and attention treatment are not specified here (**U-02**). Establish them from the reference path and a golden fixture ([`UNRESOLVED.md`](UNRESOLVED.md) §5).
+5. **Remaining Canvas**: Position $p+1$ contains `TURN_CLOSE` (106); later positions contain `PAD` (0). The evaluated prefix is rounded to a 16-token multiple. This is the reference-derived Phase 3 layout (U-02/U-03).
 
-> **Open requirement (U-02)**: A `PAD` token is still a token embedding. Define whether unused positions are masked from attention, contain padding IDs, or contain diffusion noise. Do not assume that filling them with `0` prevents them from influencing bidirectional attention.
->
-> This is **not** a low-risk default. Global full attention occurs at blocks {5, 11, 17, 23, 29} ([`transformer.md`](transformer.md) §3.1), so a canvas whose trailing ~250 positions are filled with `PAD` is *not* equivalent to a shorter canvas. The two produce different hidden states at position $p$. Which one the reference performs determines the entire numeric result of a structured read, so this must be resolved by evidence rather than preference.
+PAD positions included in the evaluated prefix remain token embeddings and can affect the answer through bidirectional attention. Do not truncate or mask them unless a separate reference contract establishes that behavior.
 
 ---
 
 ## 4. Prompt Template Formatting
 
-The normative prompt structure is governed by `tokenizer.chat_template` extracted from the model artifact metadata (resolving **U-05**).
+The exact artifact template has not been captured in a reviewable specification (U-05). The following prompt is the current Zeno prototype format, not a normative reproduction of the artifact template.
 
 For standard decision reads:
 
@@ -72,7 +70,7 @@ Choices:
 Answer: 
 ```
 
-### 4.0 Chat Template Rules (Normative)
+### 4.0 Prototype Formatting Rules (Provisional)
 1. **Turn Delimiters**:
    - User turn begins with `<|turn>user\n` and closes with `<turn|>\n`.
    - Assistant/model turn begins with `<|turn>model\n` and closes with `<turn|>\n` (or is kept open at the generation prefix).

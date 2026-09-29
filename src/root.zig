@@ -64,6 +64,7 @@ pub const SpecialTokens = struct {
     pub const bos: u32 = 2;
     pub const unk: u32 = 3;
     pub const mask: u32 = 4;
+    pub const turn_close: u32 = 106;
 };
 
 test {
@@ -95,4 +96,5 @@ test "special token invariants" {
     try std.testing.expectEqual(@as(u32, 2), SpecialTokens.bos);
     try std.testing.expectEqual(@as(u32, 3), SpecialTokens.unk);
     try std.testing.expectEqual(@as(u32, 4), SpecialTokens.mask);
+    try std.testing.expectEqual(@as(u32, 106), SpecialTokens.turn_close);
 }

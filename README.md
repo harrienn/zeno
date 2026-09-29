@@ -79,7 +79,7 @@ Typed Decision Output (Boolean, Categorical, or Ordinal Score)
 
 ## 6. Status & Development
 
-The repository has moved beyond the initial build scaffold and includes Zig modules for GGUF parsing, tokenizer data, tensors, quantization, operations, model representation, canvas handling, and an early decision path. These modules do not yet constitute a complete, reference-validated DiffusionGemma inference path. In particular, the input-side tokenizer contract and chat template remain unresolved, and end-to-end correctness, performance, and probability calibration have not been established. See [`PLAN.md`](PLAN.md) and [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) for current gates.
+The repository has moved beyond the initial build scaffold and includes Zig modules for GGUF parsing, tokenizer encoding, tensors, quantization, operations, model representation, canvas handling, and a CPU decision path. End-to-end reference parity has not been established. The chat template is not recorded as a reproducible spec, the current fixture has no checked-in independent capture record, and its comparison tolerances remain provisional. Performance and probability calibration have not been established. See [`PLAN.md`](PLAN.md) and [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) for current gates.
 
 ### Prerequisites
 

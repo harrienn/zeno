@@ -25,7 +25,7 @@ The reference execution path is not a single undifferentiated bidirectional pass
 2. **Bidirectional decoder/denoising phase** evaluates the canvas while reading the encoder KV state. Multi-step execution also carries self-conditioning state between steps.
 3. **Read-only structured read** limits the requested work to the configured step cap and returns logits from the read step without the normal commit forward pass.
 
-See [transformer.md](transformer.md) for the model layer structure. Exact attention masks, canvas seeding, embedding scaling, output norm placement, and one-step state initialization are **not** inferable from this document. They are enumerated as U-02, U-06, U-10, U-16, U-17, and U-18 in [`UNRESOLVED.md`](UNRESOLVED.md), each with a resolution procedure. Do not implement them from the abbreviated equations below.
+See [transformer.md](transformer.md) for the verified decoder-layer operation order and RoPE convention. Phase 3 uses the resolved canvas seed/tail layout (U-01–U-03), final output projection (U-10), and one-step self-conditioning behavior (U-18). Numerical equivalence still requires independently captured reference fixtures (U-13) and evidence-based comparison bounds (U-22).
 
 ---
 
@@ -38,7 +38,7 @@ $$h_p = H_{\text{final}}[p, :] \in \mathbb{R}^{2816}$$
 For each candidate token ID $c_k \in C$:
 $$z_k = h_p \cdot W_{\text{token\_embd}}[c_k, :]$$
 
-The projection weights are tied to the input embedding table ([`gguf-mapping.md`](gguf-mapping.md) §3). **No input-side normalizer is applied on the output path in this equation** — the Gemma embedding scale $\sqrt{d_{\text{model}}}$ is an input-embedding property and does not carry to logits. This is stated explicitly because its absence is otherwise indistinguishable from an oversight; it remains to be confirmed against the pinned reference (U-10 in [`UNRESOLVED.md`](UNRESOLVED.md)).
+The projection weights are tied to the input embedding table ([`gguf-mapping.md`](gguf-mapping.md) §3). **No extra embedding scale is applied on the output path**: the final hidden state is normalized by `output_norm`, projected with the tied table, then final-logit softcapped (U-10 in [`UNRESOLVED.md`](UNRESOLVED.md)).
 
 ### 3.2 Logit Softcapping
 When configured by the selected model artifact, apply final logit softcapping in fp32 with cap parameter $C_{\text{cap}} = 30.0$ (from GGUF metadata `diffusion-gemma.final_logit_softcapping`):

@@ -55,16 +55,13 @@ In traditional autoregressive models, mask tokens are rarely used during inferen
 
 ## 3a. Scope: What This Document Does Not Specify
 
-This document specifies the **vocabulary** contract: token inventory, special IDs, decode, and single-token candidate validation. It does **not** specify the tokenizer's input-side contract. The following are required to execute §4 and are unresolved as of this revision:
+This document specifies the **vocabulary** contract: token inventory, special IDs, decode, BPE encoding, and single-token candidate validation. The input-side BPE mechanics are implemented and recorded under U-04. The artifact's chat template and its exact interaction with BOS remain unresolved under U-05:
 
-* pre-tokenization (splitting rule and normalization);
-* merge application order and rank semantics;
-* byte-fallback behavior for out-of-vocabulary input;
 * the chat template that supplies the rendered prompt.
 
-These are tracked as U-04 and U-05 in [`UNRESOLVED.md`](UNRESOLVED.md). `encode()` is assigned to Phase 2 in [`PLAN.md`](../PLAN.md), but its tokenizer behavior remains unresolved.
+The BPE behavior is tracked as resolved U-04; the template is tracked as open U-05 in [`UNRESOLVED.md`](UNRESOLVED.md).
 
-**Consequence**: §4's validation procedure is specified but not yet executable end-to-end: it requires the unresolved input-side contract and an implementation of the Phase 2 encoder.
+**Consequence**: candidate validation can use the implemented encoder, but an end-to-end rendered prompt cannot be considered reference-faithful until U-05 is closed.
 
 ## 4. Candidate Validation Contract
 

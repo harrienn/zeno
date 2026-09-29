@@ -48,7 +48,7 @@ pub fn gemvF32(weights: []const f32, x: []const f32, out: []f32, out_dim: usize,
     }
 }
 
-/// Applies Rotary Position Embeddings (RoPE) to head vector pairs at position `pos`.
+/// Applies NeoX-style (half-split) Rotary Position Embeddings at position `pos`.
 pub fn applyRoPE(vec: []f32, pos: usize, head_dim: usize, theta: f32) void {
     const half = head_dim / 2;
     const pos_f = @as(f32, @floatFromInt(pos));
@@ -59,10 +59,10 @@ pub fn applyRoPE(vec: []f32, pos: usize, head_dim: usize, theta: f32) void {
         const cos = @cos(angle);
         const sin = @sin(angle);
 
-        const v0 = vec[2 * i];
-        const v1 = vec[2 * i + 1];
-        vec[2 * i] = v0 * cos - v1 * sin;
-        vec[2 * i + 1] = v0 * sin + v1 * cos;
+        const v0 = vec[i];
+        const v1 = vec[half + i];
+        vec[i] = v0 * cos - v1 * sin;
+        vec[half + i] = v0 * sin + v1 * cos;
     }
 }
 
