@@ -59,7 +59,7 @@ As of this revision the loader validates `block_count` and `embedding_length` on
 | `tokenizer.ggml.eos_token_id` | `1` | End-of-sequence token |
 | `tokenizer.ggml.mask_token_id` | `4` | Discrete diffusion mask / noise token |
 | `tokenizer.ggml.padding_token_id` | `0` | Padding token |
-| `tokenizer.chat_template` | **not recorded in this specification** | Chat template. Required for prompt construction; see [`canvas-templates.md`](canvas-templates.md) §4. Tracked as **U-05**. |
+| `tokenizer.chat_template` | Recorded in [`chat_template.jinja`](chat_template.jinja) (17,336 bytes) | Chat template extracted verbatim from artifact metadata. Governs prompt construction; see [`canvas-templates.md`](canvas-templates.md) §4. Tracked as **U-05**. |
 
 ---
 

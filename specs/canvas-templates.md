@@ -55,9 +55,10 @@ PAD positions included in the evaluated prefix remain token embeddings and can a
 
 ## 4. Prompt Template Formatting
 
-The exact artifact template has not been captured in a reviewable specification (U-05). The following prompt is the current Zeno prototype format, not a normative reproduction of the artifact template.
+The artifact's complete jinja template is recorded verbatim in [`chat_template.jinja`](chat_template.jinja) (17,336 bytes). When evaluated with `messages=[{"role": "user", "content": ...}]` and `add_generation_prompt=True`, the template renders:
+`<|turn>user\n{content}<turn|>\n<|turn>model\n`.
 
-For standard decision reads:
+Zeno formats the decision query and candidate choices inside `{content}`, and appends the structured read prefix `Answer: ` to place the target prediction at answer slot $p$:
 
 ```text
 <|turn>user

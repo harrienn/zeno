@@ -118,10 +118,19 @@ pub fn validateFixture(
         };
     }
 
+    const schema_t: decision.SchemaType = if (std.mem.eql(u8, fix.schema_type, "boolean"))
+        .boolean
+    else if (std.mem.eql(u8, fix.schema_type, "choice"))
+        .choice
+    else if (std.mem.eql(u8, fix.schema_type, "score"))
+        .score
+    else
+        return error.UnsupportedPolicy;
+
     const req = decision.DecisionRequest{
         .query = fix.query,
         .context = fix.context,
-        .schema_type = .boolean,
+        .schema_type = schema_t,
         .candidates = candidate_specs,
         .step_cap = 1,
         .temperature = 1.0,
@@ -144,16 +153,23 @@ pub fn validateFixture(
 
     // Assert candidates length match
     try std.testing.expectEqual(fix.expected.candidate_logits_raw.len, resp.candidates.len);
+    try std.testing.expectEqual(fix.expected.candidate_logits_softcapped.len, resp.candidates.len);
 
-    // Assert per-candidate raw logits and probabilities within tolerances
+    // Assert per-candidate raw logits, softcapped logits, and probabilities within tolerances
     for (fix.expected.candidate_logits_raw, resp.candidates, 0..) |expected_raw, actual_cand, i| {
         try std.testing.expectApproxEqAbs(expected_raw, actual_cand.raw_logit, 0.5);
+        const actual_softcapped = root.ops.logitSoftcap(actual_cand.raw_logit, root.ModelConfig.logit_softcap);
+        try std.testing.expectApproxEqAbs(fix.expected.candidate_logits_softcapped[i], actual_softcapped, 0.5);
         try std.testing.expectApproxEqAbs(fix.expected.probabilities[i], actual_cand.probability, 0.05);
     }
 
     // Assert entropy metrics within tolerance 0.05
     try std.testing.expectApproxEqAbs(fix.expected.entropy_nats, resp.entropy_nats, 0.05);
     try std.testing.expectApproxEqAbs(fix.expected.normalized_entropy, resp.normalized_entropy, 0.05);
+
+    // Assert canvas geometry and position bounds
+    try std.testing.expectEqual(fix.canvas_length, root.ModelConfig.canvas_length);
+    try std.testing.expect(fix.answer_pos + 1 <= resp.canvas_tokens_used);
 }
 
 test "loadFixture: parses zeno.fixture/v1 correctly" {
