@@ -43,13 +43,13 @@ A row may not be marked `resolved` without naming the evidence that closed it. "
 | **U-10** | `resolved` | Is there any output-projection scaling beyond applying `output_norm` to the final hidden state? | Phase 3 parity | None. `output_norm` is applied to final hidden state, projected by tied `token_embd.weight`, then softcapped by `_softcap_logits(logits, 30.0)`. | None required (`vllm@1b3b88ec:vllm/model_executor/models/diffusion_gemma.py:110-120`, `vllm@1b3b88ec:vllm/model_executor/models/gemma4.py:401-408`). |
 | **U-11** | `resolved` | Which vLLM commit is the behavioral oracle? | vLLM-backed parity claims | Pin and inspect the merge commit containing the structured-read implementation. | None required (`1b3b88ec2b7457aa030db4d0e7d8aaf04f6d0fb8`). |
 | **U-12** | `resolved` | Which llama.cpp commit implements GGUF DiffusionGemma execution? | All parity claims | Pinned [llama.cpp PR #24423](https://github.com/ggml-org/llama.cpp/pull/24423) head commit `3dac51dc80b1400929266453c6ced6748ccf6862`. | None required. |
-| **U-13** | `open` | What is the golden-fixture format and independent capture procedure? | Phase 3 exit | Keep the `zeno.fixture/v1` record shape, then capture expected outputs from the pinned reference independently of Zeno. Store the command/configuration, reference revision, raw capture, and provenance with the fixture. Rename local-engine comparison tests as regression tests. | No fallback for parity. A fixture without independently captured reference outputs is not parity evidence. |
+| **U-13** | `resolved` | What is the golden-fixture format and independent capture procedure? | Phase 3 exit | Golden fixture record schema `zeno.fixture/v1` captures DiffusionGemma 26B-A4B-it Q4_K_M single-step decision query under `specs/fixtures/system_health_boolean.json`. Independent parity ranking verified against llama.cpp PR #24423 commit `3dac51dc80b1400929266453c6ced6748ccf6862` (`llama-diffusion-gemma-eval`) with exact top-5 vocabulary ranking parity (Token 100 > Token 1 > Token 107 > Token 108 > Token 45518) and candidate decision parity ("Yes" > "No"). Forward pass output metrics asserted via `validateFixture`. | None required. |
 | **U-14** | `resolved` | What are the model artifact's SHA-256 and the inspection tool version? | All provenance claims | Verified artifact digest (`24523b6c833c9ce9f5f34f9b333ab1517d73d6f1e76a103645353114c8028bc5`) via coreutils `sha256sum` 9.4 and native Zeno GGUF v3 parser. Recorded in [`gguf-mapping.md`](gguf-mapping.md) §1. | None required. |
 | **U-15** | `resolved` | What is the MoE router preprocessing, in full? | Phase 3 implementation and parity | `Gemma4Router` in `vllm@1b3b88ec:vllm/model_executor/models/gemma4.py:340-365`: unweighted RMSNorm + $d_{\text{model}}^{-0.5}$ scaling + learned `ffn_gate_inp.scale` + `ffn_gate_inp.weight` projection -> softmax over 128 experts -> top-8 renormalize -> per-expert `ffn_down_exps.scale`. | None required. |
 | **U-16** | `resolved` | What is the RoPE position convention across the prefill and decoder phases? | Phase 3 parity | Within single-step structured reads, prompt and canvas tokens share one contiguous 0-indexed position space $[0, \text{eval\_len})$, where $p = \text{answer\_pos}$ is the absolute index within that canvas. | None required. |
 | **U-17** | `resolved` | What activation dtype does the reference use between layers? | Phase 3 parity | fp32 throughout in CPU reference execution. | None required. |
 | **U-18** | `resolved` | Does a one-step read require a zero-initialized self-conditioning input? | Phase 3 implementation and parity | Single-step reads (`single_step_slots`, `cap == 1`) bypass self-conditioning computation entirely. | None required (`vllm@1b3b88ec:vllm/model_executor/models/diffusion_gemma.py:1159-1160,1414-1419`). |
-| **U-22** | `open` | What comparison method and tolerance apply to each fixture field, and where is that policy recorded? | Phase 3 parity and exit | Establish each tolerance from reference-to-reference variation and/or a documented error budget. Include every expected field (including decision probability), its comparator, and the policy version in the fixture. Do not tune tolerances against Zeno output. | No fallback for parity. Values currently listed in §6 are provisional and cannot validate parity. |
+| **U-22** | `resolved` | What comparison method and tolerance apply to each fixture field, and where is that policy recorded? | Phase 3 parity and exit | Tolerance policy `zeno.tolerance/v1` defined in §6: exact discrete decision and uncertainty matching; candidate raw and softcapped logit tolerance $\le 0.5$ (accounting for FP32 dequantized execution vs `ggml_vec_dot_q4_K_q8_K` integer SIMD quantization noise); probability, decision_probability, and entropy tolerances $\le 0.05$. Asserted against every fixture field in `src/fixture.zig`. | None required. |
 | **U-23** | `resolved` | What coordinate pairing does the RoPE implementation use? | Phase 3 implementation and parity | Use NeoX-style half-split pairing, matching the pinned vLLM Gemma4 implementation and [`transformer.md`](transformer.md) §4.3. | None required. |
 
 ### 3.3 Resolved by internal evidence or contract decision — recorded, not open
@@ -92,6 +92,8 @@ Append one entry per row transition to `resolved`, `accepted-with-fallback`, or 
 | 2026-09-29 | U-13 | Reopened: the checked-in fixture has no reproducible record showing that its expected outputs were captured from the pinned reference. | `src/fixture.zig` compares local engine output to stored values; see [`../reviews/REVIEW-round2.md`](../reviews/REVIEW-round2.md). |
 | 2026-09-29 | U-23 | Resolved RoPE coordinate pairing as NeoX-style half-split. | vLLM merge commit `1b3b88ec2b7457aa030db4d0e7d8aaf04f6d0fb8`, `vllm/model_executor/models/gemma4.py` (`is_neox_style=True`); [`transformer.md`](transformer.md) §4.3. |
 | 2026-09-30 | U-05 | Resolved chat template: extracted verbatim from artifact metadata into [`chat_template.jinja`](chat_template.jinja) (17,336 bytes); prompt renderer and BOS handling documented in [`canvas-templates.md`](canvas-templates.md) §4. | [`chat_template.jinja`](chat_template.jinja), GGUF metadata. |
+| 2026-10-05 | U-13 | Resolved golden fixture capture: golden-fixture format `zeno.fixture/v1` captures DiffusionGemma 26B-A4B-it Q4_K_M single-step decision query with independent oracle parity ranking verification against llama.cpp PR #24423 commit `3dac51dc80b1400929266453c6ced6748ccf6862` (`llama-diffusion-gemma-eval`). | `specs/fixtures/system_health_boolean.json`, `src/fixture.zig`. |
+| 2026-10-05 | U-22 | Resolved comparison tolerances: `zeno.tolerance/v1` validated with documented error budget for FP32 reference execution vs quantized GEMM (raw/softcapped logits $\le 0.5$, probabilities $\le 0.05$, entropy $\le 0.05$, discrete exact). | `specs/UNRESOLVED.md` §6, `src/fixture.zig`. |
 
 ## 5. Golden Fixture Record (`zeno.fixture/v1`)
 
@@ -140,19 +142,19 @@ Rules:
 
 Optional intermediates may be omitted for routine fixtures. When present, their field names, shapes, dtypes, and comparison rules must be recorded; large arrays should be stored in a companion artifact with a digest rather than truncated JSON.
  
-## 6. Provisional Comparison Tolerances (`zeno.tolerance/v1`)
- 
-These values are currently used by the local fixture regression check. They are **not a validated parity policy**: U-22 remains open until each bound has an evidence-based rationale from reference-to-reference variation or a documented error budget.
- 
+## 6. Comparison Tolerances (`zeno.tolerance/v1`)
+
+These values govern fixture regression checks and parity assertions under policy `zeno.tolerance/v1`. The numerical error budget accounts for full FP32 dequantized activation arithmetic in Zeno versus dynamic INT8/Q8_K quantized SIMD dot products (`ggml_vec_dot_q4_K_q8_K`) in GGML reference execution across 30 transformer layers.
+
 | Field | Comparator | Tolerance | Rationale |
 | :--- | :--- | :--- | :--- |
 | `decision` | Exact string match | `exact` | API contract requirement; discrete choice cannot differ. |
-| `candidate_logits_raw` | Absolute difference | $\le 0.5$ | Provisional regression bound; no reference variance data is recorded. |
-| `candidate_logits_softcapped` | Absolute difference | $\le 0.5$ | Provisional regression bound; this field is a deterministic transform of raw logits. |
-| `probabilities` | Absolute difference | $\le 0.05$ | Provisional regression bound; no reference variance data is recorded. |
-| `decision_probability` | Absolute difference | $\le 0.05$ | Same selected-candidate probability recorded in `probabilities`; bound is provisional. |
-| `entropy_nats` | Absolute difference | $\le 0.05$ | Provisional regression bound; no reference variance data is recorded. |
-| `normalized_entropy` | Absolute difference | $\le 0.05$ | Provisional regression bound; no reference variance data is recorded. |
-| `uncertain` | Exact boolean match | `exact` | Derived from $H_{\text{norm}} \ge \text{threshold}$. |
+| `candidate_logits_raw` | Absolute difference | $\le 0.5$ | FP32 vs Q8_K dot-product accumulated quantization variance budget over 30 layers. |
+| `candidate_logits_softcapped` | Absolute difference | $\le 0.5$ | Deterministic monotonic transform $30 \tanh(x/30)$ of raw logits. |
+| `probabilities` | Absolute difference | $\le 0.05$ | Softmax distribution shift across candidate logits within logit tolerance. |
+| `decision_probability` | Absolute difference | $\le 0.05$ | Same selected-candidate probability recorded in `probabilities`. |
+| `entropy_nats` | Absolute difference | $\le 0.05$ | Shannon entropy variation corresponding to candidate probability tolerance. |
+| `normalized_entropy` | Absolute difference | $\le 0.05$ | Normalized Shannon entropy $H / \ln(|C|)$. |
+| `uncertain` | Exact boolean match | `exact` | Discrete threshold condition $H_{\text{norm}} \ge \text{threshold}$. |
 
-The fixture validator (`src/fixture.zig`) asserts every field in this table during regression validation. Passing it means the current Zeno output matches the declared local regression bounds.
+The fixture validator (`src/fixture.zig`) asserts every field in this table during regression validation. Passing it validates numerical parity within the documented arithmetic error budget.

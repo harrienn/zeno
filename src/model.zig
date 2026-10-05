@@ -47,6 +47,7 @@ pub const TransformerLayer = struct {
     // Block-level output norm and scale
     post_ffw_norm: TensorInfo,
     layer_output_scale: TensorInfo,
+    enc_layer_output_scale: TensorInfo,
 };
 
 pub const ModelLoadError = error{
@@ -66,6 +67,7 @@ pub const DiffusionGemmaModel = struct {
     // Global model tensors
     token_embd: TensorInfo,
     output_norm: TensorInfo,
+    rope_freqs: ?TensorInfo,
 
     // 30 transformer layers
     layers: [ModelConfig.num_layers]TransformerLayer,
@@ -125,6 +127,7 @@ pub const DiffusionGemmaModel = struct {
         // Locate global tensors
         const token_embd = gfile.findTensor("token_embd.weight") orelse return error.MissingTensor;
         const output_norm = gfile.findTensor("output_norm.weight") orelse return error.MissingTensor;
+        const rope_freqs = gfile.findTensor("rope_freqs.weight");
 
         // Map all 30 layers
         var layers: [ModelConfig.num_layers]TransformerLayer = undefined;
@@ -202,6 +205,9 @@ pub const DiffusionGemmaModel = struct {
             const layer_out_scale_name = try std.fmt.bufPrint(&name_buf, "blk.{d}.layer_output_scale.weight", .{l});
             const layer_out_scale = gfile.findTensor(layer_out_scale_name) orelse return error.MissingTensor;
 
+            const enc_layer_out_scale_name = try std.fmt.bufPrint(&name_buf, "blk.{d}.enc_layer_output_scale.weight", .{l});
+            const enc_layer_out_scale = gfile.findTensor(enc_layer_out_scale_name) orelse return error.MissingTensor;
+
             layers[l] = .{
                 .layer_index = l,
                 .is_global = is_global,
@@ -227,6 +233,7 @@ pub const DiffusionGemmaModel = struct {
                 .post_ffw_norm_2 = post_ffw_2,
                 .post_ffw_norm = post_ffw,
                 .layer_output_scale = layer_out_scale,
+                .enc_layer_output_scale = enc_layer_out_scale,
             };
         }
 
@@ -237,6 +244,7 @@ pub const DiffusionGemmaModel = struct {
             .file_fd = null,
             .token_embd = token_embd,
             .output_norm = output_norm,
+            .rope_freqs = rope_freqs,
             .layers = layers,
         };
     }

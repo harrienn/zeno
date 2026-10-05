@@ -33,6 +33,7 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(exe);
 
+
     // Run command: `zig build run`
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());

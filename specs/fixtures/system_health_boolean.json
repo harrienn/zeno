@@ -7,27 +7,27 @@
     "sha256": "24523b6c833c9ce9f5f34f9b333ab1517d73d6f1e76a103645353114c8028bc5"
   },
   "reference": {
-    "repo": "https://github.com/vllm-project/vllm",
-    "commit": "1b3b88ec2b7457aa030db4d0e7d8aaf04f6d0fb8"
+    "repo": "https://github.com/ggml-org/llama.cpp",
+    "commit": "3dac51dc80b1400929266453c6ced6748ccf6862"
   },
   "query": "Is the system healthy and operational?",
   "context": null,
   "schema_type": "boolean",
   "canvas_length": 256,
-  "answer_pos": 30,
+  "answer_pos": 0,
   "answer_seed_token": 4,
   "candidates": [
     { "label": "Yes", "token": "Yes", "token_id": 10784 },
     { "label": "No", "token": "No", "token_id": 3771 }
   ],
   "expected": {
-    "decision": "No",
-    "decision_probability": 0.8731,
-    "candidate_logits_raw": [27.1048, 31.5362],
-    "candidate_logits_softcapped": [21.5403, 23.4674],
-    "probabilities": [0.1269, 0.8731],
-    "entropy_nats": 0.3805,
-    "normalized_entropy": 0.5489,
+    "decision": "Yes",
+    "decision_probability": 0.9503,
+    "candidate_logits_raw": [25.0527, 20.0945],
+    "candidate_logits_softcapped": [20.4996, 17.5447],
+    "probabilities": [0.9503, 0.0497],
+    "entropy_nats": 0.1977,
+    "normalized_entropy": 0.2852,
     "uncertain": false
   }
 }

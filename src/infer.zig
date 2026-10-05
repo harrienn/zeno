@@ -49,12 +49,13 @@ pub fn gemvF32(weights: []const f32, x: []const f32, out: []f32, out_dim: usize,
 }
 
 /// Applies NeoX-style (half-split) Rotary Position Embeddings at position `pos`.
-pub fn applyRoPE(vec: []f32, pos: usize, head_dim: usize, theta: f32) void {
+pub fn applyRoPE(vec: []f32, pos: usize, head_dim: usize, theta: f32, freq_factors: ?[*]const f32) void {
     const half = head_dim / 2;
     const pos_f = @as(f32, @floatFromInt(pos));
     for (0..half) |i| {
         const exp = 2.0 * @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(head_dim));
-        const freq = 1.0 / std.math.pow(f32, theta, exp);
+        const ff: f32 = if (freq_factors) |factors| factors[i] else 1.0;
+        const freq = (1.0 / std.math.pow(f32, theta, exp)) / ff;
         const angle = pos_f * freq;
         const cos = @cos(angle);
         const sin = @sin(angle);
@@ -345,9 +346,11 @@ const WorkerScratch = struct {
 const LayerContext = struct {
     model: DiffusionGemmaModel,
     layer_idx: usize,
-    eval_len: usize,
+    prompt_len: usize,
+    total_len: usize,
     max_q_dim: usize,
     max_k_dim: usize,
+    rope_freqs: ?[*]const f32,
     current_emb: []f32,
     next_emb: []f32,
     norm_x_buf: []f32,
@@ -397,11 +400,12 @@ fn runQKVWorker(ctx: *const LayerContext, t_start: usize, t_end: usize) void {
             ops.unweightedRmsNorm(v_head, 1e-6, v_head);
         }
 
+        const factors = if (is_global) ctx.rope_freqs else null;
         for (0..num_q_heads) |h| {
-            applyRoPE(q_t[h * head_dim .. (h + 1) * head_dim], t, head_dim, theta);
+            applyRoPE(q_t[h * head_dim .. (h + 1) * head_dim], t, head_dim, theta, factors);
         }
         for (0..num_kv_heads) |kv| {
-            applyRoPE(k_t[kv * head_dim .. (kv + 1) * head_dim], t, head_dim, theta);
+            applyRoPE(k_t[kv * head_dim .. (kv + 1) * head_dim], t, head_dim, theta, factors);
         }
     }
 }
@@ -414,10 +418,10 @@ fn runAttnWorker(ctx: *const LayerContext, scratch: *WorkerScratch, t_start: usi
     const num_q_heads = q_dim / head_dim;
     const num_kv_heads = k_dim / head_dim;
     const gqa_ratio = num_q_heads / num_kv_heads;
-    const inv_sqrt_d: f32 = 1.0 / @sqrt(@as(f32, @floatFromInt(head_dim)));
     const post_attn_weights: [*]const f32 = @ptrCast(@alignCast(ctx.model.gguf_file.getTensorSlice(layer.post_attention_norm).ptr));
 
     for (t_start..t_end) |t| {
+        const is_prompt_query = (t < ctx.prompt_len);
         const q_t = ctx.q_buf[t * ctx.max_q_dim .. t * ctx.max_q_dim + q_dim];
         @memset(scratch.head_out[0..q_dim], 0.0);
 
@@ -425,20 +429,24 @@ fn runAttnWorker(ctx: *const LayerContext, scratch: *WorkerScratch, t_start: usi
             const kv = h / gqa_ratio;
             const q_head = q_t[h * head_dim .. (h + 1) * head_dim];
 
-            for (0..ctx.eval_len) |s| {
-                const k_s = ctx.k_buf[s * ctx.max_k_dim .. s * ctx.max_k_dim + k_dim];
-                const k_head = k_s[kv * head_dim .. (kv + 1) * head_dim];
-                var dot: f32 = 0.0;
-                for (q_head, k_head) |qv, kvv| {
-                    dot += qv * kvv;
+            for (0..ctx.total_len) |s| {
+                if (is_prompt_query and s > t) {
+                    scratch.scores[s] = -1e30;
+                } else {
+                    const k_s = ctx.k_buf[s * ctx.max_k_dim .. s * ctx.max_k_dim + k_dim];
+                    const k_head = k_s[kv * head_dim .. (kv + 1) * head_dim];
+                    var dot: f32 = 0.0;
+                    for (q_head, k_head) |qv, kvv| {
+                        dot += qv * kvv;
+                    }
+                    scratch.scores[s] = dot; // Gemma 4 attention scale is 1.0f
                 }
-                scratch.scores[s] = dot * inv_sqrt_d;
             }
 
-            ops.softmax(scratch.scores[0..ctx.eval_len], 1.0, scratch.attn_weights[0..ctx.eval_len]);
+            ops.softmax(scratch.scores[0..ctx.total_len], 1.0, scratch.attn_weights[0..ctx.total_len]);
 
             const h_out = scratch.head_out[h * head_dim .. (h + 1) * head_dim];
-            for (0..ctx.eval_len) |s| {
+            for (0..ctx.total_len) |s| {
                 const w = scratch.attn_weights[s];
                 if (w == 0.0) continue;
                 const v_s = ctx.v_buf[s * ctx.max_k_dim .. s * ctx.max_k_dim + k_dim];
@@ -471,6 +479,7 @@ fn runFFNWorker(ctx: *const LayerContext, scratch: *WorkerScratch, t_start: usiz
     const exp_down_scale_weights: [*]const f32 = @ptrCast(@alignCast(ctx.model.gguf_file.getTensorSlice(layer.expert_down_scale).ptr));
     const post_ffw_2_weights: [*]const f32 = @ptrCast(@alignCast(ctx.model.gguf_file.getTensorSlice(layer.post_ffw_norm_2).ptr));
     const post_ffw_weights: [*]const f32 = @ptrCast(@alignCast(ctx.model.gguf_file.getTensorSlice(layer.post_ffw_norm).ptr));
+    const enc_layer_out_scale_weights: [*]const f32 = @ptrCast(@alignCast(ctx.model.gguf_file.getTensorSlice(layer.enc_layer_output_scale).ptr));
     const layer_out_scale_weights: [*]const f32 = @ptrCast(@alignCast(ctx.model.gguf_file.getTensorSlice(layer.layer_output_scale).ptr));
 
     const exp_gate_up_blocks: [*]const quant.BlockQ4_K = @ptrCast(@alignCast(ctx.model.gguf_file.getTensorSlice(layer.expert_gate_up).ptr));
@@ -526,7 +535,7 @@ fn runFFNWorker(ctx: *const LayerContext, scratch: *WorkerScratch, t_start: usiz
 
         ops.rmsNorm(scratch.ffn_combined, post_ffw_weights[0..ModelConfig.embedding_dim], 1e-6, scratch.post_ffn);
 
-        const l_scale = layer_out_scale_weights[0];
+        const l_scale = if (t < ctx.prompt_len) enc_layer_out_scale_weights[0] else layer_out_scale_weights[0];
         const out_t = ctx.next_emb[t * ModelConfig.embedding_dim .. (t + 1) * ModelConfig.embedding_dim];
         for (out_t, x_mid_t, scratch.post_ffn) |*ot, xm, pf| {
             ot.* = (xm + pf) * l_scale;
@@ -535,61 +544,75 @@ fn runFFNWorker(ctx: *const LayerContext, scratch: *WorkerScratch, t_start: usiz
 }
 
 /// Executes a single-step structured read over a seeded canvas.
-/// Embeds canvas, evaluates all 30 transformer layers following the verified 15-slot sequence,
-/// and extracts candidate logits at position p.
+/// Embeds prompt and canvas across dual regions, evaluates all 30 transformer layers,
+/// and extracts candidate logits at the canvas answer position.
 pub fn executeStructuredRead(
     allocator: std.mem.Allocator,
     model: DiffusionGemmaModel,
+    prompt_tokens: []const u32,
     canvas: Canvas,
     candidate_token_ids: []const u32,
     out_raw_logits: []f32,
     out_softcapped_logits: []f32,
 ) !void {
-    // 1. Determine active evaluation length (multiples of 16 holding answer_pos + 1, up to canvas_length)
-    const min_eval_tokens = canvas.answer_pos + 1;
-    const step_16: usize = 16;
-    const rounded_tokens = ((min_eval_tokens + step_16 - 1) / step_16) * step_16;
-    const eval_len = @min(ModelConfig.canvas_length, rounded_tokens);
+    const P = prompt_tokens.len;
+    const C = ModelConfig.canvas_length;
+    const N = P + C;
 
-    // 2. Allocate scratch buffers for the canvas activations
-    const total_emb_elements = eval_len * ModelConfig.embedding_dim;
+    // 1. Allocate scratch buffers for unified activations (N tokens)
+    const total_emb_elements = N * ModelConfig.embedding_dim;
     const emb_buffer = try allocator.alloc(f32, total_emb_elements);
     defer allocator.free(emb_buffer);
 
     const next_emb_buffer = try allocator.alloc(f32, total_emb_elements);
     defer allocator.free(next_emb_buffer);
 
-    // Embed initial canvas tokens with sqrt(d_model) scaling
-    embedCanvasSlice(model, canvas.tokens[0..eval_len], emb_buffer);
+    // Dual-region token embedding:
+    // Prompt tokens [0..P): scaled by sqrt(d_model)
+    // Canvas tokens [P..N): scaled by sqrt(d_model) followed by unweighted RMSNorm
+    const emb_scale: f32 = @sqrt(@as(f32, @floatFromInt(ModelConfig.embedding_dim)));
+    for (prompt_tokens, 0..) |tok, i| {
+        const blocks = model.getEmbeddingBlocks(tok);
+        const row = emb_buffer[i * ModelConfig.embedding_dim .. (i + 1) * ModelConfig.embedding_dim];
+        quant.dequantizeRowQ6_K(blocks, row);
+        for (row) |*val| val.* *= emb_scale;
+    }
+    for (canvas.tokens, 0..) |tok, i| {
+        const blocks = model.getEmbeddingBlocks(tok);
+        const row = emb_buffer[(P + i) * ModelConfig.embedding_dim .. (P + i + 1) * ModelConfig.embedding_dim];
+        quant.dequantizeRowQ6_K(blocks, row);
+        for (row) |*val| val.* *= emb_scale;
+        ops.unweightedRmsNorm(row, 1e-6, row);
+    }
 
     // Scratch buffers for layer evaluation
     const max_q_dim: usize = 8192;
     const max_k_dim: usize = 2048;
 
-    const q_buf = try allocator.alloc(f32, eval_len * max_q_dim);
+    const q_buf = try allocator.alloc(f32, N * max_q_dim);
     defer allocator.free(q_buf);
 
-    const k_buf = try allocator.alloc(f32, eval_len * max_k_dim);
+    const k_buf = try allocator.alloc(f32, N * max_k_dim);
     defer allocator.free(k_buf);
 
-    const v_buf = try allocator.alloc(f32, eval_len * max_k_dim);
+    const v_buf = try allocator.alloc(f32, N * max_k_dim);
     defer allocator.free(v_buf);
 
-    const norm_x_buf = try allocator.alloc(f32, eval_len * ModelConfig.embedding_dim);
+    const norm_x_buf = try allocator.alloc(f32, N * ModelConfig.embedding_dim);
     defer allocator.free(norm_x_buf);
 
-    const attn_out_buf = try allocator.alloc(f32, eval_len * ModelConfig.embedding_dim);
+    const attn_out_buf = try allocator.alloc(f32, N * ModelConfig.embedding_dim);
     defer allocator.free(attn_out_buf);
 
     // Parallel worker setup across physical CPU cores
     const max_threads: usize = 16;
     const cpu_count = std.Thread.getCpuCount() catch 4;
-    const num_threads = @min(@min(cpu_count, max_threads), eval_len);
+    const num_threads = @min(@min(cpu_count, max_threads), N);
 
     var worker_scratches = try allocator.alloc(WorkerScratch, num_threads);
     defer allocator.free(worker_scratches);
     for (worker_scratches) |*ws| {
-        ws.* = try WorkerScratch.init(allocator, eval_len, max_q_dim);
+        ws.* = try WorkerScratch.init(allocator, N, max_q_dim);
     }
     defer {
         for (worker_scratches) |*ws| {
@@ -597,17 +620,22 @@ pub fn executeStructuredRead(
         }
     }
 
-    // 3. Execute 30 Transformer Blocks following verified 15-slot sequence
+    // 2. Execute 30 Transformer Blocks
     var current_emb = emb_buffer;
     var next_emb = next_emb_buffer;
+
+    const rf_slice = if (model.rope_freqs) |rf| model.gguf_file.getTensorSlice(rf) else null;
+    const rf_floats: ?[*]const f32 = if (rf_slice) |s| @ptrCast(@alignCast(s.ptr)) else null;
 
     for (0..model.layers.len) |layer_idx| {
         var ctx = LayerContext{
             .model = model,
             .layer_idx = layer_idx,
-            .eval_len = eval_len,
+            .prompt_len = P,
+            .total_len = N,
             .max_q_dim = max_q_dim,
             .max_k_dim = max_k_dim,
+            .rope_freqs = rf_floats,
             .current_emb = current_emb,
             .next_emb = next_emb,
             .norm_x_buf = norm_x_buf,
@@ -617,12 +645,12 @@ pub fn executeStructuredRead(
             .attn_out_buf = attn_out_buf,
         };
 
-        const tokens_per_thread = (eval_len + num_threads - 1) / num_threads;
+        const tokens_per_thread = (N + num_threads - 1) / num_threads;
 
         if (num_threads == 1) {
-            runQKVWorker(&ctx, 0, eval_len);
-            runAttnWorker(&ctx, &worker_scratches[0], 0, eval_len);
-            runFFNWorker(&ctx, &worker_scratches[0], 0, eval_len);
+            runQKVWorker(&ctx, 0, N);
+            runAttnWorker(&ctx, &worker_scratches[0], 0, N);
+            runFFNWorker(&ctx, &worker_scratches[0], 0, N);
         } else {
             // Phase 1: QKV Projections, Norms, RoPE
             {
@@ -630,8 +658,8 @@ pub fn executeStructuredRead(
                 var active_threads: usize = 0;
                 for (0..num_threads) |tid| {
                     const t_start = tid * tokens_per_thread;
-                    if (t_start >= eval_len) break;
-                    const t_end = @min(t_start + tokens_per_thread, eval_len);
+                    if (t_start >= N) break;
+                    const t_end = @min(t_start + tokens_per_thread, N);
                     threads[tid] = try std.Thread.spawn(.{}, runQKVWorker, .{ &ctx, t_start, t_end });
                     active_threads += 1;
                 }
@@ -640,14 +668,14 @@ pub fn executeStructuredRead(
                 }
             }
 
-            // Phase 2: Non-Causal Bidirectional Attention + W_O Output Projection
+            // Phase 2: Dual-Region Attention + W_O Output Projection
             {
                 var threads: [max_threads]std.Thread = undefined;
                 var active_threads: usize = 0;
                 for (0..num_threads) |tid| {
                     const t_start = tid * tokens_per_thread;
-                    if (t_start >= eval_len) break;
-                    const t_end = @min(t_start + tokens_per_thread, eval_len);
+                    if (t_start >= N) break;
+                    const t_end = @min(t_start + tokens_per_thread, N);
                     threads[tid] = try std.Thread.spawn(.{}, runAttnWorker, .{ &ctx, &worker_scratches[tid], t_start, t_end });
                     active_threads += 1;
                 }
@@ -662,8 +690,8 @@ pub fn executeStructuredRead(
                 var active_threads: usize = 0;
                 for (0..num_threads) |tid| {
                     const t_start = tid * tokens_per_thread;
-                    if (t_start >= eval_len) break;
-                    const t_end = @min(t_start + tokens_per_thread, eval_len);
+                    if (t_start >= N) break;
+                    const t_end = @min(t_start + tokens_per_thread, N);
                     threads[tid] = try std.Thread.spawn(.{}, runFFNWorker, .{ &ctx, &worker_scratches[tid], t_start, t_end });
                     active_threads += 1;
                 }
@@ -679,8 +707,9 @@ pub fn executeStructuredRead(
         next_emb = temp;
     }
 
-    // 4. Extract hidden state at pinned answer position p
-    const answer_row = current_emb[canvas.answer_pos * ModelConfig.embedding_dim .. (canvas.answer_pos + 1) * ModelConfig.embedding_dim];
+    // 3. Extract hidden state at pinned answer position in canvas (P + canvas.answer_pos)
+    const answer_idx = P + canvas.answer_pos;
+    const answer_row = current_emb[answer_idx * ModelConfig.embedding_dim .. (answer_idx + 1) * ModelConfig.embedding_dim];
 
     // Final output RMSNorm
     const norm_hidden = try allocator.alloc(f32, ModelConfig.embedding_dim);
@@ -690,7 +719,7 @@ pub fn executeStructuredRead(
     const out_norm_weights = @as([*]const f32, @ptrCast(@alignCast(out_norm_slice.ptr)))[0..ModelConfig.embedding_dim];
     ops.rmsNorm(answer_row, out_norm_weights, 1e-6, norm_hidden);
 
-    // 5. Project candidate logits directly from output embedding table
+    // 4. Project candidate logits directly from output embedding table
     readCandidateLogits(model, norm_hidden, candidate_token_ids, out_raw_logits, out_softcapped_logits);
 }
 
@@ -719,7 +748,7 @@ test "topKExperts: selection and softmax renormalization" {
 
 test "applyRoPE: rotation at pos 0 is identity" {
     var vec = [_]f32{ 1.0, 2.0, 3.0, 4.0 };
-    applyRoPE(&vec, 0, 4, 10000.0);
+    applyRoPE(&vec, 0, 4, 10000.0, null);
     try std.testing.expectApproxEqAbs(@as(f32, 1.0), vec[0], 1e-5);
     try std.testing.expectApproxEqAbs(@as(f32, 2.0), vec[1], 1e-5);
     try std.testing.expectApproxEqAbs(@as(f32, 3.0), vec[2], 1e-5);
@@ -747,7 +776,7 @@ test "embedCanvas and readCandidateLogits execution on local model if present" {
     var raw_logits: [2]f32 = undefined;
     var softcapped_logits: [2]f32 = undefined;
 
-    try executeStructuredRead(allocator, model, canvas, &candidates, &raw_logits, &softcapped_logits);
+    try executeStructuredRead(allocator, model, &prompt, canvas, &candidates, &raw_logits, &softcapped_logits);
 
     // Softcapped logits must be within [-30.0, 30.0]
     for (softcapped_logits) |l| {

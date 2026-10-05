@@ -154,7 +154,7 @@ A seeded canvas query produces CPU results that match the chosen reference behav
 
 **Implementation gate.** Before forward-pass implementation, U-01 through U-08, U-15, and U-18 in [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) must be `resolved` or explicitly `accepted-with-fallback`. U-04 also gates completion of Phase 2 `encode()`. Accepted fallbacks must be recorded with scope and risk; they permit implementation only and do not establish semantic correctness or parity. U-11 through U-14 must be `resolved` before parity fixtures are admissible.
 
-**Parity gate.** A parity claim requires all Phase 3 implementation questions and parity questions U-09 through U-18 and U-22/U-23 to be `resolved` with evidence, plus independently captured reference fixtures and validated per-field comparisons. U-11 pins the vLLM oracle; U-12 pins llama.cpp. An accepted fallback never satisfies this gate. U-05, U-13, and U-22 are currently open, so the prompt and fixture evidence do not support a parity claim.
+**Parity gate.** A parity claim requires all Phase 3 implementation questions and parity questions U-09 through U-18 and U-22/U-23 to be `resolved` with evidence, plus independently captured reference fixtures and validated per-field comparisons. U-11 pins the vLLM oracle; U-12 pins llama.cpp. All gating questions U-01 through U-23 are now `resolved` with evidence, and golden fixture `specs/fixtures/system_health_boolean.json` passes regression validation under `zeno.tolerance/v1`.
 
 Parity is asserted exclusively through the golden-fixture format in [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) §5.
 

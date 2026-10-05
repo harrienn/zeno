@@ -31,22 +31,18 @@ pub const Canvas = struct {
         };
     }
 
-    /// Seeds the prompt, answer token, following TURN_CLOSE, and PAD tail.
+    /// Seeds the canvas with answer token at position 0, following TURN_CLOSE at position 1, and PAD tail.
+    /// In DiffusionGemma's dual-region architecture, prompt tokens (length P) precede the 256-token canvas.
     pub fn seedSingleStep(prompt_tokens: []const u32, seed_token: u32) CanvasError!Canvas {
-        if (prompt_tokens.len + 2 > root.ModelConfig.canvas_length) {
-            return error.CanvasOverflow;
-        }
-
         var canvas = Canvas{
             .tokens = @splat(root.SpecialTokens.pad),
-            .answer_pos = prompt_tokens.len,
+            .answer_pos = 0,
             .is_pinned = true,
             .prompt_len = prompt_tokens.len,
         };
 
-        @memcpy(canvas.tokens[0..prompt_tokens.len], prompt_tokens);
-        canvas.tokens[canvas.answer_pos] = seed_token;
-        canvas.tokens[canvas.answer_pos + 1] = root.SpecialTokens.turn_close;
+        canvas.tokens[0] = seed_token;
+        canvas.tokens[1] = root.SpecialTokens.turn_close;
 
         return canvas;
     }
@@ -114,27 +110,17 @@ test "Canvas: seedSingleStep geometry and padding" {
 
     const canvas = try Canvas.seedSingleStep(&prompt, seed);
 
-    try std.testing.expectEqual(@as(usize, 4), canvas.answer_pos);
+    try std.testing.expectEqual(@as(usize, 0), canvas.answer_pos);
     try std.testing.expectEqual(@as(usize, 4), canvas.prompt_len);
     try std.testing.expect(canvas.is_pinned);
 
-    try std.testing.expectEqual(@as(u32, 2), canvas.tokens[0]);
-    try std.testing.expectEqual(@as(u32, 100), canvas.tokens[1]);
-    try std.testing.expectEqual(@as(u32, 200), canvas.tokens[2]);
-    try std.testing.expectEqual(@as(u32, 300), canvas.tokens[3]);
-    try std.testing.expectEqual(@as(u32, 4), canvas.tokens[4]); // Answer slot
-
-    try std.testing.expectEqual(root.SpecialTokens.turn_close, canvas.tokens[5]);
+    try std.testing.expectEqual(seed, canvas.tokens[0]); // Answer slot at canvas position 0
+    try std.testing.expectEqual(root.SpecialTokens.turn_close, canvas.tokens[1]);
 
     // Slots after TURN_CLOSE must be PAD (0)
-    for (canvas.tokens[6..]) |tok| {
+    for (canvas.tokens[2..]) |tok| {
         try std.testing.expectEqual(@as(u32, root.SpecialTokens.pad), tok);
     }
-}
-
-test "Canvas: canvas overflow rejection" {
-    const huge_prompt: [256]u32 = @splat(1);
-    try std.testing.expectError(error.CanvasOverflow, Canvas.seedSingleStep(&huge_prompt, root.SpecialTokens.mask));
 }
 
 test "Canvas: formatDecisionPrompt includes turn tags and candidates" {

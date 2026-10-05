@@ -86,6 +86,7 @@ pub const DecisionEngine = struct {
         try infer.executeStructuredRead(
             request_allocator,
             self.model,
+            prompt_tokens,
             canvas,
             candidate_tokens,
             raw_logits,

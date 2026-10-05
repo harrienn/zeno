@@ -184,7 +184,7 @@ test "loadFixture: parses zeno.fixture/v1 correctly" {
 
     try std.testing.expectEqualStrings("zeno.fixture/v1", parsed.value.schema);
     try std.testing.expectEqualStrings("zeno.tolerance/v1", parsed.value.policy);
-    try std.testing.expectEqualStrings("No", parsed.value.expected.decision);
+    try std.testing.expectEqualStrings("Yes", parsed.value.expected.decision);
     try std.testing.expectEqual(@as(usize, 2), parsed.value.candidates.len);
 }
 
