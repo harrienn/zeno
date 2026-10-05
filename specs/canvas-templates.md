@@ -24,32 +24,33 @@ The canvas is a fixed-width array of token identifiers:
 
 ---
 
-## 3. Seeded Canvas Memory Layout
+## 3. Dual-Region Memory Layout & Canvas Geometry
 
-The following diagram shows the resolved canvas geometry. The exact user/model prompt text remains provisional under U-05:
+DiffusionGemma operates on a **dual-region sequence** $[0 \dots P + 255]$:
+- **Prompt Region** ($0 \dots P-1$): Causal prefix containing the tokenized prompt and model prefix cue (`Answer: `).
+- **Canvas Region** ($P \dots P + 255$): Fixed 256-token canvas evaluated under bidirectional non-causal attention.
 
 ```text
-┌─────────┬──────────────────────┬──────────────────────┬─────────────┬─────────────┐
-│ BOS?    │    Prompt Context    │   Response Template  │ Answer seed │ TURN_CLOSE │ PAD tail │
-│template │  user query & state  │    "Answer:" label   │ token + pin │    token   │          │
-└─────────┴──────────────────────┴──────────────────────┴─────────────┴────────────┴──────────┘
-0         1                      k                      p             p+1          p+2        255
+┌───────────────────────────────────────────────┬───────────────────────────────────────────────┐
+│              Prompt Region (0..P-1)           │             Canvas Region (P..P+255)          │
+├─────────┬──────────────────────┬──────────────┼─────────────┬─────────────┬───────────────────┤
+│ BOS (2) │ User Turn Context    │ Model Prefix │ Answer Slot │ TURN_CLOSE  │ PAD Tail          │
+│         │ Question & Choices   │ "Answer: "   │ MASK (4)    │ (106)       │ (0)               │
+└─────────┴──────────────────────┴──────────────┴─────────────┴─────────────┴───────────────────┘
+0         1                      P-1            P (slot 0)    P+1           P+2           P+255
 ```
 
-### 3.1 Region Definitions
+### 3.1 Contract Comparison: Zeno vs vLLM `structured_server.py`
 
-1. **Header**: The reference tokenizer/template determines BOS insertion. Do not insert BOS separately if the tokenizer already adds it.
-2. **Prompt Context**: Positions `1` through $k-1$ contain the tokenized user turn:
-   - System/turn delimiters (`<|turn>user\n...<turn|>\n`).
-   - Background context (if provided in the decision request).
-   - Query question and candidate options listing.
-3. **Response Template**: Positions $k$ through $p-1$ contain the beginning of the model turn:
-   - Model turn delimiter (`<|turn>model\n`).
-   - Prefix cue (e.g. `Answer:`).
-4. **Answer Position**: Position $p$ is seeded with the token specified by the chosen structured-read procedure and selected for logit readout. Pin it if the selected step policy requires preserving its seed value.
-5. **Remaining Canvas**: Position $p+1$ contains `TURN_CLOSE` (106); later positions contain `PAD` (0). The evaluated prefix is rounded to a 16-token multiple. This is the reference-derived Phase 3 layout (U-02/U-03).
+In [vLLM PR #57250](https://github.com/vllm-project/vllm/pull/57250) (`examples/features/structured_diffusion/structured_server.py`), the assistant turn template is constructed directly inside the canvas buffer (e.g. `<|turn>model\nAnswer: ` lives on the canvas, and the answer slot $s[\text{"pos"}]$ is located at an offset within that canvas template). Answer slots are seeded with random noise draws across repeated sampling passes.
 
-PAD positions included in the evaluated prefix remain token embeddings and can affect the answer through bidirectional attention. Do not truncate or mask them unless a separate reference contract establishes that behavior.
+In contrast, **Zeno's Direct Canvas Decision Contract**:
+1. Formats the full user context and assistant prefix (`<start_of_turn>user\n...<end_of_turn>\n<start_of_turn>model\nAnswer: `) into the causal **prompt region** ($0 \dots P-1$).
+2. Pins the target decision slot directly at **canvas index 0** ($P+0$), seeded with `MASK` (`4`).
+3. Appends `TURN_CLOSE` (`106`) at canvas index 1 ($P+1$), and fills trailing canvas positions with `PAD` (`0`) to canvas length 256.
+4. Reads candidate logits directly from canvas index 0 in a single forward pass without sampling draws or device KV caching.
+
+This decoupled layout eliminates wasted prefix positions in the 256-token canvas, avoids template re-tokenization during denoising, and minimizes latency for single-step classification. When asserting parity against external references (`llama-diffusion-gemma-eval` or `structured_server.py`), both sides must be supplied with the exact same token arrays (matching $P$ prompt tokens and 256 canvas tokens).
 
 ---
 

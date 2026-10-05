@@ -48,7 +48,7 @@ pub fn gemvF32(weights: []const f32, x: []const f32, out: []f32, out_dim: usize,
     }
 }
 
-/// Applies NeoX-style (half-split) Rotary Position Embeddings at position `pos`.
+/// Applies NeoX-style (half-split) Rotary Position Embeddings over the full head dimension.
 pub fn applyRoPE(vec: []f32, pos: usize, head_dim: usize, theta: f32, freq_factors: ?[*]const f32) void {
     const half = head_dim / 2;
     const pos_f = @as(f32, @floatFromInt(pos));

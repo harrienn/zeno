@@ -16,6 +16,16 @@
   "canvas_length": 256,
   "answer_pos": 0,
   "answer_seed_token": 4,
+  "prompt_tokens": [2, 105, 2364, 107, 14977, 236787, 2375, 506, 1458, 7644, 532, 17934, 236881, 107, 111501, 236787, 107, 236772, 8438, 107, 236772, 2301, 107, 106, 107, 105, 4368, 107, 7925, 236787],
+  "oracle_command": "NGL=99 /hdd/Projects/llama.cpp/build/bin/llama-diffusion-gemma-eval models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf /tmp/prompt.i32 /tmp/canvas.i32 /tmp/out_gpu.bin",
+  "oracle_reference": {
+    "decision": "Yes",
+    "decision_probability": 0.9128,
+    "candidate_logits_raw": [13.9791, 11.1913],
+    "candidate_logits_softcapped": [13.0481, 10.6995],
+    "probabilities": [0.9128, 0.0872],
+    "top_5_vocab_tokens": [107, 108, 100, 236787, 45518]
+  },
   "candidates": [
     { "label": "Yes", "token": "Yes", "token_id": 10784 },
     { "label": "No", "token": "No", "token_id": 3771 }

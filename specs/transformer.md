@@ -164,7 +164,12 @@ The exact sequence was established from [`vllm/model_executor/models/gemma4.py`]
 
 ---
 
-> **Phase 3 behavior (U-18):** one-step reads bypass the self-conditioning MLP. This sub-layer is reserved for the multi-step path and must not be run by the single-step implementation.
+> **Phase 3 Canvas Embedding Normalization (R3-01 resolution):**
+> While one-step reads bypass the computation of the self-conditioning soft embedding signal ($sc\_signal = 0$), canvas input embeddings pass through `DiffusionGemmaSelfConditioning`'s unweighted `post_norm`:
+> $$\text{canvas\_emb} = \mathrm{RMSNorm}_{\text{unweighted}}(\text{tok\_emb} \cdot \sqrt{d_{\text{model}}})$$
+> This is confirmed in both pinned references:
+> 1. `vllm@1b3b88ec:vllm/model_executor/models/diffusion_gemma.py:103,951`: `_apply_self_conditioning` calls `self.model.self_conditioning(inputs_embeds[canvas], soft)`, whose forward returns `self.post_norm(inputs_embeds + sc_signal)` where `post_norm = RMSNorm(hidden_size, eps=eps, has_weight=False)`. At step 0 / zero-SC, $sc\_signal = 0$, yielding unweighted RMSNorm of the canvas embeddings.
+> 2. `llama.cpp@3dac51dc:src/models/diffusion-gemma.cpp:13,424`: `canvas = ggml_rms_norm(ctx0, canvas, hparams.f_norm_rms_eps); // no scale (zero-SC)`.
 
 ## 5. Self-Conditioning Sub-layer
 
