@@ -130,12 +130,17 @@ pub fn main(init: std.process.Init) !void {
         var engine = try zeno.DecisionEngine.init(arena, model_path);
         defer engine.deinit();
 
-        const cands = [_]zeno.CandidateSpec{
-            .{ .token = "Yes", .label = "Yes" },
-            .{ .token = "No", .label = "No" },
-        };
+        var cands_list: std.ArrayList(zeno.CandidateSpec) = .empty;
+        if (args.len > 6) {
+            for (args[6..]) |cand_str| {
+                try cands_list.append(arena, .{ .token = cand_str, .label = cand_str });
+            }
+        } else {
+            try cands_list.append(arena, .{ .token = "Yes", .label = "Yes" });
+            try cands_list.append(arena, .{ .token = "No", .label = "No" });
+        }
 
-        const formatted = try zeno.Canvas.formatDecisionPrompt(arena, query, null, &cands);
+        const formatted = try zeno.Canvas.formatDecisionPrompt(arena, query, null, cands_list.items);
         const raw_tokens = try engine.tokenizer.encode(arena, formatted);
 
         var prompt_tokens = try arena.alloc(i32, raw_tokens.len + 1);

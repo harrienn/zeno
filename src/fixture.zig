@@ -186,6 +186,17 @@ test "loadFixture: parses zeno.fixture/v1 correctly" {
     try std.testing.expectEqualStrings("zeno.tolerance/v1", parsed.value.policy);
     try std.testing.expectEqualStrings("Yes", parsed.value.expected.decision);
     try std.testing.expectEqual(@as(usize, 2), parsed.value.candidates.len);
+
+    const mc_parsed = loadFixture(allocator, "specs/fixtures/incident_severity_multiclass.json") catch |err| {
+        if (err == error.FileNotFound) return;
+        return err;
+    };
+    defer mc_parsed.deinit();
+
+    try std.testing.expectEqualStrings("zeno.fixture/v1", mc_parsed.value.schema);
+    try std.testing.expectEqualStrings("zeno.tolerance/v1", mc_parsed.value.policy);
+    try std.testing.expectEqualStrings("Medium", mc_parsed.value.expected.decision);
+    try std.testing.expectEqual(@as(usize, 3), mc_parsed.value.candidates.len);
 }
 
 test "validateFixture: compares local model with stored fixture values if present" {
@@ -193,7 +204,6 @@ test "validateFixture: compares local model with stored fixture values if presen
 
     const allocator = std.testing.allocator;
     const model_path = "models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf";
-    const fixture_path = "specs/fixtures/system_health_boolean.json";
 
     var engine = engine_mod.DecisionEngine.init(allocator, model_path) catch |err| {
         if (err == error.FileNotFound) return;
@@ -201,5 +211,6 @@ test "validateFixture: compares local model with stored fixture values if presen
     };
     defer engine.deinit();
 
-    try validateFixture(allocator, fixture_path, &engine);
+    try validateFixture(allocator, "specs/fixtures/system_health_boolean.json", &engine);
+    try validateFixture(allocator, "specs/fixtures/incident_severity_multiclass.json", &engine);
 }

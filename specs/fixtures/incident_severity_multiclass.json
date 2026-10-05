@@ -1,0 +1,44 @@
+{
+  "schema": "zeno.fixture/v1",
+  "policy": "zeno.tolerance/v1",
+  "description": "Incident priority level 3-choice decision query on DiffusionGemma 26B-A4B-it Q4_K_M",
+  "model": {
+    "path": "models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf",
+    "sha256": "24523b6c833c9ce9f5f34f9b333ab1517d73d6f1e76a103645353114c8028bc5"
+  },
+  "reference": {
+    "repo": "https://github.com/ggml-org/llama.cpp",
+    "commit": "3dac51dc80b1400929266453c6ced6748ccf6862"
+  },
+  "query": "What is the priority level of this incident?",
+  "context": null,
+  "schema_type": "choice",
+  "canvas_length": 256,
+  "answer_pos": 0,
+  "answer_seed_token": 4,
+  "prompt_tokens": [2, 105, 2364, 107, 14977, 236787, 2900, 563, 506, 13546, 1984, 529, 672, 10530, 236881, 107, 111501, 236787, 107, 236772, 14533, 107, 236772, 35202, 107, 236772, 4819, 107, 106, 107, 105, 4368, 107, 7925, 236787],
+  "oracle_command": "NGL=99 /hdd/Projects/llama.cpp/build/bin/llama-diffusion-gemma-eval models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf /tmp/prompt_mc.i32 /tmp/canvas_mc.i32 /tmp/out_mc_gpu.bin",
+  "oracle_reference": {
+    "decision": "Medium",
+    "decision_probability": 0.7795,
+    "candidate_logits_raw": [14.2023, 16.4034, 13.5133],
+    "candidate_logits_softcapped": [13.2285, 14.9431, 12.6679],
+    "probabilities": [0.1403, 0.7795, 0.0801],
+    "top_5_vocab_tokens": [100, 45518, 101, 1, 107]
+  },
+  "candidates": [
+    { "label": "Low", "token": "Low", "token_id": 26834 },
+    { "label": "Medium", "token": "Medium", "token_id": 49074 },
+    { "label": "High", "token": "High", "token_id": 13238 }
+  ],
+  "expected": {
+    "decision": "Medium",
+    "decision_probability": 0.8154,
+    "candidate_logits_raw": [14.4416, 17.4412, 14.7053],
+    "candidate_logits_softcapped": [13.4182, 15.6989, 13.6264],
+    "probabilities": [0.0826, 0.8154, 0.1019],
+    "entropy_nats": 0.6052,
+    "normalized_entropy": 0.5509,
+    "uncertain": false
+  }
+}
