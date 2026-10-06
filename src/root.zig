@@ -14,6 +14,7 @@ pub const canvas = @import("canvas.zig");
 pub const infer = @import("infer.zig");
 pub const engine = @import("engine.zig");
 pub const fixture = @import("fixture.zig");
+pub const server = @import("server.zig");
 pub const build_options = @import("build_options");
 
 /// Returns true if heavy 26B full-model forward pass tests are enabled.
@@ -37,6 +38,7 @@ pub const DecisionEngine = engine.DecisionEngine;
 pub const InferenceWorkspace = infer.InferenceWorkspace;
 pub const LayerPool = infer.LayerPool;
 pub const GoldenFixture = fixture.GoldenFixture;
+pub const Server = server.Server;
 
 /// Semantic version of the Zeno runtime.
 pub const version = std.SemanticVersion{

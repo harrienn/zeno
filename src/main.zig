@@ -17,7 +17,51 @@ pub fn main(init: std.process.Init) !void {
     });
 
     const args = try init.minimal.args.toSlice(arena);
-    if (args.len > 1 and std.mem.eql(u8, args[1], "decide")) {
+    if (args.len > 1 and std.mem.eql(u8, args[1], "serve")) {
+        if (args.len < 3) {
+            try stdout_writer.print("Usage: zeno serve <path/to/model.gguf> [--host <ip>] [--port <port>]\n", .{});
+            try stdout_writer.flush();
+            return;
+        }
+
+        const model_path = args[2];
+        var host: []const u8 = "127.0.0.1";
+        var port: u16 = 8000;
+
+        var i: usize = 3;
+        while (i < args.len) : (i += 1) {
+            if (std.mem.eql(u8, args[i], "--host") and i + 1 < args.len) {
+                i += 1;
+                host = args[i];
+            } else if (std.mem.eql(u8, args[i], "--port") and i + 1 < args.len) {
+                i += 1;
+                port = std.fmt.parseInt(u16, args[i], 10) catch 8000;
+            }
+        }
+
+        try stdout_writer.print("Initializing decision engine with model: {s}...\n", .{model_path});
+        try stdout_writer.flush();
+
+        var engine = zeno.DecisionEngine.init(arena, model_path) catch |err| {
+            try stdout_writer.print("Error initializing engine: {}\n", .{err});
+            try stdout_writer.flush();
+            return;
+        };
+        defer engine.deinit();
+
+        var server_inst = zeno.Server.init(arena, &engine, host, port);
+        try server_inst.listen();
+        defer server_inst.deinit();
+
+        try stdout_writer.print("Zeno System One Decision API server listening on http://{s}:{d}\n", .{ host, port });
+        try stdout_writer.print("Endpoints:\n", .{});
+        try stdout_writer.print("  GET  /health           - Liveness probe\n", .{});
+        try stdout_writer.print("  POST /v1/systemone     - Jev-compatible decision API\n\n", .{});
+        try stdout_writer.flush();
+
+        try server_inst.serve();
+        return;
+    } else if (args.len > 1 and std.mem.eql(u8, args[1], "decide")) {
         if (args.len < 4) {
             try stdout_writer.print("Usage: zeno decide <path/to/model.gguf> <query> [cand1] [cand2] ...\n", .{});
             try stdout_writer.flush();
@@ -338,6 +382,7 @@ pub fn main(init: std.process.Init) !void {
         try stdout_writer.print("\nUsage:\n", .{});
         try stdout_writer.print("  zeno [info] <path/to/model.gguf>\n", .{});
         try stdout_writer.print("  zeno decide <path/to/model.gguf> \"<query>\" [cand1] [cand2] ...\n", .{});
+        try stdout_writer.print("  zeno serve <path/to/model.gguf> [--host <ip>] [--port <port>]\n", .{});
     }
 
     try stdout_writer.flush();

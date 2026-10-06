@@ -1,0 +1,619 @@
+//! Zeno — System One HTTP Decision API Server.
+//!
+//! Implements the Jev-compatible /v1/systemone HTTP REST API contract
+//! specified in specs/decision-api.md using zero external dependencies.
+
+const std = @import("std");
+const root = @import("root.zig");
+const decision = @import("decision.zig");
+const engine_mod = @import("engine.zig");
+const ops = @import("ops.zig");
+
+const DecisionEngine = engine_mod.DecisionEngine;
+const DecisionRequest = decision.DecisionRequest;
+const DecisionResponse = decision.DecisionResponse;
+const SchemaType = decision.SchemaType;
+const CandidateSpec = decision.CandidateSpec;
+const linux = std.os.linux;
+
+/// Wire candidate object inside request JSON schema.candidates.
+pub const WireCandidate = struct {
+    token: []const u8,
+    label: []const u8,
+};
+
+/// Wire schema object inside request JSON.
+pub const WireSchema = struct {
+    type: []const u8,
+    candidates: []const WireCandidate,
+};
+
+/// Wire options object inside request JSON.
+pub const WireOptions = struct {
+    step_cap: ?u32 = null,
+    temperature: ?f32 = null,
+    entropy_threshold: ?f32 = null,
+};
+
+/// Full wire JSON request body for POST /v1/systemone.
+pub const WireDecisionRequest = struct {
+    query: []const u8,
+    context: ?[]const u8 = null,
+    schema: WireSchema,
+    options: ?WireOptions = null,
+};
+
+/// Parses an IPv4 string "A.B.C.D" into a network-ordered u32 for sockaddr.in.
+pub fn parseIp4(str: []const u8) !u32 {
+    var parts: [4]u8 = undefined;
+    var idx: usize = 0;
+    var it = std.mem.splitScalar(u8, str, '.');
+    while (it.next()) |part| {
+        if (idx >= 4) return error.InvalidIp;
+        parts[idx] = try std.fmt.parseInt(u8, part, 10);
+        idx += 1;
+    }
+    if (idx != 4) return error.InvalidIp;
+    return @as(u32, parts[0]) |
+        (@as(u32, parts[1]) << 8) |
+        (@as(u32, parts[2]) << 16) |
+        (@as(u32, parts[3]) << 24);
+}
+
+/// HTTP API Server for Zeno System One Decision Engine.
+pub const Server = struct {
+    allocator: std.mem.Allocator,
+    engine: *DecisionEngine,
+    host: []const u8,
+    port: u16,
+    listen_fd: ?i32 = null,
+    should_stop: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+
+    pub fn init(allocator: std.mem.Allocator, engine: *DecisionEngine, host: []const u8, port: u16) Server {
+        return .{
+            .allocator = allocator,
+            .engine = engine,
+            .host = host,
+            .port = port,
+            .listen_fd = null,
+            .should_stop = std.atomic.Value(bool).init(false),
+        };
+    }
+
+    pub fn deinit(self: *Server) void {
+        self.stop();
+    }
+
+    pub fn stop(self: *Server) void {
+        self.should_stop.store(true, .release);
+        if (self.listen_fd) |fd| {
+            _ = linux.close(fd);
+            self.listen_fd = null;
+        }
+    }
+
+    /// Binds and listens on the configured host:port.
+    pub fn listen(self: *Server) !void {
+        const rc = linux.socket(linux.AF.INET, linux.SOCK.STREAM | linux.SOCK.CLOEXEC, 0);
+        if (linux.errno(rc) != .SUCCESS) {
+            return error.SocketCreationFailed;
+        }
+        const fd: i32 = @intCast(rc);
+        errdefer _ = linux.close(fd);
+
+        const one: i32 = 1;
+        const opt_rc = linux.setsockopt(fd, linux.SOL.SOCKET, linux.SO.REUSEADDR, @ptrCast(&one), @sizeOf(i32));
+        if (linux.errno(opt_rc) != .SUCCESS) {
+            return error.SetSockOptFailed;
+        }
+
+        const ip_u32 = try parseIp4(self.host);
+        var addr: linux.sockaddr.in = .{
+            .family = linux.AF.INET,
+            .port = std.mem.nativeToBig(u16, self.port),
+            .addr = ip_u32,
+            .zero = [8]u8{ 0, 0, 0, 0, 0, 0, 0, 0 },
+        };
+
+        const bind_rc = linux.bind(fd, @ptrCast(&addr), @sizeOf(linux.sockaddr.in));
+        if (linux.errno(bind_rc) != .SUCCESS) {
+            return error.BindFailed;
+        }
+
+        if (self.port == 0) {
+            var bound_addr: linux.sockaddr.in = undefined;
+            var bound_len: u32 = @sizeOf(linux.sockaddr.in);
+            const gs_rc = linux.getsockname(fd, @ptrCast(&bound_addr), &bound_len);
+            if (linux.errno(gs_rc) == .SUCCESS) {
+                self.port = std.mem.bigToNative(u16, bound_addr.port);
+            }
+        }
+
+        const listen_rc = linux.listen(fd, 128);
+        if (linux.errno(listen_rc) != .SUCCESS) {
+            return error.ListenFailed;
+        }
+
+        self.listen_fd = fd;
+    }
+
+    /// Runs the accept and request dispatch loop.
+    pub fn serve(self: *Server) !void {
+        const listen_fd = self.listen_fd orelse return error.NotListening;
+
+        while (!self.should_stop.load(.acquire)) {
+            const client_rc = linux.accept4(listen_fd, null, null, linux.SOCK.CLOEXEC);
+            const err = linux.errno(client_rc);
+            if (err != .SUCCESS) {
+                if (self.should_stop.load(.acquire)) break;
+                // Transient interrupt or connection reset
+                if (err == .INTR or err == .CONNABORTED or err == .AGAIN) continue;
+                return error.AcceptFailed;
+            }
+
+            const client_fd: i32 = @intCast(client_rc);
+            self.handleClient(client_fd);
+        }
+    }
+
+    /// Processes a single client connection.
+    fn handleClient(self: *Server, client_fd: i32) void {
+        defer {
+            _ = linux.shutdown(client_fd, linux.SHUT.WR);
+            _ = linux.close(client_fd);
+        }
+
+        var buf: [65536]u8 = undefined;
+        var total_read: usize = 0;
+
+        // Read request header
+        while (total_read < buf.len) {
+            const r_rc = linux.read(client_fd, buf[total_read..].ptr, buf.len - total_read);
+            const err = linux.errno(r_rc);
+            if (err != .SUCCESS) {
+                if (err == .INTR) continue;
+                return;
+            }
+            if (r_rc == 0) break; // Client disconnected
+            total_read += r_rc;
+
+            if (std.mem.indexOf(u8, buf[0..total_read], "\r\n\r\n") != null) {
+                break;
+            }
+        }
+
+        const req_data = buf[0..total_read];
+        const header_end = std.mem.indexOf(u8, req_data, "\r\n\r\n") orelse {
+            self.sendError(client_fd, 400, "bad_request", "Request header exceeds buffer or malformed");
+            return;
+        };
+
+        const headers_part = req_data[0..header_end];
+        var body_part = req_data[header_end + 4 ..];
+
+        // Parse Request-Line: METHOD PATH HTTP/VERSION
+        var line_it = std.mem.splitSequence(u8, headers_part, "\r\n");
+        const req_line = line_it.next() orelse {
+            self.sendError(client_fd, 400, "bad_request", "Empty request line");
+            return;
+        };
+
+        var token_it = std.mem.splitScalar(u8, req_line, ' ');
+        const method = token_it.next() orelse "";
+        const path = token_it.next() orelse "";
+
+        // Parse Content-Length header if present
+        var content_length: ?usize = null;
+        while (line_it.next()) |header_line| {
+            if (header_line.len == 0) continue;
+            if (std.ascii.startsWithIgnoreCase(header_line, "content-length:")) {
+                const val_str = std.mem.trim(u8, header_line["content-length:".len..], " \t");
+                content_length = std.fmt.parseInt(usize, val_str, 10) catch null;
+            }
+        }
+
+        // Route: GET /health
+        if (std.mem.eql(u8, method, "GET") and std.mem.eql(u8, path, "/health")) {
+            self.sendJson(client_fd, 200, "{\"status\":\"ok\"}\n");
+            return;
+        }
+
+        // Only POST /v1/systemone is supported for decisions
+        if (!std.mem.eql(u8, path, "/v1/systemone")) {
+            drainRemaining(client_fd, content_length, body_part.len);
+            self.sendError(client_fd, 404, "not_found", "Path not found. Decision API is at POST /v1/systemone");
+            return;
+        }
+
+        if (!std.mem.eql(u8, method, "POST")) {
+            drainRemaining(client_fd, content_length, body_part.len);
+            self.sendError(client_fd, 405, "method_not_allowed", "Only POST method is allowed for /v1/systemone");
+            return;
+        }
+
+        const cl = content_length orelse {
+            self.sendError(client_fd, 411, "length_required", "Content-Length header is required");
+            return;
+        };
+
+        if (cl > 10 * 1024 * 1024) {
+            drainRemaining(client_fd, content_length, body_part.len);
+            self.sendError(client_fd, 413, "payload_too_large", "Request payload exceeds 10 MB limit");
+            return;
+        }
+
+        // Read remaining body if not fully received
+        var full_body: []const u8 = undefined;
+        var heap_body: ?[]u8 = null;
+        defer if (heap_body) |hb| self.allocator.free(hb);
+
+        if (body_part.len >= cl) {
+            full_body = body_part[0..cl];
+        } else {
+            const body_buf = self.allocator.alloc(u8, cl) catch {
+                self.sendError(client_fd, 500, "internal_error", "Memory allocation failed");
+                return;
+            };
+            heap_body = body_buf;
+            @memcpy(body_buf[0..body_part.len], body_part);
+            var body_read = body_part.len;
+
+            while (body_read < cl) {
+                const r_rc = linux.read(client_fd, body_buf[body_read..].ptr, cl - body_read);
+                const err = linux.errno(r_rc);
+                if (err != .SUCCESS) {
+                    if (err == .INTR) continue;
+                    self.sendError(client_fd, 400, "read_error", "Failed to read full request body");
+                    return;
+                }
+                if (r_rc == 0) break;
+                body_read += r_rc;
+            }
+
+            if (body_read < cl) {
+                self.sendError(client_fd, 400, "incomplete_body", "Client closed connection before sending complete body");
+                return;
+            }
+            full_body = body_buf;
+        }
+
+        self.handleDecisionRequest(client_fd, full_body);
+    }
+
+    /// Parses JSON decision request, executes decision engine, and writes JSON response.
+    fn handleDecisionRequest(self: *Server, client_fd: i32, json_body: []const u8) void {
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        const parsed = std.json.parseFromSlice(WireDecisionRequest, alloc, json_body, .{
+            .ignore_unknown_fields = true,
+        }) catch |err| {
+            var err_msg_buf: [128]u8 = undefined;
+            const msg = std.fmt.bufPrint(&err_msg_buf, "Malformed JSON request body: {s}", .{@errorName(err)}) catch "Malformed JSON";
+            self.sendError(client_fd, 400, "invalid_json", msg);
+            return;
+        };
+        defer parsed.deinit();
+
+        const wire_req = parsed.value;
+
+        // Parse schema type
+        const schema_type: SchemaType = if (std.mem.eql(u8, wire_req.schema.type, "boolean"))
+            .boolean
+        else if (std.mem.eql(u8, wire_req.schema.type, "choice"))
+            .choice
+        else if (std.mem.eql(u8, wire_req.schema.type, "score"))
+            .score
+        else {
+            self.sendError(client_fd, 400, "invalid_schema_type", "Schema type must be 'boolean', 'choice', or 'score'");
+            return;
+        };
+
+        // Convert candidate specs
+        const cand_specs = alloc.alloc(CandidateSpec, wire_req.schema.candidates.len) catch {
+            self.sendError(client_fd, 500, "internal_error", "Allocation failed");
+            return;
+        };
+        for (wire_req.schema.candidates, 0..) |c, i| {
+            cand_specs[i] = .{
+                .token = c.token,
+                .label = c.label,
+            };
+        }
+
+        // Build DecisionRequest
+        const dec_req = DecisionRequest{
+            .query = wire_req.query,
+            .context = wire_req.context,
+            .schema_type = schema_type,
+            .candidates = cand_specs,
+            .step_cap = if (wire_req.options) |o| o.step_cap orelse 1 else 1,
+            .temperature = if (wire_req.options) |o| o.temperature orelse 1.0 else 1.0,
+            .entropy_threshold = if (wire_req.options) |o| o.entropy_threshold else null,
+        };
+
+        // Execute decision engine
+        const resp = self.engine.decide(alloc, dec_req) catch |err| {
+            switch (err) {
+                error.EmptyQuery => self.sendError(client_fd, 400, "empty_query", "Query string must not be empty"),
+                error.TooFewCandidates => self.sendError(client_fd, 400, "too_few_candidates", "At least 2 candidate options are required"),
+                error.TooManyCandidates => self.sendError(client_fd, 400, "too_many_candidates", "At most 32 candidate options are supported"),
+                error.DuplicateCandidateToken => self.sendError(client_fd, 400, "duplicate_candidate_token", "Candidate options contain duplicate token IDs"),
+                error.DuplicateCandidateLabel => self.sendError(client_fd, 400, "duplicate_candidate_label", "Candidate options contain duplicate display labels"),
+                error.UnsupportedStepCap => self.sendError(client_fd, 400, "unsupported_step_cap", "step_cap must be 1 in single-step decision v0"),
+                error.InvalidTemperature => self.sendError(client_fd, 400, "invalid_temperature", "Temperature must be a finite positive number"),
+                error.InvalidEntropyThreshold => self.sendError(client_fd, 400, "invalid_entropy_threshold", "Entropy threshold must be between 0.0 and 1.0"),
+                error.TokenNotFound => self.sendError(client_fd, 400, "token_not_found", "A candidate token string does not exist in model vocabulary"),
+                error.MultiTokenCandidateNotAllowed => self.sendError(client_fd, 400, "multi_token_candidate", "Candidate token string resolves to multiple tokens; single-token code required"),
+                error.CanvasOverflow => self.sendError(client_fd, 400, "canvas_overflow", "Prompt exceeds configured canvas length"),
+                else => {
+                    var err_msg_buf: [128]u8 = undefined;
+                    const msg = std.fmt.bufPrint(&err_msg_buf, "Decision engine execution error: {s}", .{@errorName(err)}) catch "Internal server error";
+                    self.sendError(client_fd, 500, "internal_error", msg);
+                },
+            }
+            return;
+        };
+
+        // Serialize DecisionResponse JSON conforming to specs/decision-api.md §3.2
+        const resp_json = serializeDecisionResponse(alloc, resp) catch {
+            self.sendError(client_fd, 500, "internal_error", "Failed to serialize response JSON");
+            return;
+        };
+
+        self.sendJson(client_fd, 200, resp_json);
+    }
+
+    /// Serializes a complete DecisionResponse to a formatted JSON string.
+    pub fn serializeDecisionResponse(allocator: std.mem.Allocator, resp: DecisionResponse) ![]const u8 {
+        var list: std.ArrayList(u8) = .empty;
+        errdefer list.deinit(allocator);
+
+        const header = try std.fmt.allocPrint(allocator,
+            \\{{
+            \\  "decision": "{s}",
+            \\  "decision_probability": {d:.6},
+            \\  "entropy_nats": {d:.6},
+            \\  "normalized_entropy": {d:.6},
+            \\  "uncertain": {},
+            \\  "steps_executed": {d},
+            \\  "canvas_tokens_used": {d},
+            \\  "candidates": [
+            \\
+        , .{
+            resp.decision,
+            resp.decision_probability,
+            resp.entropy_nats,
+            resp.normalized_entropy,
+            resp.uncertain,
+            resp.steps_executed,
+            resp.canvas_tokens_used,
+        });
+        try list.appendSlice(allocator, header);
+
+        for (resp.candidates, 0..) |c, i| {
+            const comma = if (i + 1 < resp.candidates.len) "," else "";
+            const cand_str = try std.fmt.allocPrint(allocator,
+                \\    {{
+                \\      "label": "{s}",
+                \\      "token_id": {d},
+                \\      "probability": {d:.6},
+                \\      "raw_logit": {d:.6}
+                \\    }}{s}
+                \\
+            , .{
+                c.label,
+                c.token_id,
+                c.probability,
+                c.raw_logit,
+                comma,
+            });
+            try list.appendSlice(allocator, cand_str);
+        }
+
+        try list.appendSlice(allocator, "  ]\n}\n");
+        return list.toOwnedSlice(allocator);
+    }
+
+    /// Sends a JSON response with HTTP headers.
+    fn sendJson(self: *Server, client_fd: i32, status_code: u16, json_body: []const u8) void {
+        _ = self;
+        const status_text = switch (status_code) {
+            200 => "OK",
+            400 => "Bad Request",
+            404 => "Not Found",
+            405 => "Method Not Allowed",
+            411 => "Length Required",
+            413 => "Payload Too Large",
+            500 => "Internal Server Error",
+            else => "Response",
+        };
+
+        var header_buf: [512]u8 = undefined;
+        const header = std.fmt.bufPrint(&header_buf,
+            "HTTP/1.1 {d} {s}\r\n" ++
+                "Content-Type: application/json\r\n" ++
+                "Content-Length: {d}\r\n" ++
+                "Connection: close\r\n" ++
+                "\r\n",
+            .{ status_code, status_text, json_body.len },
+        ) catch return;
+
+        writeAll(client_fd, header);
+        writeAll(client_fd, json_body);
+    }
+
+    /// Sends a structured JSON error response conforming to specs/decision-api.md §5.
+    fn sendError(self: *Server, client_fd: i32, status_code: u16, code: []const u8, message: []const u8) void {
+        var err_body_buf: [1024]u8 = undefined;
+        const body = std.fmt.bufPrint(&err_body_buf,
+            \\{{
+            \\  "error": {{
+            \\    "code": "{s}",
+            \\    "message": "{s}"
+            \\  }}
+            \\}}
+            \\
+        , .{ code, message }) catch return;
+
+        self.sendJson(client_fd, status_code, body);
+    }
+
+    fn writeAll(client_fd: i32, bytes: []const u8) void {
+        var written: usize = 0;
+        while (written < bytes.len) {
+            const w_rc = linux.write(client_fd, bytes[written..].ptr, bytes.len - written);
+            const err = linux.errno(w_rc);
+            if (err != .SUCCESS) {
+                if (err == .INTR) continue;
+                return;
+            }
+            if (w_rc == 0) return;
+            written += w_rc;
+        }
+    }
+
+    fn drainRemaining(client_fd: i32, content_length: ?usize, already_read: usize) void {
+        const cl = content_length orelse return;
+        if (cl <= already_read) return;
+        var remaining = cl - already_read;
+        var drain_buf: [4096]u8 = undefined;
+        while (remaining > 0) {
+            const to_read = @min(remaining, drain_buf.len);
+            const r_rc = linux.read(client_fd, drain_buf[0..to_read].ptr, to_read);
+            if (linux.errno(r_rc) != .SUCCESS or r_rc == 0) break;
+            remaining -= r_rc;
+        }
+    }
+};
+
+test "parseIp4 valid and invalid addresses" {
+    const localhost = try parseIp4("127.0.0.1");
+    try std.testing.expectEqual(@as(u32, 0x0100007F), localhost);
+
+    const zero = try parseIp4("0.0.0.0");
+    try std.testing.expectEqual(@as(u32, 0), zero);
+
+    const custom = try parseIp4("192.168.1.10");
+    try std.testing.expectEqual(@as(u32, 0x0A01A8C0), custom);
+
+    try std.testing.expectError(error.InvalidIp, parseIp4("127.0.0"));
+    try std.testing.expectError(error.InvalidIp, parseIp4("127.0.0.1.5"));
+}
+
+test "WireDecisionRequest JSON deserialization" {
+    const allocator = std.testing.allocator;
+    const json_str =
+        \\{
+        \\  "query": "Is database healthy?",
+        \\  "context": "Connection pools normal",
+        \\  "schema": {
+        \\    "type": "boolean",
+        \\    "candidates": [
+        \\      {"token": "Yes", "label": "Yes"},
+        \\      {"token": "No", "label": "No"}
+        \\    ]
+        \\  },
+        \\  "options": {
+        \\    "step_cap": 1,
+        \\    "temperature": 1.0,
+        \\    "entropy_threshold": 0.5
+        \\  }
+        \\}
+    ;
+
+    const parsed = try std.json.parseFromSlice(WireDecisionRequest, allocator, json_str, .{});
+    defer parsed.deinit();
+
+    const req = parsed.value;
+    try std.testing.expectEqualStrings("Is database healthy?", req.query);
+    try std.testing.expectEqualStrings("Connection pools normal", req.context.?);
+    try std.testing.expectEqualStrings("boolean", req.schema.type);
+    try std.testing.expectEqual(@as(usize, 2), req.schema.candidates.len);
+    try std.testing.expectEqualStrings("Yes", req.schema.candidates[0].token);
+    try std.testing.expectEqualStrings("No", req.schema.candidates[1].token);
+    try std.testing.expectEqual(@as(?u32, 1), req.options.?.step_cap);
+    try std.testing.expectEqual(@as(?f32, 1.0), req.options.?.temperature);
+    try std.testing.expectEqual(@as(?f32, 0.5), req.options.?.entropy_threshold);
+}
+
+test "serializeDecisionResponse formatted JSON output" {
+    const allocator = std.testing.allocator;
+    const candidates = [_]decision.CandidateResult{
+        .{ .label = "Yes", .token_id = 10784, .probability = 0.95, .raw_logit = 15.2 },
+        .{ .label = "No", .token_id = 3771, .probability = 0.05, .raw_logit = 10.1 },
+    };
+    const resp = DecisionResponse{
+        .decision = "Yes",
+        .decision_probability = 0.95,
+        .entropy_nats = 0.198,
+        .normalized_entropy = 0.285,
+        .uncertain = false,
+        .candidates = &candidates,
+        .steps_executed = 1,
+        .canvas_tokens_used = 70,
+    };
+
+    const json = try Server.serializeDecisionResponse(allocator, resp);
+    defer allocator.free(json);
+
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"decision\": \"Yes\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"decision_probability\": 0.950000") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"uncertain\": false") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"label\": \"Yes\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"token_id\": 10784") != null);
+}
+
+test "Server GET /health over loopback TCP" {
+    const allocator = std.testing.allocator;
+    var server_inst = Server.init(allocator, undefined, "127.0.0.1", 0);
+    try server_inst.listen();
+    defer server_inst.deinit();
+
+    const thread = try std.Thread.spawn(.{}, struct {
+        fn run(s: *Server) void {
+            s.serve() catch {};
+        }
+    }.run, .{&server_inst});
+
+    // Connect client
+    const rc = linux.socket(linux.AF.INET, linux.SOCK.STREAM | linux.SOCK.CLOEXEC, 0);
+    try std.testing.expect(linux.errno(rc) == .SUCCESS);
+    const client_fd: i32 = @intCast(rc);
+    defer _ = linux.close(client_fd);
+
+    var addr: linux.sockaddr.in = .{
+        .family = linux.AF.INET,
+        .port = std.mem.nativeToBig(u16, server_inst.port),
+        .addr = try parseIp4("127.0.0.1"),
+        .zero = [8]u8{ 0, 0, 0, 0, 0, 0, 0, 0 },
+    };
+    const c_rc = linux.connect(client_fd, @ptrCast(&addr), @sizeOf(linux.sockaddr.in));
+    try std.testing.expect(linux.errno(c_rc) == .SUCCESS);
+
+    const req = "GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
+    _ = linux.write(client_fd, req.ptr, req.len);
+
+    var resp_buf: [1024]u8 = undefined;
+    var total_read: usize = 0;
+    while (total_read < resp_buf.len) {
+        const r_rc = linux.read(client_fd, resp_buf[total_read..].ptr, resp_buf.len - total_read);
+        if (linux.errno(r_rc) != .SUCCESS or r_rc == 0) break;
+        total_read += r_rc;
+    }
+
+    const resp_text = resp_buf[0..total_read];
+    try std.testing.expect(std.mem.indexOf(u8, resp_text, "200 OK") != null);
+    try std.testing.expect(std.mem.indexOf(u8, resp_text, "{\"status\":\"ok\"}") != null);
+
+    server_inst.stop();
+    // Wake up accept by sending one dummy connection to allow thread to exit cleanly
+    const wake_rc = linux.socket(linux.AF.INET, linux.SOCK.STREAM | linux.SOCK.CLOEXEC, 0);
+    if (linux.errno(wake_rc) == .SUCCESS) {
+        const wake_fd: i32 = @intCast(wake_rc);
+        _ = linux.connect(wake_fd, @ptrCast(&addr), @sizeOf(linux.sockaddr.in));
+        _ = linux.close(wake_fd);
+    }
+    thread.join();
+}
