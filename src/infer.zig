@@ -26,9 +26,14 @@ pub fn gemvQ4_K(W_blocks: [*]const quant.BlockQ4_K, x: []const f32, out: []f32, 
     std.debug.assert(out.len == out_dim);
 
     const blocks_per_row = in_dim / quant.QK_K;
+    var x_sums: [256]f32 = undefined;
+    const num_groups = in_dim / 32;
+    std.debug.assert(num_groups <= x_sums.len);
+    quant.computeXSums32(x, x_sums[0..num_groups]);
+
     for (0..out_dim) |r| {
         const row_blocks = W_blocks[r * blocks_per_row .. (r + 1) * blocks_per_row];
-        out[r] = quant.dotRowQ4_K(row_blocks, x);
+        out[r] = quant.dotRowQ4_K_with_xsums(row_blocks, x, x_sums[0..num_groups]);
     }
 }
 
@@ -38,11 +43,25 @@ pub fn gemvF32(weights: []const f32, x: []const f32, out: []f32, out_dim: usize,
     std.debug.assert(x.len == in_dim);
     std.debug.assert(out.len == out_dim);
 
+    const Vec8 = @Vector(8, f32);
+    const n_chunks = in_dim / 8;
+    const rem = in_dim % 8;
+
     for (0..out_dim) |r| {
         const row = weights[r * in_dim .. (r + 1) * in_dim];
-        var sum: f32 = 0.0;
-        for (row, x) |w, xv| {
-            sum += w * xv;
+        var acc: Vec8 = @splat(0.0);
+        for (0..n_chunks) |c| {
+            const off = c * 8;
+            const arr_w: [8]f32 = row[off..][0..8].*;
+            const arr_x: [8]f32 = x[off..][0..8].*;
+            const vw: Vec8 = arr_w;
+            const vx: Vec8 = arr_x;
+            acc = @mulAdd(Vec8, vw, vx, acc);
+        }
+        var sum = @reduce(.Add, acc);
+        for (0..rem) |k| {
+            const off = n_chunks * 8 + k;
+            sum += row[off] * x[off];
         }
         out[r] = sum;
     }
@@ -176,11 +195,12 @@ pub fn gemvTensor(gfile: gguf.GgufFile, tensor: gguf.TensorInfo, x: []const f32,
     }
 }
 
-/// MoE expert gate_up projection: [2816 -> 1408] for selected expert_idx
-pub fn gemvExpertGateUp(
+/// MoE expert gate_up projection with precomputed activation sums: [2816 -> 1408] for selected expert_idx
+pub fn gemvExpertGateUpWithXSums(
     W_blocks: [*]const quant.BlockQ4_K,
     expert_idx: usize,
     x: []const f32,
+    x_sums: []const f32,
     out_gate_up: []f32,
 ) void {
     std.debug.assert(x.len == 2816);
@@ -190,8 +210,20 @@ pub fn gemvExpertGateUp(
     for (0..1408) |r| {
         const row_start = expert_offset + r * blocks_per_row;
         const row_blocks = W_blocks[row_start .. row_start + blocks_per_row];
-        out_gate_up[r] = quant.dotRowQ4_K(row_blocks, x);
+        out_gate_up[r] = quant.dotRowQ4_K_with_xsums(row_blocks, x, x_sums);
     }
+}
+
+/// MoE expert gate_up projection: [2816 -> 1408] for selected expert_idx
+pub fn gemvExpertGateUp(
+    W_blocks: [*]const quant.BlockQ4_K,
+    expert_idx: usize,
+    x: []const f32,
+    out_gate_up: []f32,
+) void {
+    var x_sums: [88]f32 = undefined;
+    quant.computeXSums32(x, &x_sums);
+    gemvExpertGateUpWithXSums(W_blocks, expert_idx, x, &x_sums, out_gate_up);
 }
 
 /// MoE expert down projection: [704 -> 2816] for selected expert_idx
@@ -511,6 +543,8 @@ fn runFFNWorker(ctx: *const LayerContext, scratch: *WorkerScratch, t_start: usiz
         }
 
         ops.rmsNorm(x_mid_t, pre_ffw_2_weights[0..ModelConfig.embedding_dim], 1e-6, scratch.moe_in);
+        var moe_in_xsums: [88]f32 = undefined;
+        quant.computeXSums32(scratch.moe_in, &moe_in_xsums);
         @memset(scratch.moe_accum, 0.0);
 
         for (0..8) |e| {
@@ -518,7 +552,7 @@ fn runFFNWorker(ctx: *const LayerContext, scratch: *WorkerScratch, t_start: usiz
             const exp_w = top_weights[e];
             if (exp_w == 0.0) continue;
 
-            gemvExpertGateUp(exp_gate_up_blocks, exp_id, scratch.moe_in, scratch.exp_gate_up_buf);
+            gemvExpertGateUpWithXSums(exp_gate_up_blocks, exp_id, scratch.moe_in, &moe_in_xsums, scratch.exp_gate_up_buf);
             ops.geglu(scratch.exp_gate_up_buf[0..704], scratch.exp_gate_up_buf[704..1408], scratch.exp_act_buf);
             gemvExpertDown(layer.expert_down, exp_down_slice, exp_id, scratch.exp_act_buf, scratch.exp_down_buf);
 
@@ -542,6 +576,78 @@ fn runFFNWorker(ctx: *const LayerContext, scratch: *WorkerScratch, t_start: usiz
         }
     }
 }
+
+const PoolPhase = enum(u32) {
+    idle,
+    qkv,
+    attn,
+    ffn,
+    terminate,
+};
+
+const LayerPool = struct {
+    phase: std.atomic.Value(PoolPhase) = std.atomic.Value(PoolPhase).init(.idle),
+    epoch: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
+    done_count: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
+    ctx: *const LayerContext = undefined,
+    scratches: []WorkerScratch = undefined,
+    num_threads: usize,
+    tokens_per_thread: usize,
+    total_len: usize,
+
+    fn workerLoop(self: *LayerPool, tid: usize) void {
+        var last_epoch: u32 = 0;
+        const t_start = tid * self.tokens_per_thread;
+        const t_end = @min(t_start + self.tokens_per_thread, self.total_len);
+
+        while (true) {
+            while (true) {
+                const ep = self.epoch.load(.acquire);
+                if (ep != last_epoch) {
+                    last_epoch = ep;
+                    break;
+                }
+                std.atomic.spinLoopHint();
+            }
+
+            const p = self.phase.load(.acquire);
+            if (p == .terminate) return;
+
+            if (t_start < self.total_len) {
+                switch (p) {
+                    .qkv => runQKVWorker(self.ctx, t_start, t_end),
+                    .attn => runAttnWorker(self.ctx, &self.scratches[tid], t_start, t_end),
+                    .ffn => runFFNWorker(self.ctx, &self.scratches[tid], t_start, t_end),
+                    .idle, .terminate => {},
+                }
+            }
+
+            _ = self.done_count.fetchAdd(1, .release);
+        }
+    }
+
+    fn dispatch(self: *LayerPool, p: PoolPhase) void {
+        self.phase.store(p, .release);
+        self.done_count.store(0, .release);
+        _ = self.epoch.fetchAdd(1, .release);
+
+        const t_start = 0;
+        const t_end = @min(self.tokens_per_thread, self.total_len);
+        if (t_start < self.total_len) {
+            switch (p) {
+                .qkv => runQKVWorker(self.ctx, t_start, t_end),
+                .attn => runAttnWorker(self.ctx, &self.scratches[0], t_start, t_end),
+                .ffn => runFFNWorker(self.ctx, &self.scratches[0], t_start, t_end),
+                .idle, .terminate => {},
+            }
+        }
+
+        const target = @as(u32, @intCast(self.num_threads - 1));
+        while (self.done_count.load(.acquire) < target) {
+            std.atomic.spinLoopHint();
+        }
+    }
+};
 
 /// Executes a single-step structured read over a seeded canvas.
 /// Embeds prompt and canvas across dual regions, evaluates all 30 transformer layers,
@@ -604,7 +710,7 @@ pub fn executeStructuredRead(
     const attn_out_buf = try allocator.alloc(f32, N * ModelConfig.embedding_dim);
     defer allocator.free(attn_out_buf);
 
-    // Parallel worker setup across physical CPU cores
+    // Persistent thread pool setup across CPU threads
     const max_threads: usize = 16;
     const cpu_count = std.Thread.getCpuCount() catch 4;
     const num_threads = @min(@min(cpu_count, max_threads), N);
@@ -617,6 +723,29 @@ pub fn executeStructuredRead(
     defer {
         for (worker_scratches) |*ws| {
             ws.deinit(allocator);
+        }
+    }
+
+    const tokens_per_thread = (N + num_threads - 1) / num_threads;
+    var pool = LayerPool{
+        .num_threads = num_threads,
+        .tokens_per_thread = tokens_per_thread,
+        .total_len = N,
+        .scratches = worker_scratches,
+    };
+
+    var pool_threads: [max_threads]std.Thread = undefined;
+    const worker_count = if (num_threads > 1) num_threads - 1 else 0;
+    for (0..worker_count) |i| {
+        pool_threads[i] = try std.Thread.spawn(.{}, LayerPool.workerLoop, .{ &pool, i + 1 });
+    }
+    defer {
+        if (worker_count > 0) {
+            pool.phase.store(.terminate, .release);
+            _ = pool.epoch.fetchAdd(1, .release);
+            for (0..worker_count) |i| {
+                pool_threads[i].join();
+            }
         }
     }
 
@@ -645,60 +774,15 @@ pub fn executeStructuredRead(
             .attn_out_buf = attn_out_buf,
         };
 
-        const tokens_per_thread = (N + num_threads - 1) / num_threads;
-
         if (num_threads == 1) {
             runQKVWorker(&ctx, 0, N);
             runAttnWorker(&ctx, &worker_scratches[0], 0, N);
             runFFNWorker(&ctx, &worker_scratches[0], 0, N);
         } else {
-            // Phase 1: QKV Projections, Norms, RoPE
-            {
-                var threads: [max_threads]std.Thread = undefined;
-                var active_threads: usize = 0;
-                for (0..num_threads) |tid| {
-                    const t_start = tid * tokens_per_thread;
-                    if (t_start >= N) break;
-                    const t_end = @min(t_start + tokens_per_thread, N);
-                    threads[tid] = try std.Thread.spawn(.{}, runQKVWorker, .{ &ctx, t_start, t_end });
-                    active_threads += 1;
-                }
-                for (0..active_threads) |tid| {
-                    threads[tid].join();
-                }
-            }
-
-            // Phase 2: Dual-Region Attention + W_O Output Projection
-            {
-                var threads: [max_threads]std.Thread = undefined;
-                var active_threads: usize = 0;
-                for (0..num_threads) |tid| {
-                    const t_start = tid * tokens_per_thread;
-                    if (t_start >= N) break;
-                    const t_end = @min(t_start + tokens_per_thread, N);
-                    threads[tid] = try std.Thread.spawn(.{}, runAttnWorker, .{ &ctx, &worker_scratches[tid], t_start, t_end });
-                    active_threads += 1;
-                }
-                for (0..active_threads) |tid| {
-                    threads[tid].join();
-                }
-            }
-
-            // Phase 3: Dense MLP + MoE Expert Evaluation
-            {
-                var threads: [max_threads]std.Thread = undefined;
-                var active_threads: usize = 0;
-                for (0..num_threads) |tid| {
-                    const t_start = tid * tokens_per_thread;
-                    if (t_start >= N) break;
-                    const t_end = @min(t_start + tokens_per_thread, N);
-                    threads[tid] = try std.Thread.spawn(.{}, runFFNWorker, .{ &ctx, &worker_scratches[tid], t_start, t_end });
-                    active_threads += 1;
-                }
-                for (0..active_threads) |tid| {
-                    threads[tid].join();
-                }
-            }
+            pool.ctx = &ctx;
+            pool.dispatch(.qkv);
+            pool.dispatch(.attn);
+            pool.dispatch(.ffn);
         }
 
         // Swap buffers for next layer
