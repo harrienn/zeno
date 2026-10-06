@@ -95,6 +95,10 @@ pub const DecisionEngine = struct {
         const raw_prompt_tokens = try self.tokenizer.encode(request_allocator, formatted_prompt);
         defer request_allocator.free(raw_prompt_tokens);
 
+        if (raw_prompt_tokens.len + 1 > root.ModelConfig.max_prompt_tokens) {
+            return error.CanvasOverflow;
+        }
+
         const prompt_tokens = try request_allocator.alloc(u32, raw_prompt_tokens.len + 1);
         defer request_allocator.free(prompt_tokens);
         prompt_tokens[0] = root.SpecialTokens.bos;

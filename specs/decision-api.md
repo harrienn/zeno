@@ -99,6 +99,57 @@ The decision engine strictly validates that all candidate choices resolve to sin
 * **`uncertain`**: Set to `true` **only when `options.entropy_threshold` was supplied** and `normalized_entropy >= entropy_threshold`. If the threshold is omitted, `uncertain` is always `false`. Entropy is a dispersion measure, not a correctness estimate. *An earlier revision of this document stated "supplied or defaulted", contradicting the field table in §3.1. The field table is normative, and this reading is corroborated by [`denoising.md`](denoising.md) §2.1. See [`UNRESOLVED.md`](UNRESOLVED.md) U-21.*
 * **`canvas_tokens_used`**: The number of prompt and answer positions, i.e. `answer_pos + 1`. It excludes the `TURN_CLOSE` and padded tail positions specified by U-02 in [`UNRESOLVED.md`](UNRESOLVED.md).
 
+### 3.3 HTTP Error Envelope and Status Codes
+
+All non-200 responses return a standard RFC 8259-compliant JSON error object:
+
+```json
+{
+  "error": {
+    "code": "canvas_overflow",
+    "message": "Prompt exceeds configured canvas length"
+  }
+}
+```
+
+#### Implemented Status Codes
+
+| HTTP Status | Error Code | Trigger Condition |
+| :--- | :--- | :--- |
+| `200 OK` | *(none)* | Decision executed successfully. |
+| `400 Bad Request` | `bad_request` | Malformed HTTP request line, unparseable JSON payload, or missing query. |
+| `400 Bad Request` | `missing_schema` | Missing `schema` object. |
+| `400 Bad Request` | `unsupported_schema_type` | Schema type is not `"boolean"`, `"choice"`, or `"score"`. |
+| `400 Bad Request` | `too_few_candidates` | Fewer than 2 candidates provided. |
+| `400 Bad Request` | `too_many_candidates` | More than 32 candidates provided. |
+| `400 Bad Request` | `missing_candidate_token` | Candidate entry missing required `token` field. |
+| `400 Bad Request` | `duplicate_candidate_token` | Multiple candidates resolve to identical token IDs. |
+| `400 Bad Request` | `token_not_found` | Candidate token text is not found in tokenizer vocabulary. |
+| `400 Bad Request` | `multi_token_candidate` | Candidate resolves to more than 1 vocabulary token. |
+| `400 Bad Request` | `unsupported_step_cap` | `options.step_cap` is set to any value other than 1. |
+| `400 Bad Request` | `invalid_temperature` | Temperature is non-finite, $\le 0.0$, or NaN. |
+| `400 Bad Request` | `invalid_entropy_threshold` | Threshold is non-finite, $< 0.0$, or $> 1.0$. |
+| `400 Bad Request` | `canvas_overflow` | Rendered prompt exceeds maximum allowed prompt tokens (768 tokens, capping total sequence to 1024). |
+| `404 Not Found` | `not_found` | Request path is not `/health` or `/v1/systemone`. |
+| `405 Method Not Allowed` | `method_not_allowed` | Method other than GET for `/health` or POST for `/v1/systemone`. |
+| `411 Length Required` | `length_required` | POST request omitted `Content-Length` header. |
+| `413 Payload Too Large` | `payload_too_large` | Request body exceeds maximum allowed buffer size (10 MiB). |
+| `500 Internal Server Error` | `internal_error` | Internal engine or inference failure. |
+| `501 Not Implemented` | `not_implemented` | Request uses unsupported `Transfer-Encoding: chunked`. |
+| `505 Version Not Supported` | `unsupported_version` | Request line specifies an HTTP version other than `HTTP/1.0` or `HTTP/1.1`. |
+
+### 3.4 Wire Format, Escaping & Numerical Precision
+
+- **RFC 8259 String Escaping**: All JSON strings (including user-supplied `decision` labels, candidate `label` strings, and error messages) are strictly escaped (`\"`, `\\`, control codes `\n`, `\r`, `\t`, `\u00XX`), preventing JSON structure injection.
+- **Float Rounding in JSON**: API response floating-point fields (`decision_probability`, `probability`, `raw_logit`, `entropy_nats`, `normalized_entropy`) are serialized using 6 decimal places of precision (`{d:.6}`). Downstream automated tools comparing golden fixtures against IEEE 754 float baselines must use the native Zig interface or account for decimal formatting tolerance.
+
+### 3.5 Framing, Limits & Security Boundaries
+
+- **Framing Invariants**: HTTP request lines must contain exactly three tokens (`METHOD PATH HTTP/VERSION`). Paths must start with `/`. Repeated or conflicting `Content-Length` headers are rejected with HTTP 400 Bad Request to prevent HTTP request smuggling.
+- **Socket Deadlines**: Accepted connections enforce 15-second read and write timeouts (`SO_RCVTIMEO` / `SO_SNDTIMEO`). Rejected requests (such as 404, 405, 411, 413) immediately close the connection without draining unbounded client bodies.
+- **Sequence & Workspace Bounding**: Prompts are capped at 768 tokens (`max_prompt_tokens`). Together with the 256-token canvas length, sequence length $N$ is hard-bounded at 1024 tokens (`max_seq_len`), preventing unbounded activation memory reallocation.
+- **Trust Boundary**: The server is a single-threaded synchronous local decision engine without authentication or transport encryption (TLS). It is intended for loopback operation (`127.0.0.1`). If bound to external network interfaces (`--host 0.0.0.0`), it must be placed behind an authenticated reverse proxy (e.g. Envoy, Nginx, Caddy).
+
 ---
 
 ## 4. Supported Schema Types
@@ -176,17 +227,25 @@ pub const DecisionEngine = struct {
 - **Concurrency Contract (R5-01)**: A single `DecisionEngine` instance owns one mutable workspace and executes requests sequentially. Access to `engine.decide(...)` is serialized via an internal mutex to guarantee race-free execution across concurrent caller threads. Applications requiring parallel evaluation across multiple queries simultaneously must allocate multiple `DecisionEngine` instances (accounting for ~49 MiB workspace overhead per instance) or route queries through an external queue.
 - Per-request scratch and response slices use the caller-supplied allocator. The response remains valid until the caller resets or frees that allocator.
 
-### Initial Error Contract
+### Error Contract
 
-Reject malformed schemas, fewer than two or more than 32 candidates, duplicate resolved token IDs, candidates that do not resolve to one token in their rendered answer context, non-finite or non-positive temperatures, canvas overflow, and `step_cap` values other than `1`. HTTP status codes and a stable JSON error envelope must be specified before exposing the endpoint.
+The native interface returns typed errors:
+- `error.InvalidSchema`: malformed schema or fewer than 2 / more than 32 candidates.
+- `error.DuplicateCandidate`: duplicate resolved token IDs among candidates.
+- `error.MultiTokenCandidateNotAllowed`: candidate resolves to multiple tokens.
+- `error.TokenNotFound`: candidate string absent from vocabulary.
+- `error.CanvasOverflow`: prompt length exceeds `max_prompt_tokens` (768).
+- `error.InvalidTemperature`: temperature $\le 0.0$ or non-finite.
+- `error.InvalidEntropyThreshold`: threshold $< 0.0$, $> 1.0$, or non-finite.
+- `error.UnsupportedStepCap`: `step_cap` is not 1.
 
-A candidate string that is absent from the vocabulary must **not** be reported as `MultiTokenCandidateNotAllowed`; the two conditions have different remediations (choose a different label versus map the label to a one-token code). See [`UNRESOLVED.md`](UNRESOLVED.md).
+A candidate string that is absent from the vocabulary is reported as `TokenNotFound`, **not** `MultiTokenCandidateNotAllowed`, preserving distinct failure semantics (choose a different label versus map the label to a one-token code).
 
 ## 6. Known Gaps in This Specification
 
-The request path is implemented as a CPU prototype, but it is not yet reference-validated end-to-end. Remaining dependencies are tracked in [`UNRESOLVED.md`](UNRESOLVED.md):
+The request path is implemented as a CPU prototype with verified discrete decision matching against reference oracles. Remaining dependencies are tracked in [`UNRESOLVED.md`](UNRESOLVED.md):
 
-* **U-05** — the artifact's exact chat template is not recorded as reproducible specification evidence.
-* **U-13 / U-22** — the checked-in fixture is not accompanied by an independently captured reference output, and its tolerance policy remains provisional.
+* **U-05** — *Resolved*: The artifact's exact chat template is recorded verbatim in [`chat_template.jinja`](chat_template.jinja) and documented in [`canvas-templates.md`](canvas-templates.md) §4.
+* **U-13 / U-22** — *Open*: Golden fixture captures and schema `zeno.fixture/v1` are established against llama.cpp PR #24423 (`llama-diffusion-gemma-eval`) with exact candidate decision matching and identical top-5 vocabulary predictions. However, candidate raw logit divergence between FP32 dequantized execution and GGML SIMD execution (1.19 to 11.07 across fixtures) exceeds the $\le 0.5$ tolerance limit in `zeno.tolerance/v1`. Full Phase 3 parity exit remains open until numerical logit divergence is reconciled.
 
-The request/response shape, single-token constraint (§2), and scoring fields are specified. RoPE pairing is resolved to NeoX-style half-split under U-23 and implemented accordingly. The local engine runs, but its outputs must not be presented as reference parity until the remaining dependencies are closed.
+The request/response shape, single-token constraint (§2), scoring fields, HTTP error envelope, and framing limits are specified. RoPE pairing is resolved to NeoX-style half-split under U-23 and implemented accordingly.

@@ -63,6 +63,12 @@ pub const ModelConfig = struct {
     pub const vocab_size: usize = 262_144;
     /// Logit softcapping value.
     pub const logit_softcap: f32 = 30.0;
+    /// Attention sliding window size (1024 tokens).
+    pub const sliding_window: usize = 1024;
+    /// Maximum evaluated sequence length (sliding window capacity).
+    pub const max_seq_len: usize = sliding_window;
+    /// Maximum prompt tokens permitted before canvas overflow.
+    pub const max_prompt_tokens: usize = max_seq_len - canvas_length;
 };
 
 /// Special token IDs defined by the Gemma 4 / DiffusionGemma tokenizer.

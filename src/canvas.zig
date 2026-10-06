@@ -34,6 +34,10 @@ pub const Canvas = struct {
     /// Seeds the canvas with answer token at position 0, following TURN_CLOSE at position 1, and PAD tail.
     /// In DiffusionGemma's dual-region architecture, prompt tokens (length P) precede the 256-token canvas.
     pub fn seedSingleStep(prompt_tokens: []const u32, seed_token: u32) CanvasError!Canvas {
+        if (prompt_tokens.len > root.ModelConfig.max_prompt_tokens) {
+            return error.CanvasOverflow;
+        }
+
         var canvas = Canvas{
             .tokens = @splat(root.SpecialTokens.pad),
             .answer_pos = 0,
@@ -134,4 +138,9 @@ test "Canvas: formatDecisionPrompt includes turn tags and candidates" {
     defer allocator.free(prompt_text);
 
     try std.testing.expect(std.mem.indexOf(u8, prompt_text, "<|turn>user\nContext: OK\n\nQuestion: Is service active?\nChoices:\n- Yes\n- No\n<turn|>\n<|turn>model\nAnswer:") != null);
+}
+
+test "Canvas: seedSingleStep rejects prompt exceeding max_prompt_tokens with CanvasOverflow" {
+    var long_prompt: [root.ModelConfig.max_prompt_tokens + 1]u32 = @splat(100);
+    try std.testing.expectError(error.CanvasOverflow, Canvas.seedSingleStep(&long_prompt, root.SpecialTokens.mask));
 }

@@ -152,6 +152,10 @@ pub const Server = struct {
             }
 
             const client_fd: i32 = @intCast(client_rc);
+            // Configure socket read/write timeouts (15s) to prevent slowloris / stalled clients (R6-02)
+            const tv = linux.timeval{ .sec = 15, .usec = 0 };
+            _ = linux.setsockopt(client_fd, linux.SOL.SOCKET, linux.SO.RCVTIMEO, @ptrCast(&tv), @sizeOf(linux.timeval));
+            _ = linux.setsockopt(client_fd, linux.SOL.SOCKET, linux.SO.SNDTIMEO, @ptrCast(&tv), @sizeOf(linux.timeval));
             self.handleClient(client_fd);
         }
     }
@@ -201,32 +205,69 @@ pub const Server = struct {
         var token_it = std.mem.splitScalar(u8, req_line, ' ');
         const method = token_it.next() orelse "";
         const path = token_it.next() orelse "";
+        const version = token_it.next() orelse "";
 
-        // Parse Content-Length header if present
+        if (method.len == 0 or path.len == 0 or version.len == 0 or token_it.next() != null) {
+            self.sendError(client_fd, 400, "bad_request", "Malformed request line: expected 'METHOD PATH HTTP/VERSION'");
+            return;
+        }
+
+        if (!std.mem.eql(u8, version, "HTTP/1.1") and !std.mem.eql(u8, version, "HTTP/1.0")) {
+            self.sendError(client_fd, 505, "http_version_not_supported", "Only HTTP/1.0 and HTTP/1.1 are supported");
+            return;
+        }
+
+        if (path[0] != '/') {
+            self.sendError(client_fd, 400, "bad_request", "Request path must be an absolute path starting with '/'");
+            return;
+        }
+
+        // Parse headers
         var content_length: ?usize = null;
+        var has_transfer_encoding = false;
+
         while (line_it.next()) |header_line| {
             if (header_line.len == 0) continue;
-            if (std.ascii.startsWithIgnoreCase(header_line, "content-length:")) {
+
+            if (std.ascii.startsWithIgnoreCase(header_line, "transfer-encoding:")) {
+                has_transfer_encoding = true;
+            } else if (std.ascii.startsWithIgnoreCase(header_line, "content-length:")) {
+                if (content_length != null) {
+                    // RFC 7230 §3.3.2: Duplicate Content-Length header is a smuggling vulnerability
+                    self.sendError(client_fd, 400, "bad_request", "Duplicate Content-Length header is not permitted");
+                    return;
+                }
                 const val_str = std.mem.trim(u8, header_line["content-length:".len..], " \t");
-                content_length = std.fmt.parseInt(usize, val_str, 10) catch null;
+                content_length = std.fmt.parseInt(usize, val_str, 10) catch {
+                    self.sendError(client_fd, 400, "bad_request", "Invalid Content-Length header value");
+                    return;
+                };
             }
         }
 
-        // Route: GET /health
-        if (std.mem.eql(u8, method, "GET") and std.mem.eql(u8, path, "/health")) {
-            self.sendJson(client_fd, 200, "{\"status\":\"ok\"}\n");
+        if (has_transfer_encoding) {
+            self.sendError(client_fd, 501, "not_implemented", "Transfer-Encoding (chunked) is not supported");
             return;
+        }
+
+        // Route: GET /health
+        if (std.mem.eql(u8, path, "/health")) {
+            if (std.mem.eql(u8, method, "GET") or std.mem.eql(u8, method, "HEAD")) {
+                self.sendJson(client_fd, 200, "{\"status\":\"ok\"}\n");
+                return;
+            } else {
+                self.sendError(client_fd, 405, "method_not_allowed", "Only GET/HEAD method is allowed for /health");
+                return;
+            }
         }
 
         // Only POST /v1/systemone is supported for decisions
         if (!std.mem.eql(u8, path, "/v1/systemone")) {
-            drainRemaining(client_fd, content_length, body_part.len);
             self.sendError(client_fd, 404, "not_found", "Path not found. Decision API is at POST /v1/systemone");
             return;
         }
 
         if (!std.mem.eql(u8, method, "POST")) {
-            drainRemaining(client_fd, content_length, body_part.len);
             self.sendError(client_fd, 405, "method_not_allowed", "Only POST method is allowed for /v1/systemone");
             return;
         }
@@ -237,7 +278,6 @@ pub const Server = struct {
         };
 
         if (cl > 10 * 1024 * 1024) {
-            drainRemaining(client_fd, content_length, body_part.len);
             self.sendError(client_fd, 413, "payload_too_large", "Request payload exceeds 10 MB limit");
             return;
         }
@@ -365,14 +405,37 @@ pub const Server = struct {
         self.sendJson(client_fd, 200, resp_json);
     }
 
-    /// Serializes a complete DecisionResponse to a formatted JSON string.
+    /// Writes an RFC 8259 compliant escaped JSON string (including surrounding quotes).
+    pub fn writeEscapedJsonString(list: *std.ArrayList(u8), allocator: std.mem.Allocator, str: []const u8) !void {
+        try list.append(allocator, '"');
+        for (str) |c| {
+            switch (c) {
+                '"' => try list.appendSlice(allocator, "\\\""),
+                '\\' => try list.appendSlice(allocator, "\\\\"),
+                '\n' => try list.appendSlice(allocator, "\\n"),
+                '\r' => try list.appendSlice(allocator, "\\r"),
+                '\t' => try list.appendSlice(allocator, "\\t"),
+                0x00...0x08, 0x0B, 0x0C, 0x0E...0x1F => {
+                    var hex_buf: [6]u8 = undefined;
+                    const hex = std.fmt.bufPrint(&hex_buf, "\\u{x:0>4}", .{c}) catch "\\u0000";
+                    try list.appendSlice(allocator, hex);
+                },
+                else => try list.append(allocator, c),
+            }
+        }
+        try list.append(allocator, '"');
+    }
+
+    /// Serializes a complete DecisionResponse to a formatted JSON string with full RFC 8259 escaping (R6-01).
     pub fn serializeDecisionResponse(allocator: std.mem.Allocator, resp: DecisionResponse) ![]const u8 {
         var list: std.ArrayList(u8) = .empty;
         errdefer list.deinit(allocator);
 
+        try list.appendSlice(allocator, "{\n  \"decision\": ");
+        try writeEscapedJsonString(&list, allocator, resp.decision);
+
         const header = try std.fmt.allocPrint(allocator,
-            \\{{
-            \\  "decision": "{s}",
+            \\,
             \\  "decision_probability": {d:.6},
             \\  "entropy_nats": {d:.6},
             \\  "normalized_entropy": {d:.6},
@@ -382,7 +445,6 @@ pub const Server = struct {
             \\  "candidates": [
             \\
         , .{
-            resp.decision,
             resp.decision_probability,
             resp.entropy_nats,
             resp.normalized_entropy,
@@ -394,16 +456,16 @@ pub const Server = struct {
 
         for (resp.candidates, 0..) |c, i| {
             const comma = if (i + 1 < resp.candidates.len) "," else "";
+            try list.appendSlice(allocator, "    {\n      \"label\": ");
+            try writeEscapedJsonString(&list, allocator, c.label);
             const cand_str = try std.fmt.allocPrint(allocator,
-                \\    {{
-                \\      "label": "{s}",
+                \\,
                 \\      "token_id": {d},
                 \\      "probability": {d:.6},
                 \\      "raw_logit": {d:.6}
                 \\    }}{s}
                 \\
             , .{
-                c.label,
                 c.token_id,
                 c.probability,
                 c.raw_logit,
@@ -427,6 +489,8 @@ pub const Server = struct {
             411 => "Length Required",
             413 => "Payload Too Large",
             500 => "Internal Server Error",
+            501 => "Not Implemented",
+            505 => "HTTP Version Not Supported",
             else => "Response",
         };
 
@@ -444,20 +508,20 @@ pub const Server = struct {
         writeAll(client_fd, json_body);
     }
 
-    /// Sends a structured JSON error response conforming to specs/decision-api.md §5.
+    /// Sends a structured JSON error response conforming to specs/decision-api.md §5 with RFC 8259 escaping.
     fn sendError(self: *Server, client_fd: i32, status_code: u16, code: []const u8, message: []const u8) void {
-        var err_body_buf: [1024]u8 = undefined;
-        const body = std.fmt.bufPrint(&err_body_buf,
-            \\{{
-            \\  "error": {{
-            \\    "code": "{s}",
-            \\    "message": "{s}"
-            \\  }}
-            \\}}
-            \\
-        , .{ code, message }) catch return;
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
 
-        self.sendJson(client_fd, status_code, body);
+        var list: std.ArrayList(u8) = .empty;
+        list.appendSlice(alloc, "{\n  \"error\": {\n    \"code\": ") catch return;
+        writeEscapedJsonString(&list, alloc, code) catch return;
+        list.appendSlice(alloc, ",\n    \"message\": ") catch return;
+        writeEscapedJsonString(&list, alloc, message) catch return;
+        list.appendSlice(alloc, "\n  }\n}\n") catch return;
+
+        self.sendJson(client_fd, status_code, list.items);
     }
 
     fn writeAll(client_fd: i32, bytes: []const u8) void {
@@ -471,19 +535,6 @@ pub const Server = struct {
             }
             if (w_rc == 0) return;
             written += w_rc;
-        }
-    }
-
-    fn drainRemaining(client_fd: i32, content_length: ?usize, already_read: usize) void {
-        const cl = content_length orelse return;
-        if (cl <= already_read) return;
-        var remaining = cl - already_read;
-        var drain_buf: [4096]u8 = undefined;
-        while (remaining > 0) {
-            const to_read = @min(remaining, drain_buf.len);
-            const r_rc = linux.read(client_fd, drain_buf[0..to_read].ptr, to_read);
-            if (linux.errno(r_rc) != .SUCCESS or r_rc == 0) break;
-            remaining -= r_rc;
         }
     }
 };
@@ -563,6 +614,38 @@ test "serializeDecisionResponse formatted JSON output" {
     try std.testing.expect(std.mem.indexOf(u8, json, "\"uncertain\": false") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"label\": \"Yes\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"token_id\": 10784") != null);
+}
+
+test "serializeDecisionResponse with special characters in label and decision (R6-01)" {
+    const allocator = std.testing.allocator;
+    const special_label = "Option \"A\" \\ [backslash] \n newline \t tab";
+    const candidates = [_]decision.CandidateResult{
+        .{ .label = special_label, .token_id = 100, .probability = 0.8, .raw_logit = 12.0 },
+        .{ .label = "Normal B", .token_id = 200, .probability = 0.2, .raw_logit = 10.0 },
+    };
+    const resp = DecisionResponse{
+        .decision = special_label,
+        .decision_probability = 0.8,
+        .entropy_nats = 0.5,
+        .normalized_entropy = 0.72,
+        .uncertain = false,
+        .candidates = &candidates,
+        .steps_executed = 1,
+        .canvas_tokens_used = 40,
+    };
+
+    const json = try Server.serializeDecisionResponse(allocator, resp);
+    defer allocator.free(json);
+
+    // Verify it is strictly valid JSON by parsing it with std.json
+    var parsed = try std.json.parseFromSlice(std.json.Value, allocator, json, .{});
+    defer parsed.deinit();
+
+    const root_obj = parsed.value.object;
+    try std.testing.expectEqualStrings(special_label, root_obj.get("decision").?.string);
+
+    const cands_arr = root_obj.get("candidates").?.array;
+    try std.testing.expectEqualStrings(special_label, cands_arr.items[0].object.get("label").?.string);
 }
 
 test "Server GET /health over loopback TCP" {

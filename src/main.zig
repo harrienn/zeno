@@ -30,12 +30,30 @@ pub fn main(init: std.process.Init) !void {
 
         var i: usize = 3;
         while (i < args.len) : (i += 1) {
-            if (std.mem.eql(u8, args[i], "--host") and i + 1 < args.len) {
+            if (std.mem.eql(u8, args[i], "--host")) {
+                if (i + 1 >= args.len) {
+                    try stdout_writer.print("Error: --host requires an IP address argument\n", .{});
+                    try stdout_writer.flush();
+                    return;
+                }
                 i += 1;
                 host = args[i];
-            } else if (std.mem.eql(u8, args[i], "--port") and i + 1 < args.len) {
+            } else if (std.mem.eql(u8, args[i], "--port")) {
+                if (i + 1 >= args.len) {
+                    try stdout_writer.print("Error: --port requires a port number argument\n", .{});
+                    try stdout_writer.flush();
+                    return;
+                }
                 i += 1;
-                port = std.fmt.parseInt(u16, args[i], 10) catch 8000;
+                port = std.fmt.parseInt(u16, args[i], 10) catch {
+                    try stdout_writer.print("Error: Invalid port number '{s}' (must be 0-65535)\n", .{args[i]});
+                    try stdout_writer.flush();
+                    return;
+                };
+            } else {
+                try stdout_writer.print("Error: Unknown option '{s}'\n", .{args[i]});
+                try stdout_writer.flush();
+                return;
             }
         }
 
@@ -53,7 +71,11 @@ pub fn main(init: std.process.Init) !void {
         try server_inst.listen();
         defer server_inst.deinit();
 
-        try stdout_writer.print("Zeno System One Decision API server listening on http://{s}:{d}\n", .{ host, port });
+        if (!std.mem.eql(u8, host, "127.0.0.1") and !std.mem.eql(u8, host, "localhost")) {
+            try stdout_writer.print("WARNING: Binding to non-loopback address '{s}' without authentication. Local/trusted network use only.\n", .{host});
+        }
+
+        try stdout_writer.print("Zeno System One Decision API server listening on http://{s}:{d}\n", .{ host, server_inst.port });
         try stdout_writer.print("Endpoints:\n", .{});
         try stdout_writer.print("  GET  /health           - Liveness probe\n", .{});
         try stdout_writer.print("  POST /v1/systemone     - Jev-compatible decision API\n\n", .{});

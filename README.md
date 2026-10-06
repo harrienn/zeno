@@ -79,7 +79,11 @@ Typed Decision Output (Boolean, Categorical, or Ordinal Score)
 
 ## 6. Status & Development
 
-The repository has moved beyond the initial build scaffold and includes Zig modules for GGUF parsing, tokenizer encoding, tensors, quantization, operations, model representation, canvas handling, and a CPU decision path. End-to-end reference parity has not been established. The chat template is not recorded as a reproducible spec, the current fixture has no checked-in independent capture record, and its comparison tolerances remain provisional. Performance and probability calibration have not been established. See [`PLAN.md`](PLAN.md) and [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) for current gates.
+The repository includes a complete CPU reference implementation for DiffusionGemma structured decision-making, including GGUF parsing, BPE tokenizer, multi-threaded CPU inference engine, and a native zero-dependency HTTP decision API server (`POST /v1/systemone` and `GET /health`).
+
+Five golden fixtures are tracked with independently captured reference records (`zeno.fixture/v1`) from llama.cpp PR #24423 (`llama-diffusion-gemma-eval`), verifying 100% discrete decision parity and identical top-5 vocabulary predictions across all test cases. The artifact's chat template is recorded verbatim in `chat_template.jinja` (U-05 resolved).
+
+Full Phase 3 reference parity exit remains open under U-13 and U-22 because candidate raw logit divergence between FP32 dequantized execution and GGML SIMD execution (1.19 to 11.07 across fixtures) exceeds the $\le 0.5$ tolerance threshold in `zeno.tolerance/v1`. Performance optimization and probability calibration remain open research areas. See [`PLAN.md`](PLAN.md) and [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) for current gates.
 
 ### Prerequisites
 
@@ -89,9 +93,14 @@ The repository has moved beyond the initial build scaffold and includes Zig modu
 ### Build & Test
 
 ```bash
-zig build
+# Run unit tests
 zig build test
+
+# Run CLI decision evaluation
 zig build run
+
+# Run HTTP decision API server
+zig build run -- --serve --port 8000
 ```
 
 ---

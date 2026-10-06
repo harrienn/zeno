@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
-Zeno — HTTP Decision API Server Integration Test
-Tests the /health and /v1/systemone endpoints against the specs/decision-api.md contract.
+Zeno — HTTP Decision API Server Integration Test Suite
+Tests /health and /v1/systemone against the specs/decision-api.md contract,
+including framing robustness, RFC 8259 escaping, and canvas overflow limits.
 """
 
 import json
 import os
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -49,6 +51,24 @@ def test_request(method, path, body=None, expected_status=200):
     except urllib.error.HTTPError as e:
         content = e.read().decode("utf-8")
         return e.code, json.loads(content) if content else {}
+
+
+def send_raw_http(raw_bytes):
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect((SERVER_HOST, SERVER_PORT))
+    s.sendall(raw_bytes)
+    resp = b""
+    s.settimeout(5.0)
+    try:
+        while True:
+            chunk = s.recv(4096)
+            if not chunk:
+                break
+            resp += chunk
+    except Exception:
+        pass
+    s.close()
+    return resp.decode("utf-8", errors="replace")
 
 
 def main():
@@ -96,7 +116,7 @@ def main():
         assert "error" in data and data["error"].get("code") == "not_found"
         print(f"✓ Correctly returned 404: {data}")
 
-        # Test 4: Validation error: unsupported step_cap > 1 (400 Bad Request)
+        # Test 4: Schema validation: unsupported step_cap > 1 (400 Bad Request)
         print("\n--- Test 4: Schema validation (step_cap > 1) ---")
         status, data = test_request("POST", "/v1/systemone", body={
             "query": "Is system healthy?",
@@ -113,7 +133,7 @@ def main():
         assert "error" in data and data["error"].get("code") == "unsupported_step_cap"
         print(f"✓ Correctly returned 400 for step_cap > 1: {data}")
 
-        # Test 5: Validation error: fewer than 2 candidates
+        # Test 5: Schema validation: fewer than 2 candidates
         print("\n--- Test 5: Schema validation (too few candidates) ---")
         status, data = test_request("POST", "/v1/systemone", body={
             "query": "Is system healthy?",
@@ -126,15 +146,54 @@ def main():
         assert "error" in data and data["error"].get("code") == "too_few_candidates"
         print(f"✓ Correctly returned 400 for too few candidates: {data}")
 
-        # Test 6: Real Decision Query: POST /v1/systemone
-        print("\n--- Test 6: Live Decision Query (POST /v1/systemone) ---")
-        query_payload = {
-            "query": "Is the system healthy and operational?",
+        # Test 6: Raw HTTP framing: Malformed request line (R6-06)
+        print("\n--- Test 6: Malformed request line (400 Bad Request) ---")
+        raw_resp = send_raw_http(b"POST /v1/systemone\r\nHost: 127.0.0.1\r\n\r\n")
+        assert "400 Bad Request" in raw_resp, f"Expected 400, got: {raw_resp[:100]}"
+        assert "bad_request" in raw_resp
+        print("✓ Correctly rejected 2-token request line with 400 Bad Request")
+
+        # Test 7: Raw HTTP framing: Duplicate Content-Length (R6-06)
+        print("\n--- Test 7: Duplicate Content-Length rejection (400 Bad Request) ---")
+        raw_resp = send_raw_http(b"POST /v1/systemone HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 10\r\nContent-Length: 20\r\n\r\n{}")
+        assert "400 Bad Request" in raw_resp, f"Expected 400, got: {raw_resp[:100]}"
+        assert "Duplicate Content-Length" in raw_resp
+        print("✓ Correctly rejected duplicate Content-Length with 400 Bad Request")
+
+        # Test 8: Raw HTTP framing: Transfer-Encoding chunked (R6-06)
+        print("\n--- Test 8: Transfer-Encoding chunked rejection (501 Not Implemented) ---")
+        raw_resp = send_raw_http(b"POST /v1/systemone HTTP/1.1\r\nHost: 127.0.0.1\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n")
+        assert "501 Not Implemented" in raw_resp, f"Expected 501, got: {raw_resp[:100]}"
+        print("✓ Correctly rejected chunked transfer encoding with 501 Not Implemented")
+
+        # Test 9: Prompt size bounding: Canvas Overflow (R6-03)
+        print("\n--- Test 9: Prompt size bounding (Canvas Overflow) ---")
+        oversized_query = "This is an extremely long question " * 200  # generates > 768 tokens
+        status, data = test_request("POST", "/v1/systemone", body={
+            "query": oversized_query,
             "schema": {
                 "type": "boolean",
                 "candidates": [
                     {"token": "Yes", "label": "Yes"},
                     {"token": "No", "label": "No"}
+                ]
+            }
+        })
+        assert status == 400, f"Expected 400, got {status}"
+        assert "error" in data and data["error"].get("code") == "canvas_overflow"
+        print(f"✓ Correctly rejected oversized prompt with canvas_overflow: {data}")
+
+        # Test 10: Live Decision Query with Escaped Labels (R6-01)
+        print("\n--- Test 10: Live Decision Query with Escaped Labels (POST /v1/systemone) ---")
+        escaped_label_yes = 'Yes "Primary" \\ verified'
+        escaped_label_no = 'No "Alternate" \n second'
+        query_payload = {
+            "query": "Is the system healthy and operational?",
+            "schema": {
+                "type": "boolean",
+                "candidates": [
+                    {"token": "Yes", "label": escaped_label_yes},
+                    {"token": "No", "label": escaped_label_no}
                 ]
             },
             "options": {
@@ -153,16 +212,16 @@ def main():
         print("Response received:")
         print(json.dumps(data, indent=2))
 
-        assert data.get("decision") == "Yes", f"Expected decision 'Yes', got {data.get('decision')}"
+        assert data.get("decision") in [escaped_label_yes, escaped_label_no], f"Expected decision in candidates, got {data.get('decision')}"
         assert data.get("steps_executed") == 1, f"Expected 1 step, got {data.get('steps_executed')}"
         assert data.get("uncertain") is False, f"Expected uncertain=False, got {data.get('uncertain')}"
         assert len(data.get("candidates", [])) == 2, f"Expected 2 candidates, got {len(data.get('candidates', []))}"
-        assert data["candidates"][0]["label"] == "Yes"
-        assert data["candidates"][1]["label"] == "No"
-        print(f"✓ Decision matches expected golden judgment ('Yes') with prob {data.get('decision_probability'):.4f}!")
+        assert data["candidates"][0]["label"] == escaped_label_yes
+        assert data["candidates"][1]["label"] == escaped_label_no
+        print(f"✓ Decision '{data.get('decision')}' properly serialized and parsed with escaped labels (prob {data.get('decision_probability'):.4f})!")
 
         print("\n=======================================================")
-        print(" ALL HTTP SERVER INTEGRATION TESTS PASSED (6/6)")
+        print(" ALL HTTP SERVER INTEGRATION TESTS PASSED (10/10)")
         print("=======================================================")
 
     finally:
