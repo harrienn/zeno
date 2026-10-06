@@ -34,6 +34,8 @@ pub const Tokenizer = tokenizer.Tokenizer;
 pub const TokenId = tokenizer.TokenId;
 pub const Canvas = canvas.Canvas;
 pub const DecisionEngine = engine.DecisionEngine;
+pub const InferenceWorkspace = infer.InferenceWorkspace;
+pub const LayerPool = infer.LayerPool;
 pub const GoldenFixture = fixture.GoldenFixture;
 
 /// Semantic version of the Zeno runtime.

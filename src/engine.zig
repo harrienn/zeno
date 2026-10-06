@@ -23,8 +23,10 @@ pub const DecisionEngine = struct {
     allocator: std.mem.Allocator,
     model: DiffusionGemmaModel,
     tokenizer: Tokenizer,
+    workspace: *infer.InferenceWorkspace,
 
-    /// Initializes decision engine by memory-mapping the GGUF model and loading tokenizer vocabulary.
+    /// Initializes decision engine by memory-mapping the GGUF model, loading tokenizer vocabulary,
+    /// and pre-allocating an inference workspace with persistent thread pool.
     pub fn init(allocator: std.mem.Allocator, model_path: []const u8) !DecisionEngine {
         var model = try DiffusionGemmaModel.loadFromFile(allocator, model_path);
         errdefer model.deinit();
@@ -32,15 +34,20 @@ pub const DecisionEngine = struct {
         var tok = try Tokenizer.initFromGguf(allocator, model.gguf_file);
         errdefer tok.deinit(allocator);
 
+        var ws = try infer.InferenceWorkspace.init(allocator, 512, null);
+        errdefer ws.deinit();
+
         return DecisionEngine{
             .allocator = allocator,
             .model = model,
             .tokenizer = tok,
+            .workspace = ws,
         };
     }
 
-    /// Releases model mapping, tokenizer vocabulary, and memory.
+    /// Releases workspace, tokenizer vocabulary, model mapping, and memory.
     pub fn deinit(self: *DecisionEngine) void {
+        self.workspace.deinit();
         self.tokenizer.deinit(self.allocator);
         self.model.deinit();
     }
@@ -84,7 +91,7 @@ pub const DecisionEngine = struct {
         defer request_allocator.free(softcapped_logits);
 
         try infer.executeStructuredRead(
-            request_allocator,
+            self.workspace,
             self.model,
             prompt_tokens,
             canvas,

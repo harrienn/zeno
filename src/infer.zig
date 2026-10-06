@@ -307,7 +307,10 @@ pub fn readCandidateLogits(
     }
 }
 
-const WorkerScratch = struct {
+pub const max_q_dim: usize = 8192;
+pub const max_k_dim: usize = 2048;
+
+pub const WorkerScratch = struct {
     head_out: []f32,
     scores: []f32,
     attn_weights: []f32,
@@ -328,50 +331,91 @@ const WorkerScratch = struct {
     ffn_combined: []f32,
     post_ffn: []f32,
 
-    pub fn init(allocator: std.mem.Allocator, eval_len: usize, max_q_dim: usize) !WorkerScratch {
-        return .{
-            .head_out = try allocator.alloc(f32, max_q_dim),
-            .scores = try allocator.alloc(f32, eval_len),
-            .attn_weights = try allocator.alloc(f32, eval_len),
-            .dense_in = try allocator.alloc(f32, ModelConfig.embedding_dim),
-            .gate_buf = try allocator.alloc(f32, 2112),
-            .up_buf = try allocator.alloc(f32, 2112),
-            .geglu_buf = try allocator.alloc(f32, 2112),
-            .dense_out = try allocator.alloc(f32, ModelConfig.embedding_dim),
-            .hidden_states_1 = try allocator.alloc(f32, ModelConfig.embedding_dim),
-            .r_in = try allocator.alloc(f32, ModelConfig.embedding_dim),
-            .router_logits = try allocator.alloc(f32, 128),
-            .moe_in = try allocator.alloc(f32, ModelConfig.embedding_dim),
-            .exp_gate_up_buf = try allocator.alloc(f32, 1408),
-            .exp_act_buf = try allocator.alloc(f32, 704),
-            .exp_down_buf = try allocator.alloc(f32, ModelConfig.embedding_dim),
-            .moe_accum = try allocator.alloc(f32, ModelConfig.embedding_dim),
-            .hidden_states_2 = try allocator.alloc(f32, ModelConfig.embedding_dim),
-            .ffn_combined = try allocator.alloc(f32, ModelConfig.embedding_dim),
-            .post_ffn = try allocator.alloc(f32, ModelConfig.embedding_dim),
-        };
+    pub fn floatsPerWorker(max_seq_len: usize) usize {
+        return max_q_dim + // head_out
+            max_seq_len + // scores
+            max_seq_len + // attn_weights
+            ModelConfig.embedding_dim + // dense_in
+            2112 + // gate_buf
+            2112 + // up_buf
+            2112 + // geglu_buf
+            ModelConfig.embedding_dim + // dense_out
+            ModelConfig.embedding_dim + // hidden_states_1
+            ModelConfig.embedding_dim + // r_in
+            128 + // router_logits
+            ModelConfig.embedding_dim + // moe_in
+            1408 + // exp_gate_up_buf
+            704 + // exp_act_buf
+            ModelConfig.embedding_dim + // exp_down_buf
+            ModelConfig.embedding_dim + // moe_accum
+            ModelConfig.embedding_dim + // hidden_states_2
+            ModelConfig.embedding_dim + // ffn_combined
+            ModelConfig.embedding_dim; // post_ffn
     }
 
-    pub fn deinit(self: *WorkerScratch, allocator: std.mem.Allocator) void {
-        allocator.free(self.head_out);
-        allocator.free(self.scores);
-        allocator.free(self.attn_weights);
-        allocator.free(self.dense_in);
-        allocator.free(self.gate_buf);
-        allocator.free(self.up_buf);
-        allocator.free(self.geglu_buf);
-        allocator.free(self.dense_out);
-        allocator.free(self.hidden_states_1);
-        allocator.free(self.r_in);
-        allocator.free(self.router_logits);
-        allocator.free(self.moe_in);
-        allocator.free(self.exp_gate_up_buf);
-        allocator.free(self.exp_act_buf);
-        allocator.free(self.exp_down_buf);
-        allocator.free(self.moe_accum);
-        allocator.free(self.hidden_states_2);
-        allocator.free(self.ffn_combined);
-        allocator.free(self.post_ffn);
+    pub fn sliceFrom(buf: []f32, max_seq_len: usize) WorkerScratch {
+        var off: usize = 0;
+        const head_out = buf[off .. off + max_q_dim];
+        off += max_q_dim;
+        const scores = buf[off .. off + max_seq_len];
+        off += max_seq_len;
+        const attn_weights = buf[off .. off + max_seq_len];
+        off += max_seq_len;
+        const dense_in = buf[off .. off + ModelConfig.embedding_dim];
+        off += ModelConfig.embedding_dim;
+        const gate_buf = buf[off .. off + 2112];
+        off += 2112;
+        const up_buf = buf[off .. off + 2112];
+        off += 2112;
+        const geglu_buf = buf[off .. off + 2112];
+        off += 2112;
+        const dense_out = buf[off .. off + ModelConfig.embedding_dim];
+        off += ModelConfig.embedding_dim;
+        const hidden_states_1 = buf[off .. off + ModelConfig.embedding_dim];
+        off += ModelConfig.embedding_dim;
+        const r_in = buf[off .. off + ModelConfig.embedding_dim];
+        off += ModelConfig.embedding_dim;
+        const router_logits = buf[off .. off + 128];
+        off += 128;
+        const moe_in = buf[off .. off + ModelConfig.embedding_dim];
+        off += ModelConfig.embedding_dim;
+        const exp_gate_up_buf = buf[off .. off + 1408];
+        off += 1408;
+        const exp_act_buf = buf[off .. off + 704];
+        off += 704;
+        const exp_down_buf = buf[off .. off + ModelConfig.embedding_dim];
+        off += ModelConfig.embedding_dim;
+        const moe_accum = buf[off .. off + ModelConfig.embedding_dim];
+        off += ModelConfig.embedding_dim;
+        const hidden_states_2 = buf[off .. off + ModelConfig.embedding_dim];
+        off += ModelConfig.embedding_dim;
+        const ffn_combined = buf[off .. off + ModelConfig.embedding_dim];
+        off += ModelConfig.embedding_dim;
+        const post_ffn = buf[off .. off + ModelConfig.embedding_dim];
+        off += ModelConfig.embedding_dim;
+
+        std.debug.assert(off == buf.len);
+        return .{
+            .head_out = head_out,
+            .scores = scores,
+            .attn_weights = attn_weights,
+            .dense_in = dense_in,
+            .gate_buf = gate_buf,
+            .up_buf = up_buf,
+            .geglu_buf = geglu_buf,
+            .dense_out = dense_out,
+            .hidden_states_1 = hidden_states_1,
+            .r_in = r_in,
+            .router_logits = router_logits,
+            .moe_in = moe_in,
+            .exp_gate_up_buf = exp_gate_up_buf,
+            .exp_act_buf = exp_act_buf,
+            .exp_down_buf = exp_down_buf,
+            .moe_accum = moe_accum,
+            .hidden_states_2 = hidden_states_2,
+            .ffn_combined = ffn_combined,
+            .post_ffn = post_ffn,
+        };
     }
 };
 
@@ -577,7 +621,7 @@ fn runFFNWorker(ctx: *const LayerContext, scratch: *WorkerScratch, t_start: usiz
     }
 }
 
-const PoolPhase = enum(u32) {
+pub const PoolPhase = enum(u32) {
     idle,
     qkv,
     attn,
@@ -585,35 +629,97 @@ const PoolPhase = enum(u32) {
     terminate,
 };
 
-const LayerPool = struct {
+pub const LayerPool = struct {
+    pub const max_threads: usize = 16;
+
     phase: std.atomic.Value(PoolPhase) = std.atomic.Value(PoolPhase).init(.idle),
     epoch: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
     done_count: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
     ctx: *const LayerContext = undefined,
     scratches: []WorkerScratch = undefined,
-    num_threads: usize,
-    tokens_per_thread: usize,
-    total_len: usize,
+    threads: [max_threads]std.Thread = undefined,
+    num_threads: usize = 1,
+    tokens_per_thread: usize = 0,
+    total_len: usize = 0,
+    running: bool = false,
+
+    pub fn start(self: *LayerPool, num_threads: usize) !void {
+        self.phase.store(.idle, .release);
+        self.epoch.store(0, .release);
+        self.done_count.store(0, .release);
+        self.num_threads = num_threads;
+        self.running = true;
+
+        const worker_count = if (num_threads > 1) num_threads - 1 else 0;
+        var spawned: usize = 0;
+        errdefer {
+            if (spawned > 0) {
+                self.phase.store(.terminate, .release);
+                _ = self.epoch.fetchAdd(1, .release);
+                for (0..spawned) |i| {
+                    self.threads[i].join();
+                }
+            }
+            self.running = false;
+        }
+
+        for (0..worker_count) |i| {
+            self.threads[i] = try std.Thread.spawn(.{}, LayerPool.workerLoop, .{ self, i + 1 });
+            spawned += 1;
+        }
+    }
+
+    pub fn stop(self: *LayerPool) void {
+        if (!self.running) return;
+        const worker_count = if (self.num_threads > 1) self.num_threads - 1 else 0;
+        if (worker_count > 0) {
+            self.phase.store(.terminate, .release);
+            _ = self.epoch.fetchAdd(1, .release);
+            for (0..worker_count) |i| {
+                self.threads[i].join();
+            }
+        }
+        self.running = false;
+    }
+
+    pub fn prepare(self: *LayerPool, total_len: usize, scratches: []WorkerScratch) void {
+        self.total_len = total_len;
+        const tpt = if (total_len == 0) 1 else (total_len + self.num_threads - 1) / self.num_threads;
+        self.tokens_per_thread = tpt;
+        self.scratches = scratches;
+    }
 
     fn workerLoop(self: *LayerPool, tid: usize) void {
         var last_epoch: u32 = 0;
-        const t_start = tid * self.tokens_per_thread;
-        const t_end = @min(t_start + self.tokens_per_thread, self.total_len);
 
         while (true) {
+            var spin_count: usize = 0;
             while (true) {
                 const ep = self.epoch.load(.acquire);
                 if (ep != last_epoch) {
                     last_epoch = ep;
                     break;
                 }
-                std.atomic.spinLoopHint();
+                spin_count += 1;
+                if (spin_count < 1000) {
+                    std.atomic.spinLoopHint();
+                } else if (spin_count < 10000) {
+                    std.Thread.yield() catch {};
+                } else {
+                    const ts = std.posix.timespec{ .sec = 0, .nsec = 100_000 };
+                    _ = std.posix.system.nanosleep(&ts, null);
+                }
             }
 
             const p = self.phase.load(.acquire);
             if (p == .terminate) return;
 
-            if (t_start < self.total_len) {
+            const total_len = self.total_len;
+            const tpt = self.tokens_per_thread;
+            const t_start = tid * tpt;
+            const t_end = @min(t_start + tpt, total_len);
+
+            if (t_start < total_len) {
                 switch (p) {
                     .qkv => runQKVWorker(self.ctx, t_start, t_end),
                     .attn => runAttnWorker(self.ctx, &self.scratches[tid], t_start, t_end),
@@ -626,14 +732,16 @@ const LayerPool = struct {
         }
     }
 
-    fn dispatch(self: *LayerPool, p: PoolPhase) void {
+    pub fn dispatch(self: *LayerPool, p: PoolPhase) void {
         self.phase.store(p, .release);
         self.done_count.store(0, .release);
         _ = self.epoch.fetchAdd(1, .release);
 
+        const total_len = self.total_len;
+        const tpt = self.tokens_per_thread;
         const t_start = 0;
-        const t_end = @min(self.tokens_per_thread, self.total_len);
-        if (t_start < self.total_len) {
+        const t_end = @min(tpt, total_len);
+        if (t_start < total_len) {
             switch (p) {
                 .qkv => runQKVWorker(self.ctx, t_start, t_end),
                 .attn => runAttnWorker(self.ctx, &self.scratches[0], t_start, t_end),
@@ -649,11 +757,165 @@ const LayerPool = struct {
     }
 };
 
-/// Executes a single-step structured read over a seeded canvas.
-/// Embeds prompt and canvas across dual regions, evaluates all 30 transformer layers,
-/// and extracts candidate logits at the canvas answer position.
-pub fn executeStructuredRead(
+/// Pre-allocated execution workspace holding unified layer activations, KV caches,
+/// scratch spaces, and a persistent worker pool to eliminate per-inference allocation overhead.
+pub const InferenceWorkspace = struct {
     allocator: std.mem.Allocator,
+    max_seq_len: usize,
+    num_threads: usize,
+    emb_buffer: []f32,
+    next_emb_buffer: []f32,
+    q_buf: []f32,
+    k_buf: []f32,
+    v_buf: []f32,
+    norm_x_buf: []f32,
+    attn_out_buf: []f32,
+    norm_hidden: []f32,
+    worker_storage: []f32,
+    worker_scratches: []WorkerScratch,
+    pool: LayerPool,
+
+    pub fn init(allocator: std.mem.Allocator, default_max_len: usize, num_threads_opt: ?usize) !*InferenceWorkspace {
+        const ws = try allocator.create(InferenceWorkspace);
+        errdefer allocator.destroy(ws);
+
+        const max_len = @max(default_max_len, ModelConfig.canvas_length);
+        const cpu_count = std.Thread.getCpuCount() catch 4;
+        const requested = num_threads_opt orelse cpu_count;
+        const num_threads = @max(1, @min(requested, LayerPool.max_threads));
+
+        ws.allocator = allocator;
+        ws.max_seq_len = max_len;
+        ws.num_threads = num_threads;
+        ws.pool = .{};
+
+        ws.emb_buffer = try allocator.alloc(f32, max_len * ModelConfig.embedding_dim);
+        errdefer allocator.free(ws.emb_buffer);
+
+        ws.next_emb_buffer = try allocator.alloc(f32, max_len * ModelConfig.embedding_dim);
+        errdefer allocator.free(ws.next_emb_buffer);
+
+        ws.q_buf = try allocator.alloc(f32, max_len * max_q_dim);
+        errdefer allocator.free(ws.q_buf);
+
+        ws.k_buf = try allocator.alloc(f32, max_len * max_k_dim);
+        errdefer allocator.free(ws.k_buf);
+
+        ws.v_buf = try allocator.alloc(f32, max_len * max_k_dim);
+        errdefer allocator.free(ws.v_buf);
+
+        ws.norm_x_buf = try allocator.alloc(f32, max_len * ModelConfig.embedding_dim);
+        errdefer allocator.free(ws.norm_x_buf);
+
+        ws.attn_out_buf = try allocator.alloc(f32, max_len * ModelConfig.embedding_dim);
+        errdefer allocator.free(ws.attn_out_buf);
+
+        ws.norm_hidden = try allocator.alloc(f32, ModelConfig.embedding_dim);
+        errdefer allocator.free(ws.norm_hidden);
+
+        const fpw = WorkerScratch.floatsPerWorker(max_len);
+        ws.worker_storage = try allocator.alloc(f32, num_threads * fpw);
+        errdefer allocator.free(ws.worker_storage);
+
+        ws.worker_scratches = try allocator.alloc(WorkerScratch, num_threads);
+        errdefer allocator.free(ws.worker_scratches);
+
+        for (0..num_threads) |tid| {
+            ws.worker_scratches[tid] = WorkerScratch.sliceFrom(
+                ws.worker_storage[tid * fpw .. (tid + 1) * fpw],
+                max_len,
+            );
+        }
+
+        try ws.pool.start(num_threads);
+
+        return ws;
+    }
+
+    pub fn deinit(self: *InferenceWorkspace) void {
+        self.pool.stop();
+        self.allocator.free(self.worker_scratches);
+        self.allocator.free(self.worker_storage);
+        self.allocator.free(self.norm_hidden);
+        self.allocator.free(self.attn_out_buf);
+        self.allocator.free(self.norm_x_buf);
+        self.allocator.free(self.v_buf);
+        self.allocator.free(self.k_buf);
+        self.allocator.free(self.q_buf);
+        self.allocator.free(self.next_emb_buffer);
+        self.allocator.free(self.emb_buffer);
+        self.allocator.destroy(self);
+    }
+
+    pub fn ensureCapacity(self: *InferenceWorkspace, needed_len: usize) !void {
+        if (needed_len <= self.max_seq_len) return;
+
+        var new_cap = self.max_seq_len;
+        while (new_cap < needed_len) {
+            new_cap *= 2;
+        }
+
+        // Allocate all new buffers first to maintain strong exception safety
+        const new_emb = try self.allocator.alloc(f32, new_cap * ModelConfig.embedding_dim);
+        errdefer self.allocator.free(new_emb);
+
+        const new_next_emb = try self.allocator.alloc(f32, new_cap * ModelConfig.embedding_dim);
+        errdefer self.allocator.free(new_next_emb);
+
+        const new_q = try self.allocator.alloc(f32, new_cap * max_q_dim);
+        errdefer self.allocator.free(new_q);
+
+        const new_k = try self.allocator.alloc(f32, new_cap * max_k_dim);
+        errdefer self.allocator.free(new_k);
+
+        const new_v = try self.allocator.alloc(f32, new_cap * max_k_dim);
+        errdefer self.allocator.free(new_v);
+
+        const new_norm_x = try self.allocator.alloc(f32, new_cap * ModelConfig.embedding_dim);
+        errdefer self.allocator.free(new_norm_x);
+
+        const new_attn_out = try self.allocator.alloc(f32, new_cap * ModelConfig.embedding_dim);
+        errdefer self.allocator.free(new_attn_out);
+
+        const fpw = WorkerScratch.floatsPerWorker(new_cap);
+        const new_worker_storage = try self.allocator.alloc(f32, self.num_threads * fpw);
+        errdefer self.allocator.free(new_worker_storage);
+
+        // Free old buffers
+        self.allocator.free(self.emb_buffer);
+        self.allocator.free(self.next_emb_buffer);
+        self.allocator.free(self.q_buf);
+        self.allocator.free(self.k_buf);
+        self.allocator.free(self.v_buf);
+        self.allocator.free(self.norm_x_buf);
+        self.allocator.free(self.attn_out_buf);
+        self.allocator.free(self.worker_storage);
+
+        // Install new buffers
+        self.emb_buffer = new_emb;
+        self.next_emb_buffer = new_next_emb;
+        self.q_buf = new_q;
+        self.k_buf = new_k;
+        self.v_buf = new_v;
+        self.norm_x_buf = new_norm_x;
+        self.attn_out_buf = new_attn_out;
+        self.worker_storage = new_worker_storage;
+        self.max_seq_len = new_cap;
+
+        for (0..self.num_threads) |tid| {
+            self.worker_scratches[tid] = WorkerScratch.sliceFrom(
+                self.worker_storage[tid * fpw .. (tid + 1) * fpw],
+                new_cap,
+            );
+        }
+    }
+};
+
+/// Executes a single-step structured read over a seeded canvas using a pre-allocated workspace.
+/// Embeds prompt and canvas across dual regions, evaluates all 30 transformer layers via the
+/// persistent worker pool, and extracts candidate logits at the canvas answer position.
+pub fn executeStructuredRead(
+    ws: *InferenceWorkspace,
     model: DiffusionGemmaModel,
     prompt_tokens: []const u32,
     canvas: Canvas,
@@ -665,13 +927,12 @@ pub fn executeStructuredRead(
     const C = ModelConfig.canvas_length;
     const N = P + C;
 
-    // 1. Allocate scratch buffers for unified activations (N tokens)
-    const total_emb_elements = N * ModelConfig.embedding_dim;
-    const emb_buffer = try allocator.alloc(f32, total_emb_elements);
-    defer allocator.free(emb_buffer);
+    try ws.ensureCapacity(N);
 
-    const next_emb_buffer = try allocator.alloc(f32, total_emb_elements);
-    defer allocator.free(next_emb_buffer);
+    // 1. Unified activations for N tokens from pre-allocated buffers
+    const total_emb_elements = N * ModelConfig.embedding_dim;
+    const emb_buffer = ws.emb_buffer[0..total_emb_elements];
+    const next_emb_buffer = ws.next_emb_buffer[0..total_emb_elements];
 
     // Dual-region token embedding:
     // Prompt tokens [0..P): scaled by sqrt(d_model)
@@ -691,63 +952,14 @@ pub fn executeStructuredRead(
         ops.unweightedRmsNorm(row, 1e-6, row);
     }
 
-    // Scratch buffers for layer evaluation
-    const max_q_dim: usize = 8192;
-    const max_k_dim: usize = 2048;
+    const q_buf = ws.q_buf[0 .. N * max_q_dim];
+    const k_buf = ws.k_buf[0 .. N * max_k_dim];
+    const v_buf = ws.v_buf[0 .. N * max_k_dim];
+    const norm_x_buf = ws.norm_x_buf[0 .. N * ModelConfig.embedding_dim];
+    const attn_out_buf = ws.attn_out_buf[0 .. N * ModelConfig.embedding_dim];
 
-    const q_buf = try allocator.alloc(f32, N * max_q_dim);
-    defer allocator.free(q_buf);
-
-    const k_buf = try allocator.alloc(f32, N * max_k_dim);
-    defer allocator.free(k_buf);
-
-    const v_buf = try allocator.alloc(f32, N * max_k_dim);
-    defer allocator.free(v_buf);
-
-    const norm_x_buf = try allocator.alloc(f32, N * ModelConfig.embedding_dim);
-    defer allocator.free(norm_x_buf);
-
-    const attn_out_buf = try allocator.alloc(f32, N * ModelConfig.embedding_dim);
-    defer allocator.free(attn_out_buf);
-
-    // Persistent thread pool setup across CPU threads
-    const max_threads: usize = 16;
-    const cpu_count = std.Thread.getCpuCount() catch 4;
-    const num_threads = @min(@min(cpu_count, max_threads), N);
-
-    var worker_scratches = try allocator.alloc(WorkerScratch, num_threads);
-    defer allocator.free(worker_scratches);
-    for (worker_scratches) |*ws| {
-        ws.* = try WorkerScratch.init(allocator, N, max_q_dim);
-    }
-    defer {
-        for (worker_scratches) |*ws| {
-            ws.deinit(allocator);
-        }
-    }
-
-    const tokens_per_thread = (N + num_threads - 1) / num_threads;
-    var pool = LayerPool{
-        .num_threads = num_threads,
-        .tokens_per_thread = tokens_per_thread,
-        .total_len = N,
-        .scratches = worker_scratches,
-    };
-
-    var pool_threads: [max_threads]std.Thread = undefined;
-    const worker_count = if (num_threads > 1) num_threads - 1 else 0;
-    for (0..worker_count) |i| {
-        pool_threads[i] = try std.Thread.spawn(.{}, LayerPool.workerLoop, .{ &pool, i + 1 });
-    }
-    defer {
-        if (worker_count > 0) {
-            pool.phase.store(.terminate, .release);
-            _ = pool.epoch.fetchAdd(1, .release);
-            for (0..worker_count) |i| {
-                pool_threads[i].join();
-            }
-        }
-    }
+    // Prepare worker pool for this sequence length
+    ws.pool.prepare(N, ws.worker_scratches);
 
     // 2. Execute 30 Transformer Blocks
     var current_emb = emb_buffer;
@@ -774,15 +986,15 @@ pub fn executeStructuredRead(
             .attn_out_buf = attn_out_buf,
         };
 
-        if (num_threads == 1) {
+        if (ws.pool.num_threads == 1) {
             runQKVWorker(&ctx, 0, N);
-            runAttnWorker(&ctx, &worker_scratches[0], 0, N);
-            runFFNWorker(&ctx, &worker_scratches[0], 0, N);
+            runAttnWorker(&ctx, &ws.worker_scratches[0], 0, N);
+            runFFNWorker(&ctx, &ws.worker_scratches[0], 0, N);
         } else {
-            pool.ctx = &ctx;
-            pool.dispatch(.qkv);
-            pool.dispatch(.attn);
-            pool.dispatch(.ffn);
+            ws.pool.ctx = &ctx;
+            ws.pool.dispatch(.qkv);
+            ws.pool.dispatch(.attn);
+            ws.pool.dispatch(.ffn);
         }
 
         // Swap buffers for next layer
@@ -795,16 +1007,13 @@ pub fn executeStructuredRead(
     const answer_idx = P + canvas.answer_pos;
     const answer_row = current_emb[answer_idx * ModelConfig.embedding_dim .. (answer_idx + 1) * ModelConfig.embedding_dim];
 
-    // Final output RMSNorm
-    const norm_hidden = try allocator.alloc(f32, ModelConfig.embedding_dim);
-    defer allocator.free(norm_hidden);
-
+    // Final output RMSNorm into pre-allocated ws.norm_hidden
     const out_norm_slice = model.gguf_file.getTensorSlice(model.output_norm);
     const out_norm_weights = @as([*]const f32, @ptrCast(@alignCast(out_norm_slice.ptr)))[0..ModelConfig.embedding_dim];
-    ops.rmsNorm(answer_row, out_norm_weights, 1e-6, norm_hidden);
+    ops.rmsNorm(answer_row, out_norm_weights, 1e-6, ws.norm_hidden);
 
     // 4. Project candidate logits directly from output embedding table
-    readCandidateLogits(model, norm_hidden, candidate_token_ids, out_raw_logits, out_softcapped_logits);
+    readCandidateLogits(model, ws.norm_hidden, candidate_token_ids, out_raw_logits, out_softcapped_logits);
 }
 
 test "topKExperts: selection and softmax renormalization" {
@@ -839,6 +1048,27 @@ test "applyRoPE: rotation at pos 0 is identity" {
     try std.testing.expectApproxEqAbs(@as(f32, 4.0), vec[3], 1e-5);
 }
 
+test "InferenceWorkspace: lifecycle, threading, and capacity growth" {
+    const allocator = std.testing.allocator;
+
+    var ws = try InferenceWorkspace.init(allocator, 256, 2);
+    defer ws.deinit();
+
+    try std.testing.expectEqual(@as(usize, 256), ws.max_seq_len);
+    try std.testing.expectEqual(@as(usize, 2), ws.num_threads);
+    try std.testing.expectEqual(@as(usize, 256 * ModelConfig.embedding_dim), ws.emb_buffer.len);
+    try std.testing.expectEqual(@as(usize, 256 * max_q_dim), ws.q_buf.len);
+
+    // Test ensureCapacity no-op when within capacity
+    try ws.ensureCapacity(256);
+    try std.testing.expectEqual(@as(usize, 256), ws.max_seq_len);
+
+    // Test ensureCapacity growth
+    try ws.ensureCapacity(500);
+    try std.testing.expect(ws.max_seq_len >= 500);
+    try std.testing.expectEqual(ws.max_seq_len * ModelConfig.embedding_dim, ws.emb_buffer.len);
+}
+
 test "embedCanvas and readCandidateLogits execution on local model if present" {
     if (!root.shouldRunModelTests()) return error.SkipZigTest;
 
@@ -860,10 +1090,14 @@ test "embedCanvas and readCandidateLogits execution on local model if present" {
     var raw_logits: [2]f32 = undefined;
     var softcapped_logits: [2]f32 = undefined;
 
-    try executeStructuredRead(allocator, model, &prompt, canvas, &candidates, &raw_logits, &softcapped_logits);
+    var ws = try InferenceWorkspace.init(allocator, 512, null);
+    defer ws.deinit();
+
+    try executeStructuredRead(ws, model, &prompt, canvas, &candidates, &raw_logits, &softcapped_logits);
 
     // Softcapped logits must be within [-30.0, 30.0]
     for (softcapped_logits) |l| {
         try std.testing.expect(l >= -30.0 and l <= 30.0);
     }
 }
+
