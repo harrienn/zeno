@@ -197,6 +197,17 @@ test "loadFixture: parses zeno.fixture/v1 correctly" {
     try std.testing.expectEqualStrings("zeno.tolerance/v1", mc_parsed.value.policy);
     try std.testing.expectEqualStrings("Medium", mc_parsed.value.expected.decision);
     try std.testing.expectEqual(@as(usize, 3), mc_parsed.value.candidates.len);
+
+    const boundary_parsed = loadFixture(allocator, "specs/fixtures/boundary_256_incident_triage.json") catch |err| {
+        if (err == error.FileNotFound) return;
+        return err;
+    };
+    defer boundary_parsed.deinit();
+
+    try std.testing.expectEqualStrings("zeno.fixture/v1", boundary_parsed.value.schema);
+    try std.testing.expectEqualStrings("zeno.tolerance/v1", boundary_parsed.value.policy);
+    try std.testing.expectEqualStrings("No", boundary_parsed.value.expected.decision);
+    try std.testing.expectEqual(@as(usize, 2), boundary_parsed.value.candidates.len);
 }
 
 test "validateFixture: compares local model with stored fixture values if present" {
@@ -213,4 +224,5 @@ test "validateFixture: compares local model with stored fixture values if presen
 
     try validateFixture(allocator, "specs/fixtures/system_health_boolean.json", &engine);
     try validateFixture(allocator, "specs/fixtures/incident_severity_multiclass.json", &engine);
+    try validateFixture(allocator, "specs/fixtures/boundary_256_incident_triage.json", &engine);
 }

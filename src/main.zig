@@ -176,6 +176,69 @@ pub fn main(init: std.process.Init) !void {
         });
         try stdout_writer.flush();
         return;
+    } else if (args.len > 1 and std.mem.eql(u8, args[1], "dump-fixture")) {
+        if (args.len < 6) {
+            try stdout_writer.print("Usage: zeno dump-fixture <model.gguf> <fixture.json> <prompt_out.i32> <canvas_out.i32>\n", .{});
+            try stdout_writer.flush();
+            return;
+        }
+        const model_path = args[2];
+        const fixture_path = args[3];
+        const prompt_path = args[4];
+        const canvas_path = args[5];
+
+        const parsed = try zeno.fixture.loadFixture(arena, fixture_path);
+        defer parsed.deinit();
+        const fix = parsed.value;
+
+        var engine = try zeno.DecisionEngine.init(arena, model_path);
+        defer engine.deinit();
+
+        const candidate_specs = try arena.alloc(zeno.CandidateSpec, fix.candidates.len);
+        for (fix.candidates, 0..) |cand, i| {
+            candidate_specs[i] = .{
+                .label = cand.label,
+                .token = cand.token,
+            };
+        }
+
+        const formatted = try zeno.Canvas.formatDecisionPrompt(arena, fix.query, fix.context, candidate_specs);
+        const raw_tokens = try engine.tokenizer.encode(arena, formatted);
+
+        var prompt_tokens = try arena.alloc(i32, raw_tokens.len + 1);
+        prompt_tokens[0] = @intCast(zeno.SpecialTokens.bos);
+        for (raw_tokens, 0..) |tok, i| {
+            prompt_tokens[i + 1] = @intCast(tok);
+        }
+
+        const posix = std.posix;
+        const linux = std.os.linux;
+
+        const p_fd = try posix.openat(posix.AT.FDCWD, prompt_path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, 0o644);
+        defer _ = linux.close(p_fd);
+        const p_bytes = std.mem.sliceAsBytes(prompt_tokens);
+        _ = linux.write(p_fd, p_bytes.ptr, p_bytes.len);
+
+        var canvas_tokens: [256]i32 = undefined;
+        canvas_tokens[0] = @intCast(fix.answer_seed_token);
+        canvas_tokens[1] = @intCast(zeno.SpecialTokens.turn_close);
+        for (2..256) |i| {
+            canvas_tokens[i] = @intCast(zeno.SpecialTokens.pad);
+        }
+
+        const c_fd = try posix.openat(posix.AT.FDCWD, canvas_path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, 0o644);
+        defer _ = linux.close(c_fd);
+        const c_bytes = std.mem.sliceAsBytes(&canvas_tokens);
+        _ = linux.write(c_fd, c_bytes.ptr, c_bytes.len);
+
+        try stdout_writer.print("Exported fixture '{s}': {d} prompt tokens to {s} and 256 canvas tokens to {s}\n", .{
+            fixture_path,
+            prompt_tokens.len,
+            prompt_path,
+            canvas_path,
+        });
+        try stdout_writer.flush();
+        return;
     } else if (args.len > 1) {
         var model_path: []const u8 = args[1];
         if (std.mem.eql(u8, args[1], "info") and args.len > 2) {
