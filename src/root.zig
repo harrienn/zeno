@@ -5,7 +5,6 @@
 const std = @import("std");
 
 pub const decision = @import("decision.zig");
-pub const tensor = @import("tensor.zig");
 pub const quant = @import("quant.zig");
 pub const ops = @import("ops.zig");
 pub const gguf = @import("gguf.zig");
@@ -24,8 +23,6 @@ pub fn shouldRunModelTests() bool {
 }
 
 // Re-export common types
-pub const Tensor = tensor.Tensor;
-pub const DType = tensor.DType;
 pub const DecisionRequest = decision.DecisionRequest;
 pub const DecisionResponse = decision.DecisionResponse;
 pub const CandidateSpec = decision.CandidateSpec;
@@ -76,7 +73,6 @@ pub const SpecialTokens = struct {
 
 test {
     _ = decision;
-    _ = tensor;
     _ = quant;
     _ = ops;
     _ = gguf;
