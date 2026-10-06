@@ -27,16 +27,7 @@ pub fn main(init: std.process.Init) !void {
         const model_path = args[2];
         const query = args[3];
 
-        var candidates_list: std.ArrayList(zeno.CandidateSpec) = .empty;
-        if (args.len > 4) {
-            for (args[4..]) |cand_str| {
-                try candidates_list.append(arena, .{ .token = cand_str, .label = cand_str });
-            }
-        } else {
-            // Default boolean candidates
-            try candidates_list.append(arena, .{ .token = "Yes", .label = "Yes" });
-            try candidates_list.append(arena, .{ .token = "No", .label = "No" });
-        }
+        const candidate_specs = try parseCandidateSpecs(arena, if (args.len > 4) args[4..] else &.{});
 
         try stdout_writer.print("Initializing decision engine with model: {s}...\n", .{model_path});
         try stdout_writer.flush();
@@ -51,7 +42,7 @@ pub fn main(init: std.process.Init) !void {
         const req = zeno.DecisionRequest{
             .query = query,
             .schema_type = .boolean,
-            .candidates = candidates_list.items,
+            .candidates = candidate_specs,
             .step_cap = 1,
             .temperature = 1.0,
             .entropy_threshold = 0.5,
@@ -130,44 +121,14 @@ pub fn main(init: std.process.Init) !void {
         var engine = try zeno.DecisionEngine.init(arena, model_path);
         defer engine.deinit();
 
-        var cands_list: std.ArrayList(zeno.CandidateSpec) = .empty;
-        if (args.len > 6) {
-            for (args[6..]) |cand_str| {
-                try cands_list.append(arena, .{ .token = cand_str, .label = cand_str });
-            }
-        } else {
-            try cands_list.append(arena, .{ .token = "Yes", .label = "Yes" });
-            try cands_list.append(arena, .{ .token = "No", .label = "No" });
-        }
+        const candidate_specs = try parseCandidateSpecs(arena, if (args.len > 6) args[6..] else &.{});
+        const formatted = try zeno.Canvas.formatDecisionPrompt(arena, query, null, candidate_specs);
+        const prompt_tokens = try encodePromptWithBOS(arena, engine.tokenizer, formatted);
 
-        const formatted = try zeno.Canvas.formatDecisionPrompt(arena, query, null, cands_list.items);
-        const raw_tokens = try engine.tokenizer.encode(arena, formatted);
+        try writeTokensToFile(prompt_path, prompt_tokens);
 
-        var prompt_tokens = try arena.alloc(i32, raw_tokens.len + 1);
-        prompt_tokens[0] = @intCast(zeno.SpecialTokens.bos);
-        for (raw_tokens, 0..) |tok, i| {
-            prompt_tokens[i + 1] = @intCast(tok);
-        }
-
-        const posix = std.posix;
-        const linux = std.os.linux;
-
-        const p_fd = try posix.openat(posix.AT.FDCWD, prompt_path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, 0o644);
-        defer _ = linux.close(p_fd);
-        const p_bytes = std.mem.sliceAsBytes(prompt_tokens);
-        _ = linux.write(p_fd, p_bytes.ptr, p_bytes.len);
-
-        var canvas_tokens: [256]i32 = undefined;
-        canvas_tokens[0] = @intCast(zeno.SpecialTokens.mask);
-        canvas_tokens[1] = @intCast(zeno.SpecialTokens.turn_close);
-        for (2..256) |i| {
-            canvas_tokens[i] = @intCast(zeno.SpecialTokens.pad);
-        }
-
-        const c_fd = try posix.openat(posix.AT.FDCWD, canvas_path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, 0o644);
-        defer _ = linux.close(c_fd);
-        const c_bytes = std.mem.sliceAsBytes(&canvas_tokens);
-        _ = linux.write(c_fd, c_bytes.ptr, c_bytes.len);
+        const canvas_tokens = makeCanvasTokens(zeno.SpecialTokens.mask);
+        try writeTokensToFile(canvas_path, &canvas_tokens);
 
         try stdout_writer.print("Exported {d} prompt tokens to {s} and 256 canvas tokens to {s}\n", .{
             prompt_tokens.len,
@@ -194,22 +155,9 @@ pub fn main(init: std.process.Init) !void {
         var engine = try zeno.DecisionEngine.init(arena, model_path);
         defer engine.deinit();
 
-        const candidate_specs = try arena.alloc(zeno.CandidateSpec, fix.candidates.len);
-        for (fix.candidates, 0..) |cand, i| {
-            candidate_specs[i] = .{
-                .label = cand.label,
-                .token = cand.token,
-            };
-        }
-
+        const candidate_specs = try candidateSpecsFromFixture(arena, fix);
         const formatted = try zeno.Canvas.formatDecisionPrompt(arena, fix.query, fix.context, candidate_specs);
-        const raw_tokens = try engine.tokenizer.encode(arena, formatted);
-
-        var prompt_tokens = try arena.alloc(i32, raw_tokens.len + 1);
-        prompt_tokens[0] = @intCast(zeno.SpecialTokens.bos);
-        for (raw_tokens, 0..) |tok, i| {
-            prompt_tokens[i + 1] = @intCast(tok);
-        }
+        const prompt_tokens = try encodePromptWithBOS(arena, engine.tokenizer, formatted);
 
         // Verify freshly formatted tokens against fixture stored tokens
         if (fix.prompt_tokens) |expected_prompt| {
@@ -236,25 +184,10 @@ pub fn main(init: std.process.Init) !void {
             }
         }
 
-        const posix = std.posix;
-        const linux = std.os.linux;
+        try writeTokensToFile(prompt_path, prompt_tokens);
 
-        const p_fd = try posix.openat(posix.AT.FDCWD, prompt_path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, 0o644);
-        defer _ = linux.close(p_fd);
-        const p_bytes = std.mem.sliceAsBytes(prompt_tokens);
-        _ = linux.write(p_fd, p_bytes.ptr, p_bytes.len);
-
-        var canvas_tokens: [256]i32 = undefined;
-        canvas_tokens[0] = @intCast(fix.answer_seed_token);
-        canvas_tokens[1] = @intCast(zeno.SpecialTokens.turn_close);
-        for (2..256) |i| {
-            canvas_tokens[i] = @intCast(zeno.SpecialTokens.pad);
-        }
-
-        const c_fd = try posix.openat(posix.AT.FDCWD, canvas_path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, 0o644);
-        defer _ = linux.close(c_fd);
-        const c_bytes = std.mem.sliceAsBytes(&canvas_tokens);
-        _ = linux.write(c_fd, c_bytes.ptr, c_bytes.len);
+        const canvas_tokens = makeCanvasTokens(fix.answer_seed_token);
+        try writeTokensToFile(canvas_path, &canvas_tokens);
 
         try stdout_writer.print("Exported fixture '{s}': {d} prompt tokens (verified matching) to {s} and 256 canvas tokens to {s}\n", .{
             fixture_path,
@@ -309,22 +242,8 @@ pub fn main(init: std.process.Init) !void {
         var engine = try zeno.DecisionEngine.init(arena, model_path);
         defer engine.deinit();
 
-        const candidate_specs = try arena.alloc(zeno.CandidateSpec, fix.candidates.len);
-        for (fix.candidates, 0..) |cand, i| {
-            candidate_specs[i] = .{
-                .label = cand.label,
-                .token = cand.token,
-            };
-        }
-
-        const schema_t: zeno.SchemaType = if (std.mem.eql(u8, fix.schema_type, "boolean"))
-            .boolean
-        else if (std.mem.eql(u8, fix.schema_type, "choice"))
-            .choice
-        else if (std.mem.eql(u8, fix.schema_type, "score"))
-            .score
-        else
-            return error.InvalidCharacter;
+        const candidate_specs = try candidateSpecsFromFixture(arena, fix);
+        const schema_t = try parseSchemaType(fix.schema_type);
 
         const req = zeno.DecisionRequest{
             .query = fix.query,
@@ -357,61 +276,7 @@ pub fn main(init: std.process.Init) !void {
         try stdout_writer.flush();
 
         if (args.len > 4) {
-            const out_json_path = args[4];
-            var json_list: std.ArrayList(u8) = .empty;
-            const posix = std.posix;
-            const linux = std.os.linux;
-
-            const header = try std.fmt.allocPrint(arena,
-                \\{{
-                \\  "decision": "{s}",
-                \\  "decision_probability": {d:.6},
-                \\  "entropy_nats": {d:.6},
-                \\  "normalized_entropy": {d:.6},
-                \\  "uncertain": {},
-                \\  "steps_executed": {d},
-                \\  "canvas_tokens_used": {d},
-                \\  "candidates": [
-                \\
-            , .{
-                resp.decision,
-                resp.decision_probability,
-                resp.entropy_nats,
-                resp.normalized_entropy,
-                resp.uncertain,
-                resp.steps_executed,
-                resp.canvas_tokens_used,
-            });
-            try json_list.appendSlice(arena, header);
-
-            for (resp.candidates, 0..) |c, i| {
-                const sc = zeno.ops.logitSoftcap(c.raw_logit, zeno.ModelConfig.logit_softcap);
-                const comma = if (i + 1 < resp.candidates.len) "," else "";
-                const cand_str = try std.fmt.allocPrint(arena,
-                    \\    {{
-                    \\      "label": "{s}",
-                    \\      "token_id": {d},
-                    \\      "raw_logit": {d:.6},
-                    \\      "softcapped_logit": {d:.6},
-                    \\      "probability": {d:.6}
-                    \\    }}{s}
-                    \\
-                , .{
-                    c.label,
-                    c.token_id,
-                    c.raw_logit,
-                    sc,
-                    c.probability,
-                    comma,
-                });
-                try json_list.appendSlice(arena, cand_str);
-            }
-
-            try json_list.appendSlice(arena, "  ]\n}\n");
-
-            const out_fd = try posix.openat(posix.AT.FDCWD, out_json_path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, 0o644);
-            defer _ = linux.close(out_fd);
-            _ = linux.write(out_fd, json_list.items.ptr, json_list.items.len);
+            try writeDecisionResponseJson(arena, args[4], resp);
         }
         return;
     } else if (args.len > 1) {
@@ -476,6 +341,115 @@ pub fn main(init: std.process.Init) !void {
     }
 
     try stdout_writer.flush();
+}
+
+fn parseCandidateSpecs(allocator: std.mem.Allocator, cand_args: []const []const u8) ![]zeno.CandidateSpec {
+    if (cand_args.len == 0) {
+        const defaults = try allocator.alloc(zeno.CandidateSpec, 2);
+        defaults[0] = .{ .token = "Yes", .label = "Yes" };
+        defaults[1] = .{ .token = "No", .label = "No" };
+        return defaults;
+    }
+    const specs = try allocator.alloc(zeno.CandidateSpec, cand_args.len);
+    for (cand_args, 0..) |cand_str, i| {
+        specs[i] = .{ .token = cand_str, .label = cand_str };
+    }
+    return specs;
+}
+
+fn candidateSpecsFromFixture(allocator: std.mem.Allocator, fix: zeno.GoldenFixture) ![]zeno.CandidateSpec {
+    const specs = try allocator.alloc(zeno.CandidateSpec, fix.candidates.len);
+    for (fix.candidates, 0..) |cand, i| {
+        specs[i] = .{ .label = cand.label, .token = cand.token };
+    }
+    return specs;
+}
+
+fn parseSchemaType(schema_str: []const u8) !zeno.SchemaType {
+    if (std.mem.eql(u8, schema_str, "boolean")) return .boolean;
+    if (std.mem.eql(u8, schema_str, "choice")) return .choice;
+    if (std.mem.eql(u8, schema_str, "score")) return .score;
+    return error.InvalidCharacter;
+}
+
+fn encodePromptWithBOS(allocator: std.mem.Allocator, tokenizer: zeno.Tokenizer, formatted_prompt: []const u8) ![]i32 {
+    const raw_tokens = try tokenizer.encode(allocator, formatted_prompt);
+    var prompt_tokens = try allocator.alloc(i32, raw_tokens.len + 1);
+    prompt_tokens[0] = @intCast(zeno.SpecialTokens.bos);
+    for (raw_tokens, 0..) |tok, i| {
+        prompt_tokens[i + 1] = @intCast(tok);
+    }
+    return prompt_tokens;
+}
+
+fn makeCanvasTokens(seed_token: u32) [256]i32 {
+    var canvas: [256]i32 = undefined;
+    canvas[0] = @intCast(seed_token);
+    canvas[1] = @intCast(zeno.SpecialTokens.turn_close);
+    @memset(canvas[2..], @intCast(zeno.SpecialTokens.pad));
+    return canvas;
+}
+
+fn writeTokensToFile(path: []const u8, tokens: []const i32) !void {
+    const fd = try std.posix.openat(std.posix.AT.FDCWD, path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, 0o644);
+    defer _ = std.os.linux.close(fd);
+    const bytes = std.mem.sliceAsBytes(tokens);
+    _ = std.os.linux.write(fd, bytes.ptr, bytes.len);
+}
+
+fn writeDecisionResponseJson(allocator: std.mem.Allocator, out_json_path: []const u8, resp: zeno.DecisionResponse) !void {
+    var json_list: std.ArrayList(u8) = .empty;
+
+    const header = try std.fmt.allocPrint(allocator,
+        \\{{
+        \\  "decision": "{s}",
+        \\  "decision_probability": {d:.6},
+        \\  "entropy_nats": {d:.6},
+        \\  "normalized_entropy": {d:.6},
+        \\  "uncertain": {},
+        \\  "steps_executed": {d},
+        \\  "canvas_tokens_used": {d},
+        \\  "candidates": [
+        \\
+    , .{
+        resp.decision,
+        resp.decision_probability,
+        resp.entropy_nats,
+        resp.normalized_entropy,
+        resp.uncertain,
+        resp.steps_executed,
+        resp.canvas_tokens_used,
+    });
+    try json_list.appendSlice(allocator, header);
+
+    for (resp.candidates, 0..) |c, i| {
+        const sc = zeno.ops.logitSoftcap(c.raw_logit, zeno.ModelConfig.logit_softcap);
+        const comma = if (i + 1 < resp.candidates.len) "," else "";
+        const cand_str = try std.fmt.allocPrint(allocator,
+            \\    {{
+            \\      "label": "{s}",
+            \\      "token_id": {d},
+            \\      "raw_logit": {d:.6},
+            \\      "softcapped_logit": {d:.6},
+            \\      "probability": {d:.6}
+            \\    }}{s}
+            \\
+        , .{
+            c.label,
+            c.token_id,
+            c.raw_logit,
+            sc,
+            c.probability,
+            comma,
+        });
+        try json_list.appendSlice(allocator, cand_str);
+    }
+
+    try json_list.appendSlice(allocator, "  ]\n}\n");
+
+    const out_fd = try std.posix.openat(std.posix.AT.FDCWD, out_json_path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, 0o644);
+    defer _ = std.os.linux.close(out_fd);
+    _ = std.os.linux.write(out_fd, json_list.items.ptr, json_list.items.len);
 }
 
 test "main module compilation test" {

@@ -626,6 +626,7 @@ pub const PoolPhase = enum(u32) {
     qkv,
     attn,
     ffn,
+    attn_ffn,
     terminate,
 };
 
@@ -724,6 +725,10 @@ pub const LayerPool = struct {
                     .qkv => runQKVWorker(self.ctx, t_start, t_end),
                     .attn => runAttnWorker(self.ctx, &self.scratches[tid], t_start, t_end),
                     .ffn => runFFNWorker(self.ctx, &self.scratches[tid], t_start, t_end),
+                    .attn_ffn => {
+                        runAttnWorker(self.ctx, &self.scratches[tid], t_start, t_end);
+                        runFFNWorker(self.ctx, &self.scratches[tid], t_start, t_end);
+                    },
                     .idle, .terminate => {},
                 }
             }
@@ -746,6 +751,10 @@ pub const LayerPool = struct {
                 .qkv => runQKVWorker(self.ctx, t_start, t_end),
                 .attn => runAttnWorker(self.ctx, &self.scratches[0], t_start, t_end),
                 .ffn => runFFNWorker(self.ctx, &self.scratches[0], t_start, t_end),
+                .attn_ffn => {
+                    runAttnWorker(self.ctx, &self.scratches[0], t_start, t_end);
+                    runFFNWorker(self.ctx, &self.scratches[0], t_start, t_end);
+                },
                 .idle, .terminate => {},
             }
         }
@@ -993,8 +1002,7 @@ pub fn executeStructuredRead(
         } else {
             ws.pool.ctx = &ctx;
             ws.pool.dispatch(.qkv);
-            ws.pool.dispatch(.attn);
-            ws.pool.dispatch(.ffn);
+            ws.pool.dispatch(.attn_ffn);
         }
 
         // Swap buffers for next layer
