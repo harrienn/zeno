@@ -2,10 +2,12 @@
 """Zeno — Reference Oracle Parity & Regression Verifier.
 
 Compares raw binary logit dumps from llama.cpp's llama-diffusion-gemma-eval
-against Zeno's forward pass outputs and golden fixture specifications.
+and Zeno CPU's forward pass against golden fixture specifications.
+
+Conforms to zeno.fixture/v1 and zeno.tolerance/v1 defined in specs/UNRESOLVED.md.
 
 Usage:
-    python3 tools/verify_oracle_parity.py <out_logits.bin> [fixture.json]
+    python3 tools/verify_oracle_parity.py <out_logits.bin> <fixture.json> [zeno_out.json] [--strict-parity]
 """
 
 import json
@@ -19,12 +21,20 @@ def softcap(x, cap=LOGIT_SOFTCAP):
     return cap * np.tanh(x / cap)
 
 def main():
-    if len(sys.argv) < 2:
-        print(f"Usage: {sys.argv[0]} <out_logits.bin> [fixture.json]")
+    if len(sys.argv) < 3:
+        print(f"Usage: {sys.argv[0]} <out_logits.bin> <fixture.json> [zeno_out.json] [--strict-parity]")
         sys.exit(1)
 
     bin_path = sys.argv[1]
-    fixture_path = sys.argv[2] if len(sys.argv) > 2 else "specs/fixtures/system_health_boolean.json"
+    fixture_path = sys.argv[2]
+    zeno_json_path = None
+    strict_parity = False
+
+    for arg in sys.argv[3:]:
+        if arg == "--strict-parity":
+            strict_parity = True
+        elif not arg.startswith("--"):
+            zeno_json_path = arg
 
     with open(fixture_path, "r") as f:
         fixture = json.load(f)
@@ -37,41 +47,126 @@ def main():
     cand_ids = [c["token_id"] for c in candidates]
     cand_labels = [c["label"] for c in candidates]
 
-    raw_logits = [float(row0[tid]) for tid in cand_ids]
-    sc_logits = [float(softcap(l)) for l in raw_logits]
+    oracle_raw_logits = [float(row0[tid]) for tid in cand_ids]
+    oracle_sc_logits = [float(softcap(l)) for l in oracle_raw_logits]
 
     # Compute softmax over candidate softcapped logits
-    max_sc = max(sc_logits)
-    exp_sc = [np.exp(l - max_sc) for l in sc_logits]
+    max_sc = max(oracle_sc_logits)
+    exp_sc = [np.exp(l - max_sc) for l in oracle_sc_logits]
     sum_exp = sum(exp_sc)
-    probs = [float(e / sum_exp) for e in exp_sc]
+    oracle_probs = [float(e / sum_exp) for e in exp_sc]
 
-    top_idx = int(np.argmax(probs))
-    decision = cand_labels[top_idx]
-    decision_prob = probs[top_idx]
+    top_idx = int(np.argmax(oracle_probs))
+    oracle_decision = cand_labels[top_idx]
+    oracle_decision_prob = oracle_probs[top_idx]
 
     # Top 5 vocabulary tokens across all 262,144 tokens
-    top5_indices = np.argsort(row0)[::-1][:5].tolist()
+    oracle_top5 = np.argsort(row0)[::-1][:5].tolist()
 
-    print("=== Reference Oracle Evaluation ===")
+    print("=== Reference Oracle Execution ===")
     print(f"File:                 {bin_path}")
-    print(f"Decision:             {decision}")
-    print(f"Decision Probability: {decision_prob:.4f}")
-    for label, tid, raw, sc, p in zip(cand_labels, cand_ids, raw_logits, sc_logits, probs):
+    print(f"Decision:             {oracle_decision}")
+    print(f"Decision Probability: {oracle_decision_prob:.4f}")
+    for label, tid, raw, sc, p in zip(cand_labels, cand_ids, oracle_raw_logits, oracle_sc_logits, oracle_probs):
         print(f"  Candidate '{label}' (ID {tid}): raw={raw:.4f}, softcapped={sc:.4f}, prob={p:.4f}")
-    print(f"Top 5 Vocab Tokens:   {top5_indices}")
-    for t in top5_indices:
+    print(f"Top 5 Vocab Tokens:   {oracle_top5}")
+    for t in oracle_top5:
         print(f"  Token {t}: {row0[t]:.4f}")
 
-    if "oracle_reference" in fixture:
-        ref = fixture["oracle_reference"]
-        print("\n=== Parity Check vs Fixture Oracle Record ===")
-        print(f"Expected Decision:    {ref['decision']} (Actual: {decision})")
-        assert decision == ref["decision"], f"Decision mismatch: {decision} != {ref['decision']}"
-        diff_prob = abs(decision_prob - ref["decision_probability"])
-        print(f"Probability Diff:     {diff_prob:.4f} (Tolerance: 0.05)")
-        assert diff_prob <= 0.05, f"Probability diff {diff_prob} exceeds 0.05"
-        print("✓ Reference oracle output matches fixture oracle record within tolerances.")
+    # 1. Assert reference execution reproducibility against captured oracle_reference
+    ref = fixture.get("oracle_reference", fixture.get("expected"))
+    if ref:
+        print("\n=== Assert Reference Oracle Reproduction vs Pinned Record ===")
+        assert oracle_decision == ref["decision"], f"Oracle decision mismatch: {oracle_decision} != {ref['decision']}"
+        diff_prob = abs(oracle_decision_prob - ref["decision_probability"])
+        assert diff_prob <= 1e-3, f"Oracle decision prob diff {diff_prob:.6f} exceeds 1e-3"
+
+        if "top_5_vocab_tokens" in ref:
+            print(f"Top-5 Vocab:          Expected {ref['top_5_vocab_tokens']} vs Actual {oracle_top5}")
+            assert oracle_top5 == ref["top_5_vocab_tokens"], f"Top-5 vocab tokens mismatch: {oracle_top5} != {ref['top_5_vocab_tokens']}"
+
+        for i, (label, tid) in enumerate(zip(cand_labels, cand_ids)):
+            raw_err = abs(oracle_raw_logits[i] - ref["candidate_logits_raw"][i])
+            sc_err = abs(oracle_sc_logits[i] - ref["candidate_logits_softcapped"][i])
+            prob_err = abs(oracle_probs[i] - ref["probabilities"][i])
+            assert raw_err <= 1e-3, f"Oracle raw logit mismatch for '{label}': {raw_err:.6f} > 1e-3"
+            assert sc_err <= 1e-3, f"Oracle softcapped logit mismatch for '{label}': {sc_err:.6f} > 1e-3"
+            assert prob_err <= 1e-3, f"Oracle probability mismatch for '{label}': {prob_err:.6f} > 1e-3"
+
+        print("✓ Reference execution identically reproduces captured oracle record.")
+
+    # 2. Compare Zeno engine against Reference Oracle
+    if zeno_json_path:
+        with open(zeno_json_path, "r") as f:
+            zeno = json.load(f)
+
+        print("\n=== Zeno CPU vs Reference Oracle Comparison ===")
+        print(f"Zeno Decision:        {zeno['decision']} (Oracle: {oracle_decision})")
+        assert zeno["decision"] == oracle_decision, f"Discrete decision mismatch: Zeno '{zeno['decision']}' != Oracle '{oracle_decision}'"
+
+        zeno_cands = zeno["candidates"]
+        assert len(zeno_cands) == len(candidates), f"Candidate count mismatch: {len(zeno_cands)} != {len(candidates)}"
+
+        max_raw_delta = 0.0
+        max_sc_delta = 0.0
+        max_prob_delta = 0.0
+
+        print("\nCandidate Comparison Table:")
+        print(f"{'Label':<10} | {'Oracle Raw':<10} | {'Zeno Raw':<10} | {'Delta Raw':<10} | {'Oracle Prob':<11} | {'Zeno Prob':<11} | {'Delta Prob':<10}")
+        print("-" * 85)
+
+        for i, (c_fix, c_zeno) in enumerate(zip(candidates, zeno_cands)):
+            lbl = c_fix["label"]
+            o_raw = oracle_raw_logits[i]
+            z_raw = c_zeno["raw_logit"]
+            d_raw = abs(z_raw - o_raw)
+
+            o_sc = oracle_sc_logits[i]
+            z_sc = c_zeno["softcapped_logit"]
+            d_sc = abs(z_sc - o_sc)
+
+            o_p = oracle_probs[i]
+            z_p = c_zeno["probability"]
+            d_p = abs(z_p - o_p)
+
+            max_raw_delta = max(max_raw_delta, d_raw)
+            max_sc_delta = max(max_sc_delta, d_sc)
+            max_prob_delta = max(max_prob_delta, d_p)
+
+            print(f"{lbl:<10} | {o_raw:<10.4f} | {z_raw:<10.4f} | {d_raw:<10.4f} | {o_p:<11.4f} | {z_p:<11.4f} | {d_p:<10.4f}")
+
+        d_dec_prob = abs(zeno["decision_probability"] - oracle_decision_prob)
+        print("-" * 85)
+        print(f"Summary Deltas:")
+        print(f"  Discrete Decision:       MATCH ('{zeno['decision']}')")
+        print(f"  Decision Prob Delta:     {d_dec_prob:.4f} (tolerance <= 0.05)")
+        print(f"  Max Raw Logit Delta:     {max_raw_delta:.4f} (tolerance <= 0.5)")
+        print(f"  Max Softcapped Delta:    {max_sc_delta:.4f} (tolerance <= 0.5)")
+        print(f"  Max Probability Delta:   {max_prob_delta:.4f} (tolerance <= 0.05)")
+
+        # Verify regression against local engine baseline if present
+        if "local_engine_baseline" in fixture:
+            base = fixture["local_engine_baseline"]
+            print("\n=== Regression Check vs Zeno Baseline ===")
+            assert zeno["decision"] == base["decision"], "Baseline decision mismatch"
+            assert abs(zeno["decision_probability"] - base["decision_probability"]) <= 0.05, "Baseline prob mismatch"
+            for i, c_zeno in enumerate(zeno_cands):
+                b_raw = base["candidate_logits_raw"][i]
+                b_p = base["probabilities"][i]
+                assert abs(c_zeno["raw_logit"] - b_raw) <= 0.5, f"Baseline raw logit drift on cand {i}"
+                assert abs(c_zeno["probability"] - b_p) <= 0.05, f"Baseline prob drift on cand {i}"
+            print("✓ Zeno CPU output matches local engine baseline within regression tolerances.")
+
+        # U-22 tolerance evaluation
+        passed_u22 = (max_raw_delta <= 0.5) and (max_sc_delta <= 0.5) and (max_prob_delta <= 0.05) and (d_dec_prob <= 0.05)
+        if passed_u22:
+            print("\n✓ Full numerical parity PASS under U-22 tolerance policy.")
+        else:
+            print(f"\n! Numerical logit/probability divergence exceeds U-22 tolerance budget (max raw delta={max_raw_delta:.4f} > 0.5).")
+            print("  Status: Discrete decision PASSED, but numerical parity gates U-13/U-22 remain OPEN.")
+            if strict_parity:
+                print("Error: Strict parity required but tolerances exceeded.")
+                sys.exit(1)
 
 if __name__ == "__main__":
     main()

@@ -2,7 +2,7 @@
 
 ## 1. Purpose & Scope
 
-This document records the resolved canvas layout for the configured 256-token width. Exact prompt serialization remains open under U-05; the current text format is provisional.
+This document records the resolved canvas layout for the configured 256-token width. Prompt serialization is governed by the Direct Canvas Decision Contract documented in §3.1 below (resolved under U-05), distinguishing Zeno's direct structured decision execution from vLLM's multi-step server template.
 
 In structured-reads mode, a seeded canvas contains prompt tokens and answer positions whose logits are read. In [vLLM PR #57250](https://github.com/vllm-project/vllm/pull/57250), pinning holds a selected position at its seeded token value across denoising steps. Pinning is an update rule; it does not by itself mean that the seed token must be `MASK` (`4`).
 

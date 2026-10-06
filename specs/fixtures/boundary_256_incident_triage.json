@@ -314,6 +314,25 @@
     "decision": "No",
     "decision_probability": 1.0,
     "candidate_logits_raw": [
+      2.4487,
+      16.684
+    ],
+    "candidate_logits_softcapped": [
+      2.4433,
+      15.1531
+    ],
+    "probabilities": [
+      0.0,
+      1.0
+    ],
+    "entropy_nats": 0.0,
+    "normalized_entropy": 0.0,
+    "uncertain": false
+  },
+  "local_engine_baseline": {
+    "decision": "No",
+    "decision_probability": 1.0,
+    "candidate_logits_raw": [
       -0.484,
       18.1301
     ],

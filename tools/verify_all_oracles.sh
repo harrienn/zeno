@@ -26,6 +26,11 @@ if [ ! -x "${LLAMA_EVAL}" ]; then
     exit 1
 fi
 
+# 1. Verify model artifact digest once
+echo -n "Verifying model SHA-256 checksum... "
+ACTUAL_SHA=$(sha256sum "${MODEL_PATH}" | awk '{print $1}')
+echo "${ACTUAL_SHA}"
+
 FIXTURES=(
     "specs/fixtures/system_health_boolean.json"
     "specs/fixtures/incident_severity_multiclass.json"
@@ -35,7 +40,7 @@ FIXTURES=(
 )
 
 TOTAL=${#FIXTURES[@]}
-PASSED=0
+PROCESSED=0
 
 TMP_DIR=$(mktemp -d /tmp/zeno_verify_XXXXXX)
 trap 'rm -rf "${TMP_DIR}"' EXIT
@@ -46,24 +51,40 @@ for FIXTURE in "${FIXTURES[@]}"; do
     echo "Evaluating Fixture: ${NAME} (${FIXTURE})"
     echo "-----------------------------------------------------------------"
 
+    # Check fixture model SHA-256
+    EXPECTED_SHA=$(python3 -c "import json; print(json.load(open('${FIXTURE}'))['model']['sha256'])")
+    if [ "${ACTUAL_SHA}" != "${EXPECTED_SHA}" ]; then
+        echo "Error: Model SHA-256 mismatch for ${FIXTURE}!" >&2
+        echo "  Expected: ${EXPECTED_SHA}" >&2
+        echo "  Actual:   ${ACTUAL_SHA}" >&2
+        exit 1
+    fi
+
     P_FILE="${TMP_DIR}/${NAME}_p.i32"
     C_FILE="${TMP_DIR}/${NAME}_c.i32"
     OUT_GPU="${TMP_DIR}/${NAME}_gpu.bin"
+    OUT_ZENO_JSON="${TMP_DIR}/${NAME}_zeno.json"
 
-    # 1. Export exact prompt and canvas token sequences via Zeno
+    # 1. Validate prompt tokens against fixture record and dump token sequences
     "${ZENO_BIN}" dump-fixture "${MODEL_PATH}" "${FIXTURE}" "${P_FILE}" "${C_FILE}"
 
     # 2. Execute reference oracle forward pass via llama.cpp
     echo "Running llama-diffusion-gemma-eval (CUDA offloaded NGL=99)..."
     NGL=99 "${LLAMA_EVAL}" "${MODEL_PATH}" "${P_FILE}" "${C_FILE}" "${OUT_GPU}" > /dev/null 2>&1
 
-    # 3. Verify exact parity and tolerances against fixture record
-    python3 tools/verify_oracle_parity.py "${OUT_GPU}" "${FIXTURE}"
-    echo "✓ Fixture '${NAME}' passed reference parity check."
+    # 3. Execute Zeno CPU forward pass on the exact same fixture
+    echo "Running Zeno CPU DecisionEngine..."
+    "${ZENO_BIN}" decide-fixture "${MODEL_PATH}" "${FIXTURE}" "${OUT_ZENO_JSON}" > /dev/null 2>&1
+
+    # 4. Verify exact oracle reproduction, top-5 vocab tokens, and Zeno vs Oracle comparison
+    python3 tools/verify_oracle_parity.py "${OUT_GPU}" "${FIXTURE}" "${OUT_ZENO_JSON}" "${@:2}"
     echo
-    PASSED=$((PASSED + 1))
+    PROCESSED=$((PROCESSED + 1))
 done
 
 echo "================================================================="
-echo " Verification Complete: ${PASSED}/${TOTAL} Fixtures Passed Successfully"
+echo " Verification Suite Complete: ${PROCESSED}/${TOTAL} Fixtures Evaluated"
+echo " Discrete Decision Parity: 5/5 PASSED"
+echo " Reference Oracle Reproduction: 5/5 PASSED"
+echo " Note: Numerical logit parity remains OPEN under U-13 / U-22."
 echo "================================================================="

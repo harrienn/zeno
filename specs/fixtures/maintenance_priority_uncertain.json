@@ -36,24 +36,24 @@
   ],
   "expected": {
     "decision": "Low",
-    "decision_probability": 0.6548,
+    "decision_probability": 0.644,
     "candidate_logits_raw": [
-      11.6345,
-      10.894,
-      5.173
+      13.396,
+      12.6155,
+      9.3898
     ],
     "candidate_logits_softcapped": [
-      11.0843,
-      10.4391,
-      5.1223
+      12.5714,
+      11.921,
+      9.0947
     ],
     "probabilities": [
-      0.6548,
-      0.3435,
-      0.0017
+      0.644,
+      0.3361,
+      0.0199
     ],
-    "entropy_nats": 0.6551,
-    "normalized_entropy": 0.5963,
+    "entropy_nats": 0.7278,
+    "normalized_entropy": 0.6625,
     "uncertain": true
   },
   "prompt_tokens": [
@@ -174,5 +174,27 @@
       25685,
       45518
     ]
+  },
+  "local_engine_baseline": {
+    "decision": "Low",
+    "decision_probability": 0.6548,
+    "candidate_logits_raw": [
+      11.6345,
+      10.894,
+      5.173
+    ],
+    "candidate_logits_softcapped": [
+      11.0843,
+      10.4391,
+      5.1223
+    ],
+    "probabilities": [
+      0.6548,
+      0.3435,
+      0.0017
+    ],
+    "entropy_nats": 0.6551,
+    "normalized_entropy": 0.5963,
+    "uncertain": true
   }
 }

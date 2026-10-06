@@ -47,15 +47,69 @@ pub const GoldenFixture = struct {
     answer_pos: usize,
     answer_seed_token: u32,
     entropy_threshold: ?f32 = null,
+    prompt_tokens: ?[]const i32 = null,
     candidates: []const FixtureCandidate,
     expected: FixtureExpected,
+    local_engine_baseline: ?FixtureExpected = null,
 };
+
+pub const ParityReport = struct {
+    decision_matches: bool,
+    max_raw_logit_delta: f32,
+    max_softcapped_logit_delta: f32,
+    max_prob_delta: f32,
+    entropy_delta: f32,
+    norm_entropy_delta: f32,
+    uncertain_matches: bool,
+    meets_tolerances: bool,
+};
+
+pub fn evaluateReferenceParity(
+    fix: GoldenFixture,
+    resp: decision.DecisionResponse,
+) ParityReport {
+    const dec_match = std.mem.eql(u8, fix.expected.decision, resp.decision);
+    var max_raw: f32 = 0.0;
+    var max_sc: f32 = 0.0;
+    var max_prob: f32 = 0.0;
+    for (fix.expected.candidate_logits_raw, resp.candidates, 0..) |exp_raw, cand, i| {
+        const raw_diff = @abs(exp_raw - cand.raw_logit);
+        if (raw_diff > max_raw) max_raw = raw_diff;
+
+        const cand_sc = root.ops.logitSoftcap(cand.raw_logit, root.ModelConfig.logit_softcap);
+        const sc_diff = @abs(fix.expected.candidate_logits_softcapped[i] - cand_sc);
+        if (sc_diff > max_sc) max_sc = sc_diff;
+
+        const prob_diff = @abs(fix.expected.probabilities[i] - cand.probability);
+        if (prob_diff > max_prob) max_prob = prob_diff;
+    }
+
+    const h_diff = @abs(fix.expected.entropy_nats - resp.entropy_nats);
+    const h_norm_diff = @abs(fix.expected.normalized_entropy - resp.normalized_entropy);
+    const unc_match = fix.expected.uncertain == resp.uncertain;
+
+    const meets_tol = dec_match and unc_match and
+        (max_raw <= 0.5) and (max_sc <= 0.5) and
+        (max_prob <= 0.05) and (h_diff <= 0.05) and (h_norm_diff <= 0.05);
+
+    return .{
+        .decision_matches = dec_match,
+        .max_raw_logit_delta = max_raw,
+        .max_softcapped_logit_delta = max_sc,
+        .max_prob_delta = max_prob,
+        .entropy_delta = h_diff,
+        .norm_entropy_delta = h_norm_diff,
+        .uncertain_matches = unc_match,
+        .meets_tolerances = meets_tol,
+    };
+}
 
 pub const FixtureError = error{
     InvalidSchema,
     UnsupportedPolicy,
     CandidateMismatch,
     ParityMismatch,
+    PromptTokenMismatch,
 };
 
 const posix = std.posix;
@@ -96,8 +150,8 @@ pub fn loadFixture(allocator: std.mem.Allocator, path: []const u8) !std.json.Par
 }
 
 /// Executes a decision query defined in a fixture and compares the local engine
-/// with its stored values. This is a regression check; it establishes reference
-/// parity only when the fixture values have independently recorded provenance.
+/// with its stored values. Verifies prompt token sequence integrity, asserts discrete
+/// decision agreement with reference expected, and validates regression against local_engine_baseline.
 pub fn validateFixture(
     allocator: std.mem.Allocator,
     fixture_path: []const u8,
@@ -140,34 +194,40 @@ pub fn validateFixture(
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
 
-    const resp = try engine.decide(arena.allocator(), req);
-
-    // Assert exact decision string match
-    try std.testing.expectEqualStrings(fix.expected.decision, resp.decision);
-
-    // Assert decision probability within tolerance 0.05
-    try std.testing.expectApproxEqAbs(fix.expected.decision_probability, resp.decision_probability, 0.05);
-
-    // Assert exact uncertainty boolean match
-    try std.testing.expectEqual(fix.expected.uncertain, resp.uncertain);
-
-    // Assert candidates length match
-    try std.testing.expectEqual(fix.expected.candidate_logits_raw.len, resp.candidates.len);
-    try std.testing.expectEqual(fix.expected.candidate_logits_softcapped.len, resp.candidates.len);
-
-    // Assert per-candidate raw logits, softcapped logits, and probabilities within tolerances
-    for (fix.expected.candidate_logits_raw, resp.candidates, 0..) |expected_raw, actual_cand, i| {
-        try std.testing.expectApproxEqAbs(expected_raw, actual_cand.raw_logit, 0.5);
-        const actual_softcapped = root.ops.logitSoftcap(actual_cand.raw_logit, root.ModelConfig.logit_softcap);
-        try std.testing.expectApproxEqAbs(fix.expected.candidate_logits_softcapped[i], actual_softcapped, 0.5);
-        try std.testing.expectApproxEqAbs(fix.expected.probabilities[i], actual_cand.probability, 0.05);
+    // 1. Verify prompt token integrity if prompt_tokens is recorded
+    if (fix.prompt_tokens) |recorded_prompt| {
+        const formatted_prompt = try root.Canvas.formatDecisionPrompt(arena.allocator(), fix.query, fix.context, candidate_specs);
+        const encoded_tokens = try engine.tokenizer.encode(arena.allocator(), formatted_prompt);
+        try std.testing.expectEqual(recorded_prompt.len, encoded_tokens.len + 1);
+        try std.testing.expectEqual(recorded_prompt[0], @as(i32, @intCast(root.SpecialTokens.bos)));
+        for (encoded_tokens, 0..) |tok, i| {
+            try std.testing.expectEqual(recorded_prompt[i + 1], @as(i32, @intCast(tok)));
+        }
     }
 
-    // Assert entropy metrics within tolerance 0.05
-    try std.testing.expectApproxEqAbs(fix.expected.entropy_nats, resp.entropy_nats, 0.05);
-    try std.testing.expectApproxEqAbs(fix.expected.normalized_entropy, resp.normalized_entropy, 0.05);
+    const resp = try engine.decide(arena.allocator(), req);
 
-    // Assert canvas geometry and position bounds
+    // 2. Assert exact discrete decision string match against reference expected
+    try std.testing.expectEqualStrings(fix.expected.decision, resp.decision);
+
+    // 3. Assert regression against local_engine_baseline
+    const baseline = fix.local_engine_baseline orelse fix.expected;
+    try std.testing.expectEqualStrings(baseline.decision, resp.decision);
+    try std.testing.expectApproxEqAbs(baseline.decision_probability, resp.decision_probability, 0.05);
+    try std.testing.expectEqual(baseline.uncertain, resp.uncertain);
+    try std.testing.expectEqual(baseline.candidate_logits_raw.len, resp.candidates.len);
+    try std.testing.expectEqual(baseline.candidate_logits_softcapped.len, resp.candidates.len);
+
+    for (baseline.candidate_logits_raw, resp.candidates, 0..) |expected_raw, actual_cand, i| {
+        try std.testing.expectApproxEqAbs(expected_raw, actual_cand.raw_logit, 0.5);
+        const actual_softcapped = root.ops.logitSoftcap(actual_cand.raw_logit, root.ModelConfig.logit_softcap);
+        try std.testing.expectApproxEqAbs(baseline.candidate_logits_softcapped[i], actual_softcapped, 0.5);
+        try std.testing.expectApproxEqAbs(baseline.probabilities[i], actual_cand.probability, 0.05);
+    }
+
+    try std.testing.expectApproxEqAbs(baseline.entropy_nats, resp.entropy_nats, 0.05);
+    try std.testing.expectApproxEqAbs(baseline.normalized_entropy, resp.normalized_entropy, 0.05);
+
     try std.testing.expectEqual(fix.canvas_length, root.ModelConfig.canvas_length);
     try std.testing.expect(fix.answer_pos + 1 <= resp.canvas_tokens_used);
 }

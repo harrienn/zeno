@@ -115,7 +115,29 @@ def generate_fixture(fixture_name, base_def):
             zeno_sc.append(round(s_val, 4))
             zeno_probs.append(round(p_val, 4))
 
+    # Derive reference expected from oracle_reference
+    h_nats = 0.0
+    for p in oracle_probs:
+        if p > 1e-12:
+            h_nats -= p * np.log(p)
+    k = len(oracle_probs)
+    h_norm = float(np.clip(h_nats / np.log(k), 0.0, 1.0)) if k > 1 else 0.0
+    th = base_def.get("entropy_threshold")
+    ref_uncertain = bool(h_norm >= th) if th is not None else False
+
     expected = {
+        "decision": oracle_decision,
+        "decision_probability": oracle_dec_prob,
+        "candidate_logits_raw": oracle_raw,
+        "candidate_logits_softcapped": oracle_sc,
+        "probabilities": oracle_probs,
+        "entropy_nats": round(h_nats, 4),
+        "normalized_entropy": round(h_norm, 4),
+        "uncertain": ref_uncertain
+    }
+    base_def["expected"] = expected
+
+    local_baseline = {
         "decision": zeno_decision,
         "decision_probability": round(zeno_dec_prob, 4),
         "candidate_logits_raw": zeno_raw,
@@ -125,7 +147,7 @@ def generate_fixture(fixture_name, base_def):
         "normalized_entropy": round(zeno_h_norm, 4),
         "uncertain": zeno_uncertain
     }
-    base_def["expected"] = expected
+    base_def["local_engine_baseline"] = local_baseline
 
     # 4. Save completed golden fixture
     with open(target_path, "w") as f:
