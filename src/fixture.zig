@@ -208,6 +208,30 @@ test "loadFixture: parses zeno.fixture/v1 correctly" {
     try std.testing.expectEqualStrings("zeno.tolerance/v1", boundary_parsed.value.policy);
     try std.testing.expectEqualStrings("No", boundary_parsed.value.expected.decision);
     try std.testing.expectEqual(@as(usize, 2), boundary_parsed.value.candidates.len);
+
+    const uncertain_parsed = loadFixture(allocator, "specs/fixtures/maintenance_priority_uncertain.json") catch |err| {
+        if (err == error.FileNotFound) return;
+        return err;
+    };
+    defer uncertain_parsed.deinit();
+
+    try std.testing.expectEqualStrings("zeno.fixture/v1", uncertain_parsed.value.schema);
+    try std.testing.expectEqualStrings("zeno.tolerance/v1", uncertain_parsed.value.policy);
+    try std.testing.expectEqualStrings("Low", uncertain_parsed.value.expected.decision);
+    try std.testing.expectEqual(true, uncertain_parsed.value.expected.uncertain);
+    try std.testing.expectEqual(@as(usize, 3), uncertain_parsed.value.candidates.len);
+
+    const score_parsed = loadFixture(allocator, "specs/fixtures/satisfaction_score_5class.json") catch |err| {
+        if (err == error.FileNotFound) return;
+        return err;
+    };
+    defer score_parsed.deinit();
+
+    try std.testing.expectEqualStrings("zeno.fixture/v1", score_parsed.value.schema);
+    try std.testing.expectEqualStrings("zeno.tolerance/v1", score_parsed.value.policy);
+    try std.testing.expectEqualStrings("5", score_parsed.value.expected.decision);
+    try std.testing.expectEqual(false, score_parsed.value.expected.uncertain);
+    try std.testing.expectEqual(@as(usize, 5), score_parsed.value.candidates.len);
 }
 
 test "validateFixture: compares local model with stored fixture values if present" {
@@ -225,4 +249,6 @@ test "validateFixture: compares local model with stored fixture values if presen
     try validateFixture(allocator, "specs/fixtures/system_health_boolean.json", &engine);
     try validateFixture(allocator, "specs/fixtures/incident_severity_multiclass.json", &engine);
     try validateFixture(allocator, "specs/fixtures/boundary_256_incident_triage.json", &engine);
+    try validateFixture(allocator, "specs/fixtures/maintenance_priority_uncertain.json", &engine);
+    try validateFixture(allocator, "specs/fixtures/satisfaction_score_5class.json", &engine);
 }

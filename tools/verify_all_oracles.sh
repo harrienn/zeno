@@ -30,6 +30,8 @@ FIXTURES=(
     "specs/fixtures/system_health_boolean.json"
     "specs/fixtures/incident_severity_multiclass.json"
     "specs/fixtures/boundary_256_incident_triage.json"
+    "specs/fixtures/maintenance_priority_uncertain.json"
+    "specs/fixtures/satisfaction_score_5class.json"
 )
 
 TOTAL=${#FIXTURES[@]}

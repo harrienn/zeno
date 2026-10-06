@@ -239,6 +239,98 @@ pub fn main(init: std.process.Init) !void {
         });
         try stdout_writer.flush();
         return;
+    } else if (args.len > 1 and std.mem.eql(u8, args[1], "tokenize")) {
+        if (args.len < 4) {
+            try stdout_writer.print("Usage: zeno tokenize <model.gguf> <text>\n", .{});
+            try stdout_writer.flush();
+            return;
+        }
+        const model_path = args[2];
+        const text = args[3];
+
+        var model = try zeno.DiffusionGemmaModel.loadFromFile(arena, model_path);
+        defer model.deinit();
+        var tokenizer = try zeno.Tokenizer.initFromGguf(arena, model.gguf_file);
+        defer tokenizer.deinit(arena);
+
+        const tokens = try tokenizer.encode(arena, text);
+        try stdout_writer.print("Encoded {d} tokens for \"{s}\":\n", .{ tokens.len, text });
+        for (tokens, 0..) |tok, i| {
+            const piece = tokenizer.decode(tok) orelse "<unk>";
+            try stdout_writer.print("  [{d}] {d} (\"{s}\")\n", .{ i, tok, piece });
+        }
+
+        if (tokenizer.resolveCandidateToken(text)) |cand_id| {
+            const piece = tokenizer.decode(cand_id) orelse "<unk>";
+            try stdout_writer.print("Candidate resolution: ID {d} (\"{s}\")\n", .{ cand_id, piece });
+        } else |err| {
+            try stdout_writer.print("Candidate resolution failed: {}\n", .{err});
+        }
+        try stdout_writer.flush();
+        return;
+    } else if (args.len > 1 and std.mem.eql(u8, args[1], "decide-fixture")) {
+        if (args.len < 4) {
+            try stdout_writer.print("Usage: zeno decide-fixture <model.gguf> <fixture.json>\n", .{});
+            try stdout_writer.flush();
+            return;
+        }
+        const model_path = args[2];
+        const fixture_path = args[3];
+
+        const parsed = try zeno.fixture.loadFixture(arena, fixture_path);
+        defer parsed.deinit();
+        const fix = parsed.value;
+
+        var engine = try zeno.DecisionEngine.init(arena, model_path);
+        defer engine.deinit();
+
+        const candidate_specs = try arena.alloc(zeno.CandidateSpec, fix.candidates.len);
+        for (fix.candidates, 0..) |cand, i| {
+            candidate_specs[i] = .{
+                .label = cand.label,
+                .token = cand.token,
+            };
+        }
+
+        const schema_t: zeno.SchemaType = if (std.mem.eql(u8, fix.schema_type, "boolean"))
+            .boolean
+        else if (std.mem.eql(u8, fix.schema_type, "choice"))
+            .choice
+        else if (std.mem.eql(u8, fix.schema_type, "score"))
+            .score
+        else
+            return error.InvalidCharacter;
+
+        const req = zeno.DecisionRequest{
+            .query = fix.query,
+            .context = fix.context,
+            .schema_type = schema_t,
+            .candidates = candidate_specs,
+            .step_cap = 1,
+            .temperature = 1.0,
+            .entropy_threshold = fix.entropy_threshold,
+        };
+
+        const resp = try engine.decide(arena, req);
+
+        try stdout_writer.print("Decision:           {s}\n", .{resp.decision});
+        try stdout_writer.print("Decision Prob:      {d:.4}\n", .{resp.decision_probability});
+        try stdout_writer.print("Entropy (nats):     {d:.4}\n", .{resp.entropy_nats});
+        try stdout_writer.print("Normalized Entropy: {d:.4}\n", .{resp.normalized_entropy});
+        try stdout_writer.print("Uncertain:          {}\n", .{resp.uncertain});
+        try stdout_writer.print("Candidates:\n", .{});
+        for (resp.candidates) |c| {
+            const sc = zeno.ops.logitSoftcap(c.raw_logit, zeno.ModelConfig.logit_softcap);
+            try stdout_writer.print("  - {s} (ID {d}): raw={d:.4}, sc={d:.4}, prob={d:.4}\n", .{
+                c.label,
+                c.token_id,
+                c.raw_logit,
+                sc,
+                c.probability,
+            });
+        }
+        try stdout_writer.flush();
+        return;
     } else if (args.len > 1) {
         var model_path: []const u8 = args[1];
         if (std.mem.eql(u8, args[1], "info") and args.len > 2) {

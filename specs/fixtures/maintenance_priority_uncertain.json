@@ -1,0 +1,178 @@
+{
+  "schema": "zeno.fixture/v1",
+  "policy": "zeno.tolerance/v1",
+  "description": "Maintenance event priority triage with high-entropy uncertainty gating on DiffusionGemma 26B-A4B-it Q4_K_M",
+  "model": {
+    "path": "models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf",
+    "sha256": "24523b6c833c9ce9f5f34f9b333ab1517d73d6f1e76a103645353114c8028bc5"
+  },
+  "reference": {
+    "repo": "https://github.com/ggml-org/llama.cpp",
+    "commit": "3dac51dc80b1400929266453c6ced6748ccf6862"
+  },
+  "query": "What is the priority level of this maintenance event?",
+  "context": "Routine index reorganization scheduled for customer analytics warehouse. Query latency expected to elevate by 10% for analytics queries only during off-peak window. Production OLTP databases are entirely unaffected.\n",
+  "schema_type": "choice",
+  "canvas_length": 256,
+  "answer_pos": 0,
+  "answer_seed_token": 4,
+  "entropy_threshold": 0.5,
+  "candidates": [
+    {
+      "label": "Low",
+      "token": "Low",
+      "token_id": 26834
+    },
+    {
+      "label": "Medium",
+      "token": "Medium",
+      "token_id": 49074
+    },
+    {
+      "label": "High",
+      "token": "High",
+      "token_id": 13238
+    }
+  ],
+  "expected": {
+    "decision": "Low",
+    "decision_probability": 0.6548,
+    "candidate_logits_raw": [
+      11.6345,
+      10.894,
+      5.173
+    ],
+    "candidate_logits_softcapped": [
+      11.0843,
+      10.4391,
+      5.1223
+    ],
+    "probabilities": [
+      0.6548,
+      0.3435,
+      0.0017
+    ],
+    "entropy_nats": 0.6551,
+    "normalized_entropy": 0.5963,
+    "uncertain": true
+  },
+  "prompt_tokens": [
+    2,
+    105,
+    2364,
+    107,
+    120714,
+    43212,
+    236744,
+    3546,
+    637,
+    50105,
+    25360,
+    3236,
+    49919,
+    526,
+    14812,
+    573,
+    5602,
+    26545,
+    31882,
+    236761,
+    30822,
+    51534,
+    4275,
+    531,
+    545,
+    185903,
+    654,
+    684,
+    236743,
+    236770,
+    236771,
+    236908,
+    573,
+    26545,
+    27490,
+    512,
+    22870,
+    236762,
+    1913,
+    1135,
+    236772,
+    46858,
+    4771,
+    236761,
+    26354,
+    708,
+    35592,
+    236791,
+    34438,
+    659,
+    144600,
+    2921,
+    236762,
+    559,
+    106514,
+    56075,
+    236761,
+    109,
+    14977,
+    236787,
+    2900,
+    563,
+    506,
+    13546,
+    1984,
+    529,
+    672,
+    9626,
+    2460,
+    236881,
+    107,
+    111501,
+    236787,
+    107,
+    236772,
+    14533,
+    107,
+    236772,
+    35202,
+    107,
+    236772,
+    4819,
+    107,
+    106,
+    107,
+    105,
+    4368,
+    107,
+    7925,
+    236787
+  ],
+  "oracle_command": "NGL=99 /hdd/Projects/llama.cpp/build/bin/llama-diffusion-gemma-eval models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf /tmp/maintenance_priority_uncertain_p.i32 /tmp/maintenance_priority_uncertain_c.i32 /tmp/maintenance_priority_uncertain_gpu.bin",
+  "oracle_reference": {
+    "decision": "Low",
+    "decision_probability": 0.644,
+    "candidate_logits_raw": [
+      13.396,
+      12.6155,
+      9.3898
+    ],
+    "candidate_logits_softcapped": [
+      12.5714,
+      11.921,
+      9.0947
+    ],
+    "probabilities": [
+      0.644,
+      0.3361,
+      0.0199
+    ],
+    "top_5_vocab_tokens": [
+      34742,
+      5213,
+      107,
+      25685,
+      45518
+    ]
+  }
+}
