@@ -16,3 +16,5 @@ As outlined in [ARCHITECTURE.md](../ARCHITECTURE.md) and [PLAN.md](../PLAN.md), 
 - [**`gguf-mapping.md`**](gguf-mapping.md): Concrete mapping of DiffusionGemma GGUF tensor names, shapes, and quantization types (Q4_K_M) verified against the local repository artifact (`models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf`).
 - [**`denoising.md`**](denoising.md): Reference denoising behavior and clearly labeled experiments for follow-up reads; proposed update equations are not implementation requirements until validated.
 - [**`multi-gpu.md`**](multi-gpu.md): Multi-GPU options and verification questions. Hardware budgets and communication counts are hypotheses until measured.
+- [**`cuda-roadmap.md`**](cuda-roadmap.md): Comprehensive implementation roadmap for the CUDA C++ backend, dual-GPU layer sharding (2x RTX 3060), device memory management, quantized GEMV, and sub-100ms decision latency targets.
+
