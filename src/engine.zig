@@ -18,12 +18,26 @@ pub const CandidateResult = decision.CandidateResult;
 pub const DiffusionGemmaModel = model_mod.DiffusionGemmaModel;
 pub const Tokenizer = tokenizer_mod.Tokenizer;
 pub const Canvas = canvas_mod.Canvas;
+pub const Mutex = struct {
+    inner: std.atomic.Mutex = .unlocked,
+
+    pub fn lock(self: *Mutex) void {
+        while (!self.inner.tryLock()) {
+            std.Thread.yield() catch {};
+        }
+    }
+
+    pub fn unlock(self: *Mutex) void {
+        self.inner.unlock();
+    }
+};
 
 pub const DecisionEngine = struct {
     allocator: std.mem.Allocator,
     model: DiffusionGemmaModel,
     tokenizer: Tokenizer,
     workspace: *infer.InferenceWorkspace,
+    mutex: Mutex = .{},
 
     /// Initializes decision engine by memory-mapping the GGUF model, loading tokenizer vocabulary,
     /// and pre-allocating an inference workspace with persistent thread pool.
@@ -42,6 +56,7 @@ pub const DecisionEngine = struct {
             .model = model,
             .tokenizer = tok,
             .workspace = ws,
+            .mutex = .{},
         };
     }
 
@@ -53,7 +68,11 @@ pub const DecisionEngine = struct {
     }
 
     /// Executes a deterministic single-step software decision query conforming to the Jev /v1/systemone contract.
+    /// Thread-safe: serializes concurrent decide calls on the same engine instance to prevent workspace tensor races (R5-01).
     pub fn decide(self: *DecisionEngine, request_allocator: std.mem.Allocator, req: DecisionRequest) !DecisionResponse {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
         // 1. Validate request bounds and constraints
         try decision.validateRequest(req);
 

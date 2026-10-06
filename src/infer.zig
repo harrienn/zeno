@@ -67,6 +67,50 @@ pub fn gemvF32(weights: []const f32, x: []const f32, out: []f32, out_dim: usize,
     }
 }
 
+/// Vector dot product for float32 vectors using 8-wide SIMD: sum(a_i * b_i)
+pub fn dotF32(a: []const f32, b: []const f32) f32 {
+    std.debug.assert(a.len == b.len);
+
+    const Vec8 = @Vector(8, f32);
+    const n_chunks = a.len / 8;
+    const rem = a.len % 8;
+
+    var acc: Vec8 = @splat(0.0);
+    for (0..n_chunks) |c| {
+        const off = c * 8;
+        const va: Vec8 = a[off..][0..8].*;
+        const vb: Vec8 = b[off..][0..8].*;
+        acc = @mulAdd(Vec8, va, vb, acc);
+    }
+    var sum = @reduce(.Add, acc);
+    for (0..rem) |k| {
+        const off = n_chunks * 8 + k;
+        sum += a[off] * b[off];
+    }
+    return sum;
+}
+
+/// Accumulates a scaled float32 vector into dest using 8-wide SIMD: dest_i += scale * src_i
+pub fn accumulateScaledF32(dest: []f32, src: []const f32, scale: f32) void {
+    std.debug.assert(dest.len == src.len);
+
+    const Vec8 = @Vector(8, f32);
+    const n_chunks = dest.len / 8;
+    const rem = dest.len % 8;
+    const vscale: Vec8 = @splat(scale);
+
+    for (0..n_chunks) |c| {
+        const off = c * 8;
+        const vd: Vec8 = dest[off..][0..8].*;
+        const vs: Vec8 = src[off..][0..8].*;
+        dest[off..][0..8].* = @mulAdd(Vec8, vs, vscale, vd);
+    }
+    for (0..rem) |k| {
+        const off = n_chunks * 8 + k;
+        dest[off] += src[off] * scale;
+    }
+}
+
 /// Applies NeoX-style (half-split) Rotary Position Embeddings over the full head dimension.
 pub fn applyRoPE(vec: []f32, pos: usize, head_dim: usize, theta: f32, freq_factors: ?[*]const f32) void {
     const half = head_dim / 2;
@@ -505,31 +549,25 @@ fn runAttnWorker(ctx: *const LayerContext, scratch: *WorkerScratch, t_start: usi
             const kv = h / gqa_ratio;
             const q_head = q_t[h * head_dim .. (h + 1) * head_dim];
 
-            for (0..ctx.total_len) |s| {
-                if (is_prompt_query and s > t) {
-                    scratch.scores[s] = -1e30;
-                } else {
-                    const k_s = ctx.k_buf[s * ctx.max_k_dim .. s * ctx.max_k_dim + k_dim];
-                    const k_head = k_s[kv * head_dim .. (kv + 1) * head_dim];
-                    var dot: f32 = 0.0;
-                    for (q_head, k_head) |qv, kvv| {
-                        dot += qv * kvv;
-                    }
-                    scratch.scores[s] = dot; // Gemma 4 attention scale is 1.0f
-                }
+            const visible_len = if (is_prompt_query) t + 1 else ctx.total_len;
+            for (0..visible_len) |s| {
+                const k_s = ctx.k_buf[s * ctx.max_k_dim .. s * ctx.max_k_dim + k_dim];
+                const k_head = k_s[kv * head_dim .. (kv + 1) * head_dim];
+                scratch.scores[s] = dotF32(q_head, k_head); // Gemma 4 attention scale is 1.0f
+            }
+            if (visible_len < ctx.total_len) {
+                @memset(scratch.scores[visible_len..ctx.total_len], -1e30);
             }
 
             ops.softmax(scratch.scores[0..ctx.total_len], 1.0, scratch.attn_weights[0..ctx.total_len]);
 
             const h_out = scratch.head_out[h * head_dim .. (h + 1) * head_dim];
-            for (0..ctx.total_len) |s| {
+            for (0..visible_len) |s| {
                 const w = scratch.attn_weights[s];
                 if (w == 0.0) continue;
                 const v_s = ctx.v_buf[s * ctx.max_k_dim .. s * ctx.max_k_dim + k_dim];
                 const v_head = v_s[kv * head_dim .. (kv + 1) * head_dim];
-                for (h_out, v_head) |*ho, vv| {
-                    ho.* += w * vv;
-                }
+                accumulateScaledF32(h_out, v_head, w);
             }
         }
 
@@ -1108,4 +1146,18 @@ test "embedCanvas and readCandidateLogits execution on local model if present" {
         try std.testing.expect(l >= -30.0 and l <= 30.0);
     }
 }
+
+test "dotF32 and accumulateScaledF32 SIMD primitives" {
+    const a = [_]f32{ 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0 };
+    const b = [_]f32{ 2.0, 1.0, 0.5, 0.0, -1.0, 3.0, 1.5, 2.0, -2.0 };
+    // 2 + 2 + 1.5 + 0 - 5 + 18 + 10.5 + 16 - 18 = 27.0
+    const dot = dotF32(&a, &b);
+    try std.testing.expectApproxEqAbs(@as(f32, 27.0), dot, 1e-5);
+
+    var dest = [_]f32{ 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0 };
+    accumulateScaledF32(&dest, &a, 2.0);
+    try std.testing.expectApproxEqAbs(@as(f32, 2.0), dest[0], 1e-5);
+    try std.testing.expectApproxEqAbs(@as(f32, 19.0), dest[8], 1e-5);
+}
+
 

@@ -49,7 +49,7 @@ When running on devices where individual VRAM is under 24 GB, Zeno partitions la
   │     - Dense FFN (GeGLU) + 128-expert MoE (top-8 routing)
   └── Activations & KV workspace: ~1.0 GB
          │
-         ▼  cudaMemcpyPeerAsync (P2P direct PCIe transfer: ~1.44 MB in ~0.1 ms)
+         ▼  cudaMemcpyPeerAsync (P2P direct PCIe transfer: [N, 2816] activations, ~2.88–5.77 MB in FP32; sub-ms)
 [GPU 1: Device 1 — 12 GB VRAM] (Allocated: ~8.3 GB)
   ├── Transformer Blocks 15 through 29 (15 layers: ~6.8 GB)
   │     - Attention + Dense FFN + 128-expert MoE
@@ -112,7 +112,7 @@ When running on devices where individual VRAM is under 24 GB, Zeno partitions la
   * `src/infer_cuda.zig`: High-level GPU inference pipeline.
   * Enable direct P2P memory access: `cudaDeviceEnablePeerAccess(1, 0)` and `cudaDeviceEnablePeerAccess(0, 1)`.
   * Asynchronous stream coordination across Device 0 and Device 1.
-  * Layer boundary transfer: `cudaMemcpyPeerAsync` transfers $H_{15}$ ([256, 2816] in FP16 = 1.44 MB) from Device 0 to Device 1.
+  * Layer boundary transfer: `cudaMemcpyPeerAsync` transfers $H_{15}$ ($[N, 2816]$ where $N = \text{prompt\_len} + 256$, ~2.88–5.77 MB in FP32) from Device 0 to Device 1. FP16 activation transfer is retained as a proposed bandwidth optimization subject to empirical numerical tolerance testing.
 * **Exit Gate**: Full 30-layer model forward pass executes across both GPUs without host intervention during inference.
 
 ### Stage 6: Parity Validation & Latency Benchmarks

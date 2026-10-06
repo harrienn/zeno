@@ -170,11 +170,11 @@ pub const DecisionEngine = struct {
 };
 ```
 
-### Memory Contract
+### Memory and Concurrency Contract
 
-- The engine owns long-lived model weights, tokenizer data, and backend state; these do not use the request allocator.
+- The engine owns long-lived model weights, tokenizer data, and a pre-allocated `InferenceWorkspace` containing activation tensors and the persistent worker thread pool; these do not use the request allocator.
+- **Concurrency Contract (R5-01)**: A single `DecisionEngine` instance owns one mutable workspace and executes requests sequentially. Access to `engine.decide(...)` is serialized via an internal mutex to guarantee race-free execution across concurrent caller threads. Applications requiring parallel evaluation across multiple queries simultaneously must allocate multiple `DecisionEngine` instances (accounting for ~49 MiB workspace overhead per instance) or route queries through an external queue.
 - Per-request scratch and response slices use the caller-supplied allocator. The response remains valid until the caller resets or frees that allocator.
-- The API must document whether an engine may be called concurrently and how callers initialize/load and release it before those operations are implemented.
 
 ### Initial Error Contract
 
