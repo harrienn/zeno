@@ -167,11 +167,21 @@ pub const Server = struct {
             _ = linux.close(client_fd);
         }
 
+        var start_ts: linux.timespec = undefined;
+        _ = linux.clock_gettime(.MONOTONIC, &start_ts);
+
         var buf: [65536]u8 = undefined;
         var total_read: usize = 0;
 
-        // Read request header
+        // Read request header (bounded by 15s idle timeout and 30s overall deadline)
         while (total_read < buf.len) {
+            var now_ts: linux.timespec = undefined;
+            _ = linux.clock_gettime(.MONOTONIC, &now_ts);
+            if (now_ts.sec - start_ts.sec > 30) {
+                self.sendError(client_fd, 408, "request_timeout", "Request read timed out (exceeded 30s deadline)");
+                return;
+            }
+
             const r_rc = linux.read(client_fd, buf[total_read..].ptr, buf.len - total_read);
             const err = linux.errno(r_rc);
             if (err != .SUCCESS) {
@@ -250,13 +260,15 @@ pub const Server = struct {
             return;
         }
 
-        // Route: GET /health
+        // Route: GET/HEAD /health (R7-06)
         if (std.mem.eql(u8, path, "/health")) {
-            if (std.mem.eql(u8, method, "GET") or std.mem.eql(u8, method, "HEAD")) {
-                self.sendJson(client_fd, 200, "{\"status\":\"ok\"}\n");
+            const is_get = std.mem.eql(u8, method, "GET");
+            const is_head = std.mem.eql(u8, method, "HEAD");
+            if (is_get or is_head) {
+                self.sendResponse(client_fd, 200, "{\"status\":\"ok\"}\n", is_head);
                 return;
             } else {
-                self.sendError(client_fd, 405, "method_not_allowed", "Only GET/HEAD method is allowed for /health");
+                self.sendError(client_fd, 405, "method_not_allowed", "Only GET and HEAD methods are allowed for /health");
                 return;
             }
         }
@@ -277,8 +289,9 @@ pub const Server = struct {
             return;
         };
 
-        if (cl > 10 * 1024 * 1024) {
-            self.sendError(client_fd, 413, "payload_too_large", "Request payload exceeds 10 MB limit");
+        // Bounded request body cap: 64 KB is generous for decision requests and bounds allocations (R7-05)
+        if (cl > 64 * 1024) {
+            self.sendError(client_fd, 413, "payload_too_large", "Request payload exceeds 64 KB limit");
             return;
         }
 
@@ -299,6 +312,13 @@ pub const Server = struct {
             var body_read = body_part.len;
 
             while (body_read < cl) {
+                var now_ts: linux.timespec = undefined;
+                _ = linux.clock_gettime(.MONOTONIC, &now_ts);
+                if (now_ts.sec - start_ts.sec > 30) {
+                    self.sendError(client_fd, 408, "request_timeout", "Request body read timed out (exceeded 30s deadline)");
+                    return;
+                }
+
                 const r_rc = linux.read(client_fd, body_buf[body_read..].ptr, cl - body_read);
                 const err = linux.errno(r_rc);
                 if (err != .SUCCESS) {
@@ -434,7 +454,7 @@ pub const Server = struct {
         try list.appendSlice(allocator, "{\n  \"decision\": ");
         try writeEscapedJsonString(&list, allocator, resp.decision);
 
-        const header = try std.fmt.allocPrint(allocator,
+        try list.print(allocator,
             \\,
             \\  "decision_probability": {d:.6},
             \\  "entropy_nats": {d:.6},
@@ -452,13 +472,12 @@ pub const Server = struct {
             resp.steps_executed,
             resp.canvas_tokens_used,
         });
-        try list.appendSlice(allocator, header);
 
         for (resp.candidates, 0..) |c, i| {
             const comma = if (i + 1 < resp.candidates.len) "," else "";
             try list.appendSlice(allocator, "    {\n      \"label\": ");
             try writeEscapedJsonString(&list, allocator, c.label);
-            const cand_str = try std.fmt.allocPrint(allocator,
+            try list.print(allocator,
                 \\,
                 \\      "token_id": {d},
                 \\      "probability": {d:.6},
@@ -471,7 +490,6 @@ pub const Server = struct {
                 c.raw_logit,
                 comma,
             });
-            try list.appendSlice(allocator, cand_str);
         }
 
         try list.appendSlice(allocator, "  ]\n}\n");
@@ -480,12 +498,18 @@ pub const Server = struct {
 
     /// Sends a JSON response with HTTP headers.
     fn sendJson(self: *Server, client_fd: i32, status_code: u16, json_body: []const u8) void {
+        self.sendResponse(client_fd, status_code, json_body, false);
+    }
+
+    /// Sends an HTTP JSON response, omitting the response body if is_head is true (R7-06).
+    fn sendResponse(self: *Server, client_fd: i32, status_code: u16, json_body: []const u8, is_head: bool) void {
         _ = self;
         const status_text = switch (status_code) {
             200 => "OK",
             400 => "Bad Request",
             404 => "Not Found",
             405 => "Method Not Allowed",
+            408 => "Request Timeout",
             411 => "Length Required",
             413 => "Payload Too Large",
             500 => "Internal Server Error",
@@ -505,7 +529,9 @@ pub const Server = struct {
         ) catch return;
 
         writeAll(client_fd, header);
-        writeAll(client_fd, json_body);
+        if (!is_head) {
+            writeAll(client_fd, json_body);
+        }
     }
 
     /// Sends a structured JSON error response conforming to specs/decision-api.md §5 with RFC 8259 escaping.

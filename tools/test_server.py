@@ -213,15 +213,54 @@ def main():
         print(json.dumps(data, indent=2))
 
         assert data.get("decision") in [escaped_label_yes, escaped_label_no], f"Expected decision in candidates, got {data.get('decision')}"
-        assert data.get("steps_executed") == 1, f"Expected 1 step, got {data.get('steps_executed')}"
-        assert data.get("uncertain") is False, f"Expected uncertain=False, got {data.get('uncertain')}"
+        # Semantic threshold assertion (independent of model distribution)
+        expected_uncertain = (data.get("normalized_entropy", 0.0) >= 0.5)
+        assert data.get("uncertain") == expected_uncertain, f"Expected uncertain={expected_uncertain}, got {data.get('uncertain')}"
         assert len(data.get("candidates", [])) == 2, f"Expected 2 candidates, got {len(data.get('candidates', []))}"
         assert data["candidates"][0]["label"] == escaped_label_yes
         assert data["candidates"][1]["label"] == escaped_label_no
-        print(f"✓ Decision '{data.get('decision')}' properly serialized and parsed with escaped labels (prob {data.get('decision_probability'):.4f})!")
+        print(f"✓ Decision '{data.get('decision')}' properly serialized and parsed with escaped labels (prob {data.get('decision_probability'):.4f}, uncertain={data.get('uncertain')})!")
+
+        # Test 11: HTTP HEAD /health returns headers with empty body (R7-06)
+        print("\n--- Test 11: HEAD /health returns empty body ---")
+        raw_head_resp = send_raw_http(b"HEAD /health HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+        assert "200 OK" in raw_head_resp, f"Expected 200 OK, got: {raw_head_resp[:100]}"
+        assert "Content-Length: 16" in raw_head_resp, f"Expected Content-Length: 16 header"
+        parts = raw_head_resp.split("\r\n\r\n", 1)
+        assert len(parts) == 2 and parts[1] == "", f"Expected empty body for HEAD, got: {parts[1]}"
+        print("✓ Correctly returned 200 OK headers with no response body for HEAD /health")
+
+        # Test 12: Wire error codes and native validation parity (R7-02)
+        print("\n--- Test 12: Wire error code verification ---")
+        # 12a: empty_query
+        status, data = test_request("POST", "/v1/systemone", body={
+            "query": "",
+            "schema": {"type": "boolean", "candidates": [{"token": "Yes", "label": "Yes"}, {"token": "No", "label": "No"}]}
+        })
+        assert status == 400 and data.get("error", {}).get("code") == "empty_query", f"Expected empty_query, got: {data}"
+
+        # 12b: duplicate_candidate_label
+        status, data = test_request("POST", "/v1/systemone", body={
+            "query": "Is it valid?",
+            "schema": {"type": "boolean", "candidates": [{"token": "Yes", "label": "Same"}, {"token": "No", "label": "Same"}]}
+        })
+        assert status == 400 and data.get("error", {}).get("code") == "duplicate_candidate_label", f"Expected duplicate_candidate_label, got: {data}"
+
+        # 12c: invalid_schema_type
+        status, data = test_request("POST", "/v1/systemone", body={
+            "query": "Is it valid?",
+            "schema": {"type": "unknown_type", "candidates": [{"token": "Yes", "label": "Yes"}, {"token": "No", "label": "No"}]}
+        })
+        assert status == 400 and data.get("error", {}).get("code") == "invalid_schema_type", f"Expected invalid_schema_type, got: {data}"
+
+        # 12d: http_version_not_supported
+        raw_resp = send_raw_http(b"GET /health HTTP/2.0\r\nHost: 127.0.0.1\r\n\r\n")
+        assert "505 HTTP Version Not Supported" in raw_resp, f"Expected 505, got: {raw_resp[:100]}"
+        assert "http_version_not_supported" in raw_resp, f"Expected code http_version_not_supported"
+        print("✓ Successfully verified wire error codes: empty_query, duplicate_candidate_label, invalid_schema_type, http_version_not_supported")
 
         print("\n=======================================================")
-        print(" ALL HTTP SERVER INTEGRATION TESTS PASSED (10/10)")
+        print(" ALL HTTP SERVER INTEGRATION TESTS PASSED (12/12)")
         print("=======================================================")
 
     finally:

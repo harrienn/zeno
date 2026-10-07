@@ -100,7 +100,7 @@ zig build test
 zig build run
 
 # Run HTTP decision API server
-zig build run -- --serve --port 8000
+zig build run -- serve models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf --port 8000
 ```
 
 ---

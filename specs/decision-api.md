@@ -116,27 +116,30 @@ All non-200 responses return a standard RFC 8259-compliant JSON error object:
 
 | HTTP Status | Error Code | Trigger Condition |
 | :--- | :--- | :--- |
-| `200 OK` | *(none)* | Decision executed successfully. |
-| `400 Bad Request` | `bad_request` | Malformed HTTP request line, unparseable JSON payload, or missing query. |
-| `400 Bad Request` | `missing_schema` | Missing `schema` object. |
-| `400 Bad Request` | `unsupported_schema_type` | Schema type is not `"boolean"`, `"choice"`, or `"score"`. |
+| `200 OK` | *(none)* | Decision executed successfully, or liveness probe passed (`GET`/`HEAD /health`). |
+| `400 Bad Request` | `bad_request` | Malformed HTTP request line, invalid path, unparseable Content-Length, or duplicate Content-Length header. |
+| `400 Bad Request` | `invalid_json` | Unparseable JSON body, or missing required schema fields (`query`, `schema`, `schema.type`, `schema.candidates`, `token`, `label`). |
+| `400 Bad Request` | `invalid_schema_type` | Schema type is not `"boolean"`, `"choice"`, or `"score"`. |
+| `400 Bad Request` | `empty_query` | Query string is empty (`""`). |
 | `400 Bad Request` | `too_few_candidates` | Fewer than 2 candidates provided. |
 | `400 Bad Request` | `too_many_candidates` | More than 32 candidates provided. |
-| `400 Bad Request` | `missing_candidate_token` | Candidate entry missing required `token` field. |
 | `400 Bad Request` | `duplicate_candidate_token` | Multiple candidates resolve to identical token IDs. |
+| `400 Bad Request` | `duplicate_candidate_label` | Multiple candidates share identical display labels. |
 | `400 Bad Request` | `token_not_found` | Candidate token text is not found in tokenizer vocabulary. |
 | `400 Bad Request` | `multi_token_candidate` | Candidate resolves to more than 1 vocabulary token. |
 | `400 Bad Request` | `unsupported_step_cap` | `options.step_cap` is set to any value other than 1. |
 | `400 Bad Request` | `invalid_temperature` | Temperature is non-finite, $\le 0.0$, or NaN. |
 | `400 Bad Request` | `invalid_entropy_threshold` | Threshold is non-finite, $< 0.0$, or $> 1.0$. |
-| `400 Bad Request` | `canvas_overflow` | Rendered prompt exceeds maximum allowed prompt tokens (768 tokens, capping total sequence to 1024). |
+| `400 Bad Request` | `canvas_overflow` | Rendered prompt exceeds maximum allowed prompt bytes (16 KiB) or prompt tokens (768 tokens, capping total sequence to 1024). |
+| `400 Bad Request` | `read_error` / `incomplete_body` | Socket read failure or client disconnected prematurely during body transmission. |
 | `404 Not Found` | `not_found` | Request path is not `/health` or `/v1/systemone`. |
-| `405 Method Not Allowed` | `method_not_allowed` | Method other than GET for `/health` or POST for `/v1/systemone`. |
+| `405 Method Not Allowed` | `method_not_allowed` | Method other than GET or HEAD for `/health`, or other than POST for `/v1/systemone`. |
+| `408 Request Timeout` | `request_timeout` | Total request read time exceeded the 30-second deadline. |
 | `411 Length Required` | `length_required` | POST request omitted `Content-Length` header. |
-| `413 Payload Too Large` | `payload_too_large` | Request body exceeds maximum allowed buffer size (10 MiB). |
+| `413 Payload Too Large` | `payload_too_large` | Request body exceeds maximum allowed buffer size (64 KiB). |
 | `500 Internal Server Error` | `internal_error` | Internal engine or inference failure. |
 | `501 Not Implemented` | `not_implemented` | Request uses unsupported `Transfer-Encoding: chunked`. |
-| `505 Version Not Supported` | `unsupported_version` | Request line specifies an HTTP version other than `HTTP/1.0` or `HTTP/1.1`. |
+| `505 Version Not Supported` | `http_version_not_supported` | Request line specifies an HTTP version other than `HTTP/1.0` or `HTTP/1.1`. |
 
 ### 3.4 Wire Format, Escaping & Numerical Precision
 
@@ -145,10 +148,10 @@ All non-200 responses return a standard RFC 8259-compliant JSON error object:
 
 ### 3.5 Framing, Limits & Security Boundaries
 
-- **Framing Invariants**: HTTP request lines must contain exactly three tokens (`METHOD PATH HTTP/VERSION`). Paths must start with `/`. Repeated or conflicting `Content-Length` headers are rejected with HTTP 400 Bad Request to prevent HTTP request smuggling.
-- **Socket Deadlines**: Accepted connections enforce 15-second read and write timeouts (`SO_RCVTIMEO` / `SO_SNDTIMEO`). Rejected requests (such as 404, 405, 411, 413) immediately close the connection without draining unbounded client bodies.
-- **Sequence & Workspace Bounding**: Prompts are capped at 768 tokens (`max_prompt_tokens`). Together with the 256-token canvas length, sequence length $N$ is hard-bounded at 1024 tokens (`max_seq_len`), preventing unbounded activation memory reallocation.
-- **Trust Boundary**: The server is a single-threaded synchronous local decision engine without authentication or transport encryption (TLS). It is intended for loopback operation (`127.0.0.1`). If bound to external network interfaces (`--host 0.0.0.0`), it must be placed behind an authenticated reverse proxy (e.g. Envoy, Nginx, Caddy).
+- **Framing Invariants**: HTTP request lines must contain exactly three tokens (`METHOD PATH HTTP/VERSION`). Paths must start with `/`. Repeated or conflicting `Content-Length` headers are rejected with HTTP 400 Bad Request to prevent HTTP request smuggling. Both `GET` and `HEAD` methods are accepted on `/health` (with `HEAD` omitting the response body per RFC 7231).
+- **Socket Idle Timeouts & Request Deadlines**: Accepted connections enforce 15-second socket idle timeouts (`SO_RCVTIMEO` / `SO_SNDTIMEO`) and an absolute 30-second request read deadline. Rejected requests (such as 400, 404, 405, 411, 413, 501, 505) immediately close the connection without draining unread client bodies.
+- **Sequence & Workspace Bounding**: Request payloads are capped at 64 KiB (`payload_too_large`). Query and rendered prompt byte size are early-bounded at 16 KiB (`max_prompt_bytes`), and tokenized prompts are bounded at 768 tokens (`max_prompt_tokens`), preventing both tokenization CPU DOS and activation tensor reallocation beyond 1024 tokens (`max_seq_len`).
+- **Serial Execution & Trust Boundary**: The server is a single-threaded synchronous local decision engine without authentication or transport encryption (TLS). In-flight model evaluations on `/v1/systemone` execute synchronously on CPU; concurrent incoming requests (including `/health`) are queued in the OS TCP socket listen backlog until the current forward pass completes. It is intended for loopback operation (`127.0.0.1`). If exposed to external network interfaces (`--host 0.0.0.0`), it must be placed behind an authenticated reverse proxy (e.g. Envoy, Nginx, Caddy).
 
 ---
 
@@ -230,14 +233,17 @@ pub const DecisionEngine = struct {
 ### Error Contract
 
 The native interface returns typed errors:
-- `error.InvalidSchema`: malformed schema or fewer than 2 / more than 32 candidates.
-- `error.DuplicateCandidate`: duplicate resolved token IDs among candidates.
-- `error.MultiTokenCandidateNotAllowed`: candidate resolves to multiple tokens.
-- `error.TokenNotFound`: candidate string absent from vocabulary.
-- `error.CanvasOverflow`: prompt length exceeds `max_prompt_tokens` (768).
+- `error.EmptyQuery`: query string is empty (`""`).
+- `error.TooFewCandidates`: fewer than 2 candidates provided.
+- `error.TooManyCandidates`: more than 32 candidates provided.
+- `error.DuplicateCandidateToken`: candidate options resolve to duplicate vocabulary token IDs.
+- `error.DuplicateCandidateLabel`: candidate options share identical display labels.
+- `error.UnsupportedStepCap`: `step_cap` is not 1.
 - `error.InvalidTemperature`: temperature $\le 0.0$ or non-finite.
 - `error.InvalidEntropyThreshold`: threshold $< 0.0$, $> 1.0$, or non-finite.
-- `error.UnsupportedStepCap`: `step_cap` is not 1.
+- `error.TokenNotFound`: candidate string absent from model vocabulary.
+- `error.MultiTokenCandidateNotAllowed`: candidate resolves to multiple tokens.
+- `error.CanvasOverflow`: prompt byte length exceeds `max_prompt_bytes` (16 KiB) or tokenized prompt exceeds `max_prompt_tokens` (768).
 
 A candidate string that is absent from the vocabulary is reported as `TokenNotFound`, **not** `MultiTokenCandidateNotAllowed`, preserving distinct failure semantics (choose a different label versus map the label to a one-token code).
 

@@ -69,6 +69,8 @@ pub const ModelConfig = struct {
     pub const max_seq_len: usize = sliding_window;
     /// Maximum prompt tokens permitted before canvas overflow.
     pub const max_prompt_tokens: usize = max_seq_len - canvas_length;
+    /// Maximum prompt byte length permitted before tokenization (16 KiB protects against formatting/tokenization DOS).
+    pub const max_prompt_bytes: usize = 16 * 1024;
 };
 
 /// Special token IDs defined by the Gemma 4 / DiffusionGemma tokenizer.
@@ -92,6 +94,7 @@ test {
     _ = infer;
     _ = engine;
     _ = fixture;
+    _ = server;
 }
 
 test "model configuration invariants" {

@@ -83,7 +83,12 @@ pub const DecisionEngine = struct {
 
         try Canvas.validateCandidates(self.tokenizer, req.candidates, candidate_tokens);
 
-        // 3. Format decision prompt and tokenize into seeded canvas
+        // 3. Early byte-length guard before formatting and tokenization (R7-05)
+        const context_len = if (req.context) |ctx| ctx.len else 0;
+        if (req.query.len + context_len > root.ModelConfig.max_prompt_bytes) {
+            return error.CanvasOverflow;
+        }
+
         const formatted_prompt = try Canvas.formatDecisionPrompt(
             request_allocator,
             req.query,
@@ -91,6 +96,10 @@ pub const DecisionEngine = struct {
             req.candidates,
         );
         defer request_allocator.free(formatted_prompt);
+
+        if (formatted_prompt.len > root.ModelConfig.max_prompt_bytes) {
+            return error.CanvasOverflow;
+        }
 
         const raw_prompt_tokens = try self.tokenizer.encode(request_allocator, formatted_prompt);
         defer request_allocator.free(raw_prompt_tokens);
