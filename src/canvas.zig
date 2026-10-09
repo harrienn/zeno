@@ -51,6 +51,38 @@ pub const Canvas = struct {
         return canvas;
     }
 
+    /// Preflight calculation of the rendered decision prompt byte length.
+    /// Uses overflow-safe arithmetic. Returns null if arithmetic overflows usize.
+    pub fn calculatePromptByteLength(
+        query: []const u8,
+        context: ?[]const u8,
+        candidates: []const decision.CandidateSpec,
+    ) ?usize {
+        var total: usize = 0;
+        const boilerplate_len = comptime (
+            "<|turn>user\n".len +
+            "Question: ".len +
+            "\nChoices:\n".len +
+            "<turn|>\n<|turn>model\nAnswer:".len
+        );
+        total = std.math.add(usize, total, boilerplate_len) catch return null;
+        total = std.math.add(usize, total, query.len) catch return null;
+
+        if (context) |ctx| {
+            if (ctx.len > 0) {
+                total = std.math.add(usize, total, ctx.len) catch return null;
+                total = std.math.add(usize, total, comptime "\n\n".len) catch return null;
+            }
+        }
+
+        for (candidates) |cand| {
+            total = std.math.add(usize, total, comptime ("- ".len + "\n".len)) catch return null;
+            total = std.math.add(usize, total, cand.label.len) catch return null;
+        }
+
+        return total;
+    }
+
     /// Formats a complete structured decision prompt conforming to Gemma 4 turn delimiters:
     /// <|turn>user\n{context}\n\nQuestion: {query}\nChoices:\n- {cand}\n<turn|>\n<|turn>model\nAnswer:
     pub fn formatDecisionPrompt(
@@ -59,8 +91,14 @@ pub const Canvas = struct {
         context: ?[]const u8,
         candidates: []const decision.CandidateSpec,
     ) ![]const u8 {
+        const preflight_len = calculatePromptByteLength(query, context, candidates) orelse return error.CanvasOverflow;
+        if (preflight_len > root.ModelConfig.max_prompt_bytes) {
+            return error.CanvasOverflow;
+        }
+
         var list: std.ArrayList(u8) = .empty;
         errdefer list.deinit(allocator);
+        try list.ensureTotalCapacity(allocator, preflight_len);
 
         // User turn
         try list.appendSlice(allocator, "<|turn>user\n");
@@ -82,6 +120,7 @@ pub const Canvas = struct {
         }
 
         try list.appendSlice(allocator, "<turn|>\n<|turn>model\nAnswer:");
+        std.debug.assert(list.items.len == preflight_len);
         return list.toOwnedSlice(allocator);
     }
 
@@ -143,4 +182,35 @@ test "Canvas: formatDecisionPrompt includes turn tags and candidates" {
 test "Canvas: seedSingleStep rejects prompt exceeding max_prompt_tokens with CanvasOverflow" {
     var long_prompt: [root.ModelConfig.max_prompt_tokens + 1]u32 = @splat(100);
     try std.testing.expectError(error.CanvasOverflow, Canvas.seedSingleStep(&long_prompt, root.SpecialTokens.mask));
+}
+
+test "Canvas: calculatePromptByteLength matches formatDecisionPrompt exactly" {
+    const allocator = std.testing.allocator;
+    const candidates = [_]decision.CandidateSpec{
+        .{ .token = "Yes", .label = "Yes Option A" },
+        .{ .token = "No", .label = "No Option B" },
+    };
+
+    // With context
+    const preflight_with_ctx = Canvas.calculatePromptByteLength("Is system ready?", "All systems nominal", &candidates).?;
+    const formatted_with_ctx = try Canvas.formatDecisionPrompt(allocator, "Is system ready?", "All systems nominal", &candidates);
+    defer allocator.free(formatted_with_ctx);
+    try std.testing.expectEqual(formatted_with_ctx.len, preflight_with_ctx);
+
+    // Without context
+    const preflight_no_ctx = Canvas.calculatePromptByteLength("Is system ready?", null, &candidates).?;
+    const formatted_no_ctx = try Canvas.formatDecisionPrompt(allocator, "Is system ready?", null, &candidates);
+    defer allocator.free(formatted_no_ctx);
+    try std.testing.expectEqual(formatted_no_ctx.len, preflight_no_ctx);
+}
+
+test "Canvas: formatDecisionPrompt rejects oversized candidate labels before allocation (R8-02)" {
+    const allocator = std.testing.allocator;
+    var huge_label: [root.ModelConfig.max_prompt_bytes + 10]u8 = @splat('A');
+    const candidates = [_]decision.CandidateSpec{
+        .{ .token = "Yes", .label = &huge_label },
+        .{ .token = "No", .label = "No" },
+    };
+
+    try std.testing.expectError(error.CanvasOverflow, Canvas.formatDecisionPrompt(allocator, "Short query", null, &candidates));
 }

@@ -160,6 +160,74 @@ pub const Server = struct {
         }
     }
 
+    const ReadResult = enum {
+        ok,
+        eof,
+        idle_timeout,
+        deadline_timeout,
+        read_error,
+    };
+
+    fn getMonotonicMs() i64 {
+        var ts: linux.timespec = undefined;
+        _ = linux.clock_gettime(.MONOTONIC, &ts);
+        return @as(i64, ts.sec) * 1000 + @divTrunc(ts.nsec, 1_000_000);
+    }
+
+    /// Reads up to dest.len bytes with strict idle timeout (15s) and capped absolute deadline (30s) (R8-01).
+    fn readChunkWithDeadline(
+        client_fd: i32,
+        dest: []u8,
+        start_ms: i64,
+        out_read: *usize,
+    ) ReadResult {
+        const now_ms = getMonotonicMs();
+        const elapsed_ms = now_ms - start_ms;
+        if (elapsed_ms >= 30_000) {
+            return .deadline_timeout;
+        }
+
+        const remaining_deadline_ms = 30_000 - elapsed_ms;
+        const wait_ms: i32 = @intCast(@min(@as(i64, 15_000), remaining_deadline_ms));
+
+        var pfd = [1]linux.pollfd{.{
+            .fd = client_fd,
+            .events = linux.POLL.IN,
+            .revents = 0,
+        }};
+
+        while (true) {
+            const p_rc = linux.poll(&pfd, 1, wait_ms);
+            const p_err = linux.errno(p_rc);
+            if (p_err == .INTR) continue;
+            if (p_err != .SUCCESS) return .read_error;
+            if (p_rc == 0) {
+                // Poll timed out without readable data
+                if (getMonotonicMs() - start_ms >= 30_000) {
+                    return .deadline_timeout;
+                }
+                return .idle_timeout;
+            }
+            break;
+        }
+
+        while (true) {
+            const r_rc = linux.read(client_fd, dest.ptr, dest.len);
+            const r_err = linux.errno(r_rc);
+            if (r_err == .INTR) continue;
+            if (r_err != .SUCCESS) {
+                if (r_err == .AGAIN) {
+                    if (getMonotonicMs() - start_ms >= 30_000) return .deadline_timeout;
+                    return .idle_timeout;
+                }
+                return .read_error;
+            }
+            if (r_rc == 0) return .eof;
+            out_read.* = r_rc;
+            return .ok;
+        }
+    }
+
     /// Processes a single client connection.
     fn handleClient(self: *Server, client_fd: i32) void {
         defer {
@@ -167,32 +235,28 @@ pub const Server = struct {
             _ = linux.close(client_fd);
         }
 
-        var start_ts: linux.timespec = undefined;
-        _ = linux.clock_gettime(.MONOTONIC, &start_ts);
-
+        const start_ms = getMonotonicMs();
         var buf: [65536]u8 = undefined;
         var total_read: usize = 0;
 
-        // Read request header (bounded by 15s idle timeout and 30s overall deadline)
+        // Read request header (bounded by 15s idle timeout and strict 30s overall deadline)
         while (total_read < buf.len) {
-            var now_ts: linux.timespec = undefined;
-            _ = linux.clock_gettime(.MONOTONIC, &now_ts);
-            if (now_ts.sec - start_ts.sec > 30) {
-                self.sendError(client_fd, 408, "request_timeout", "Request read timed out (exceeded 30s deadline)");
-                return;
-            }
-
-            const r_rc = linux.read(client_fd, buf[total_read..].ptr, buf.len - total_read);
-            const err = linux.errno(r_rc);
-            if (err != .SUCCESS) {
-                if (err == .INTR) continue;
-                return;
-            }
-            if (r_rc == 0) break; // Client disconnected
-            total_read += r_rc;
-
-            if (std.mem.indexOf(u8, buf[0..total_read], "\r\n\r\n") != null) {
-                break;
+            var chunk_len: usize = 0;
+            const res = readChunkWithDeadline(client_fd, buf[total_read..], start_ms, &chunk_len);
+            switch (res) {
+                .ok => {
+                    total_read += chunk_len;
+                    if (std.mem.indexOf(u8, buf[0..total_read], "\r\n\r\n") != null) {
+                        break;
+                    }
+                },
+                .eof => break,
+                .idle_timeout => return, // Idle socket closes silently
+                .deadline_timeout => {
+                    self.sendError(client_fd, 408, "request_timeout", "Request read timed out (exceeded 30s deadline)");
+                    return;
+                },
+                .read_error => return,
             }
         }
 
@@ -312,22 +376,22 @@ pub const Server = struct {
             var body_read = body_part.len;
 
             while (body_read < cl) {
-                var now_ts: linux.timespec = undefined;
-                _ = linux.clock_gettime(.MONOTONIC, &now_ts);
-                if (now_ts.sec - start_ts.sec > 30) {
-                    self.sendError(client_fd, 408, "request_timeout", "Request body read timed out (exceeded 30s deadline)");
-                    return;
+                var chunk_len: usize = 0;
+                const res = readChunkWithDeadline(client_fd, body_buf[body_read..], start_ms, &chunk_len);
+                switch (res) {
+                    .ok => {
+                        body_read += chunk_len;
+                    },
+                    .eof => break,
+                    .idle_timeout, .deadline_timeout => {
+                        self.sendError(client_fd, 408, "request_timeout", "Request body read timed out (exceeded deadline)");
+                        return;
+                    },
+                    .read_error => {
+                        self.sendError(client_fd, 400, "read_error", "Failed to read full request body");
+                        return;
+                    },
                 }
-
-                const r_rc = linux.read(client_fd, body_buf[body_read..].ptr, cl - body_read);
-                const err = linux.errno(r_rc);
-                if (err != .SUCCESS) {
-                    if (err == .INTR) continue;
-                    self.sendError(client_fd, 400, "read_error", "Failed to read full request body");
-                    return;
-                }
-                if (r_rc == 0) break;
-                body_read += r_rc;
             }
 
             if (body_read < cl) {
@@ -725,4 +789,29 @@ test "Server GET /health over loopback TCP" {
         _ = linux.close(wake_fd);
     }
     thread.join();
+}
+
+test "readChunkWithDeadline immediate return on expired deadline (R8-01)" {
+    var dest_buf: [16]u8 = undefined;
+    var bytes_read: usize = 0;
+    const fake_past_start = Server.getMonotonicMs() - 35_000;
+    const status = Server.readChunkWithDeadline(0, &dest_buf, fake_past_start, &bytes_read);
+    try std.testing.expectEqual(Server.ReadResult.deadline_timeout, status);
+}
+
+test "readChunkWithDeadline caps poll wait to remaining deadline and returns deadline_timeout (R8-01)" {
+    var sv: [2]i32 = undefined;
+    const sp_rc = linux.socketpair(linux.AF.UNIX, linux.SOCK.STREAM, 0, &sv);
+    if (linux.errno(sp_rc) != .SUCCESS) return;
+    defer {
+        _ = linux.close(sv[0]);
+        _ = linux.close(sv[1]);
+    }
+
+    var dest_buf: [16]u8 = undefined;
+    var bytes_read: usize = 0;
+    // Set start time to 29.95s ago (only 50ms remaining before 30s deadline)
+    const near_deadline_start = Server.getMonotonicMs() - 29_950;
+    const status = Server.readChunkWithDeadline(sv[0], &dest_buf, near_deadline_start, &bytes_read);
+    try std.testing.expectEqual(Server.ReadResult.deadline_timeout, status);
 }

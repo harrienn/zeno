@@ -83,9 +83,14 @@ pub const DecisionEngine = struct {
 
         try Canvas.validateCandidates(self.tokenizer, req.candidates, candidate_tokens);
 
-        // 3. Early byte-length guard before formatting and tokenization (R7-05)
-        const context_len = if (req.context) |ctx| ctx.len else 0;
-        if (req.query.len + context_len > root.ModelConfig.max_prompt_bytes) {
+        // 3. Early byte-length guard before formatting and tokenization (R7-05, R8-02)
+        const preflight_prompt_bytes = Canvas.calculatePromptByteLength(
+            req.query,
+            req.context,
+            req.candidates,
+        ) orelse return error.CanvasOverflow;
+
+        if (preflight_prompt_bytes > root.ModelConfig.max_prompt_bytes) {
             return error.CanvasOverflow;
         }
 
@@ -97,9 +102,7 @@ pub const DecisionEngine = struct {
         );
         defer request_allocator.free(formatted_prompt);
 
-        if (formatted_prompt.len > root.ModelConfig.max_prompt_bytes) {
-            return error.CanvasOverflow;
-        }
+        std.debug.assert(formatted_prompt.len == preflight_prompt_bytes);
 
         const raw_prompt_tokens = try self.tokenizer.encode(request_allocator, formatted_prompt);
         defer request_allocator.free(raw_prompt_tokens);

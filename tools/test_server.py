@@ -259,8 +259,46 @@ def main():
         assert "http_version_not_supported" in raw_resp, f"Expected code http_version_not_supported"
         print("✓ Successfully verified wire error codes: empty_query, duplicate_candidate_label, invalid_schema_type, http_version_not_supported")
 
+        # Test 13: Oversized candidate label within HTTP limit (<64 KB) but >16 KiB prompt preflight (R8-02)
+        print("\n--- Test 13: Oversized candidate label preflight rejection (R8-02) ---")
+        huge_label = "L" * 17000  # 17 KB label, total body ~18 KB (< 64 KB HTTP cap)
+        status, data = test_request("POST", "/v1/systemone", body={
+            "query": "Is it valid?",
+            "schema": {
+                "type": "boolean",
+                "candidates": [
+                    {"token": "Yes", "label": huge_label},
+                    {"token": "No", "label": "No"}
+                ]
+            }
+        })
+        assert status == 400 and data.get("error", {}).get("code") == "canvas_overflow", f"Expected canvas_overflow, got status {status}: {data}"
+        print(f"✓ Correctly rejected oversized candidate label before formatting/tokenizing: {data}")
+
+        # Test 14: Client disconnects during body transmission
+        print("\n--- Test 14: Incomplete body handling ---")
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.connect((SERVER_HOST, SERVER_PORT))
+        s.sendall(b"POST /v1/systemone HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 100\r\n\r\n12345")
+        s.shutdown(socket.SHUT_WR)
+        resp_data = b""
+        s.settimeout(5.0)
+        try:
+            while True:
+                chunk = s.recv(4096)
+                if not chunk:
+                    break
+                resp_data += chunk
+        except Exception:
+            pass
+        s.close()
+        resp_str = resp_data.decode("utf-8", errors="replace")
+        assert "400 Bad Request" in resp_str, f"Expected 400, got: {resp_str[:100]}"
+        assert "incomplete_body" in resp_str, f"Expected incomplete_body in response"
+        print("✓ Correctly returned 400 Bad Request with incomplete_body on truncated client transmission")
+
         print("\n=======================================================")
-        print(" ALL HTTP SERVER INTEGRATION TESTS PASSED (12/12)")
+        print(" ALL HTTP SERVER INTEGRATION TESTS PASSED (14/14)")
         print("=======================================================")
 
     finally:
