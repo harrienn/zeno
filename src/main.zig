@@ -17,7 +17,11 @@ pub fn main(init: std.process.Init) !void {
     });
 
     const args = try init.minimal.args.toSlice(arena);
-    if (args.len > 1 and std.mem.eql(u8, args[1], "serve")) {
+    if (args.len > 1 and std.mem.eql(u8, args[1], "cuda-info")) {
+        try printCudaInfo(stdout_writer);
+        try stdout_writer.flush();
+        return;
+    } else if (args.len > 1 and std.mem.eql(u8, args[1], "serve")) {
         if (args.len < 3) {
             try stdout_writer.print("Usage: zeno serve <path/to/model.gguf> [--host <ip>] [--port <port>]\n", .{});
             try stdout_writer.flush();
@@ -405,9 +409,80 @@ pub fn main(init: std.process.Init) !void {
         try stdout_writer.print("  zeno [info] <path/to/model.gguf>\n", .{});
         try stdout_writer.print("  zeno decide <path/to/model.gguf> \"<query>\" [cand1] [cand2] ...\n", .{});
         try stdout_writer.print("  zeno serve <path/to/model.gguf> [--host <ip>] [--port <port>]\n", .{});
+        try stdout_writer.print("  zeno cuda-info\n", .{});
     }
 
     try stdout_writer.flush();
+}
+
+fn printCudaInfo(writer: anytype) !void {
+    try writer.print("\n======================================================================\n", .{});
+    try writer.print(" Zeno CUDA Hardware Topology & Capabilities\n", .{});
+    try writer.print("======================================================================\n", .{});
+
+    if (!zeno.cuda.is_enabled) {
+        try writer.print("CUDA Backend:        DISABLED in this binary build.\n", .{});
+        try writer.print("Target Architecture: none\n", .{});
+        try writer.print("\nTo enable CUDA support, rebuild with: zig build -Dcuda=true\n", .{});
+        try writer.print("======================================================================\n", .{});
+        return;
+    }
+
+    try writer.print("CUDA Backend:        ENABLED (Compiled with -Dcuda=true, {s})\n", .{zeno.cuda.target_arch});
+
+    const topo = zeno.cuda.getTopology() catch |err| {
+        try writer.print("Error querying CUDA device topology: {}\n", .{err});
+        try writer.print("======================================================================\n", .{});
+        return;
+    };
+
+    try writer.print("Visible Devices:     {d} (Reported: {d})\n", .{ topo.total_visible_devices, topo.reported_devices });
+
+    for (0..topo.reported_devices) |i| {
+        const dev = &topo.devices[i];
+        const total_mib = dev.total_memory_bytes / (1024 * 1024);
+        const free_mib = dev.free_memory_bytes / (1024 * 1024);
+        const total_gb = @as(f64, @floatFromInt(dev.total_memory_bytes)) / (1000.0 * 1000.0 * 1000.0);
+
+        try writer.print("\n[Device {d}]\n", .{dev.device_id});
+        try writer.print("  Model:             {s}\n", .{dev.name()});
+        try writer.print("  Compute Cap:       {d}.{d}\n", .{ dev.compute_major, dev.compute_minor });
+        try writer.print("  SM Count:          {d}\n", .{dev.multi_processor_count});
+        try writer.print("  Warp Size:         {d}\n", .{dev.warp_size});
+        try writer.print("  Total VRAM:        {d} MiB ({d:.2} GB)\n", .{ total_mib, total_gb });
+        try writer.print("  Free VRAM:         {d} MiB\n", .{free_mib});
+    }
+
+    if (topo.reported_devices > 0) {
+        try writer.print("\n----------------------------------------------------------------------\n", .{});
+        try writer.print(" Inter-GPU Peer-to-Peer (P2P) Access Capability Matrix:\n", .{});
+        try writer.print(" (Capability query only; does not imply P2P is currently enabled)\n", .{});
+        try writer.print("----------------------------------------------------------------------\n", .{});
+
+        // Header row
+        try writer.print("             ", .{});
+        for (0..topo.reported_devices) |j| {
+            try writer.print("    GPU {d}   ", .{j});
+        }
+        try writer.print("\n", .{});
+
+        // Matrix rows
+        for (0..topo.reported_devices) |i| {
+            try writer.print("  GPU {d}      ", .{i});
+            for (0..topo.reported_devices) |j| {
+                if (i == j) {
+                    try writer.print("      —       ", .{});
+                } else if (topo.devices[i].can_access_peer[j]) {
+                    try writer.print("   Capable    ", .{});
+                } else {
+                    try writer.print(" Not Capable  ", .{});
+                }
+            }
+            try writer.print("\n", .{});
+        }
+    }
+
+    try writer.print("======================================================================\n", .{});
 }
 
 fn parseCandidateSpecs(allocator: std.mem.Allocator, cand_args: []const []const u8) ![]zeno.CandidateSpec {

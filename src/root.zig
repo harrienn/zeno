@@ -15,6 +15,7 @@ pub const infer = @import("infer.zig");
 pub const engine = @import("engine.zig");
 pub const fixture = @import("fixture.zig");
 pub const server = @import("server.zig");
+pub const cuda = @import("cuda.zig");
 pub const build_options = @import("build_options");
 
 /// Returns true if heavy 26B full-model forward pass tests are enabled.
@@ -95,6 +96,7 @@ test {
     _ = engine;
     _ = fixture;
     _ = server;
+    _ = cuda;
 }
 
 test "model configuration invariants" {
