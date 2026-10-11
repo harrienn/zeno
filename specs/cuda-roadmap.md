@@ -49,7 +49,7 @@ When running on devices where individual VRAM is under 24 GB, Zeno partitions la
   │     - Dense FFN (GeGLU) + 128-expert MoE (top-8 routing)
   └── Activations & KV workspace: ~1.0 GB
          │
-         ▼  cudaMemcpyPeerAsync (P2P direct PCIe transfer: [N, 2816] activations, ~2.75–11.00 MiB / 2.88–11.53 MB in FP32 for N in [256, 1024]; sub-ms)
+         ▼  cudaMemcpyPeerAsync (P2P direct PCIe transfer: [N, 2816] activations, ~2.75–11.00 MiB / 2.88–11.53 MB in FP32 for N in [256, 1024]; estimated target latency < 1 ms over PCIe 4.0, subject to empirical measurement)
 [GPU 1: Device 1 — 12 GB VRAM] (Allocated: ~8.3 GB)
   ├── Transformer Blocks 15 through 29 (15 layers: ~6.8 GB)
   │     - Attention + Dense FFN + 128-expert MoE
@@ -113,7 +113,7 @@ When running on devices where individual VRAM is under 24 GB, Zeno partitions la
   * `src/infer_cuda.zig`: High-level GPU inference pipeline.
   * Enable direct P2P memory access: `cudaDeviceEnablePeerAccess(1, 0)` and `cudaDeviceEnablePeerAccess(0, 1)`.
   * Asynchronous stream coordination across Device 0 and Device 1.
-  * Layer boundary transfer: `cudaMemcpyPeerAsync` transfers $H_{15}$ ($[N, 2816]$ where $N = \text{prompt\_len} + 256 \le 1024$, taking $2.75$ to $11.00$ MiB / $2.88$ to $11.53$ MB in FP32; sub-ms over PCIe 4.0). FP16 activation transfer ($1.38$ to $5.50$ MiB) is retained as a proposed bandwidth optimization subject to empirical numerical tolerance testing (R10-02).
+  * Layer boundary transfer: `cudaMemcpyPeerAsync` transfers $H_{15}$ ($[N, 2816]$ where $N = \text{prompt\_len} + 256 \le 1024$, taking $2.75$ to $11.00$ MiB / $2.88$ to $11.53$ MB in FP32; estimated target latency < 1 ms over PCIe 4.0, subject to empirical measurement). FP16 activation transfer ($1.38$ to $5.50$ MiB) is retained as a proposed bandwidth optimization subject to empirical numerical tolerance testing (R10-02).
 * **Exit Gate**: Full 30-layer model forward pass executes across both GPUs without host intervention during inference.
 
 ### Stage 6: Parity Validation & Latency Benchmarks

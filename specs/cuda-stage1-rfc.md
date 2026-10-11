@@ -77,12 +77,13 @@ typedef struct {
     size_t free_memory_bytes;
     int multi_processor_count;
     int warp_size;
-    // can_access_peer[j] == 1 if device_id can directly read/write peer device j VRAM
+    // can_access_peer[j] == 1 if device_id can direct access peer device j VRAM (0 for self and non-capable peers)
     int can_access_peer[ZENO_CUDA_MAX_DEVICES];
 } ZenoCudaDeviceInfo;
 
 typedef struct {
-    int device_count;
+    int total_visible_devices; // Total devices reported by CUDA runtime
+    int reported_devices;      // Number of devices populated in devices[] (up to ZENO_CUDA_MAX_DEVICES)
     ZenoCudaDeviceInfo devices[ZENO_CUDA_MAX_DEVICES];
 } ZenoCudaTopology;
 
@@ -92,7 +93,10 @@ enum {
     ZENO_CUDA_ERR_NO_DEVICE = 1,
     ZENO_CUDA_ERR_DRIVER_ERROR = 2,
     ZENO_CUDA_ERR_INVALID_PARAM = 3,
-    ZENO_CUDA_ERR_NOT_INITIALIZED = 4,
+    ZENO_CUDA_ERR_DEVICE_PROP_FAILED = 4,
+    ZENO_CUDA_ERR_SET_DEVICE_FAILED = 5,
+    ZENO_CUDA_ERR_MEM_INFO_FAILED = 6,
+    ZENO_CUDA_ERR_PEER_QUERY_FAILED = 7,
     ZENO_CUDA_ERR_UNKNOWN = 99
 };
 
@@ -126,6 +130,10 @@ int zeno_cuda_get_device_count(int *out_count) {
         *out_count = 0;
         return (err == cudaErrorNoDevice) ? ZENO_CUDA_ERR_NO_DEVICE : ZENO_CUDA_ERR_DRIVER_ERROR;
     }
+    if (count == 0) {
+        *out_count = 0;
+        return ZENO_CUDA_ERR_NO_DEVICE;
+    }
     *out_count = count;
     return ZENO_CUDA_SUCCESS;
 }
@@ -136,49 +144,69 @@ int zeno_cuda_get_topology(ZenoCudaTopology *out_topo) {
 
     int count = 0;
     cudaError_t err = cudaGetDeviceCount(&count);
-    if (err != cudaSuccess || count == 0) {
+    if (err != cudaSuccess) {
         return (err == cudaErrorNoDevice) ? ZENO_CUDA_ERR_NO_DEVICE : ZENO_CUDA_ERR_DRIVER_ERROR;
     }
+    if (count == 0) {
+        return ZENO_CUDA_ERR_NO_DEVICE;
+    }
 
-    if (count > ZENO_CUDA_MAX_DEVICES) count = ZENO_CUDA_MAX_DEVICES;
-    out_topo->device_count = count;
+    out_topo->total_visible_devices = count;
+    const int reported = (count > ZENO_CUDA_MAX_DEVICES) ? ZENO_CUDA_MAX_DEVICES : count;
+    out_topo->reported_devices = reported;
 
-    for (int i = 0; i < count; i++) {
+    // Save caller's original device to restore upon return
+    int orig_device = 0;
+    if (cudaGetDevice(&orig_device) != cudaSuccess) {
+        orig_device = 0;
+    }
+
+    for (int i = 0; i < reported; i++) {
         ZenoCudaDeviceInfo *dev = &out_topo->devices[i];
         dev->device_id = i;
 
         cudaDeviceProp prop;
-        if (cudaGetDeviceProperties(&prop, i) == cudaSuccess) {
-            strncpy(dev->name, prop.name, sizeof(dev->name) - 1);
-            dev->major = prop.major;
-            dev->minor = prop.minor;
-            dev->multi_processor_count = prop.multiProcessorCount;
-            dev->warp_size = prop.warpSize;
-            dev->total_memory_bytes = prop.totalGlobalMem;
+        if (cudaGetDeviceProperties(&prop, i) != cudaSuccess) {
+            cudaSetDevice(orig_device);
+            return ZENO_CUDA_ERR_DEVICE_PROP_FAILED;
         }
 
-        // Query available free memory
-        cudaSetDevice(i);
+        strncpy(dev->name, prop.name, sizeof(dev->name) - 1);
+        dev->name[sizeof(dev->name) - 1] = '\0';
+        dev->major = prop.major;
+        dev->minor = prop.minor;
+        dev->multi_processor_count = prop.multiProcessorCount;
+        dev->warp_size = prop.warpSize;
+        dev->total_memory_bytes = prop.totalGlobalMem;
+
+        if (cudaSetDevice(i) != cudaSuccess) {
+            cudaSetDevice(orig_device);
+            return ZENO_CUDA_ERR_SET_DEVICE_FAILED;
+        }
+
         size_t free_bytes = 0, total_bytes = 0;
-        if (cudaMemGetInfo(&free_bytes, &total_bytes) == cudaSuccess) {
-            dev->free_memory_bytes = free_bytes;
+        if (cudaMemGetInfo(&free_bytes, &total_bytes) != cudaSuccess) {
+            cudaSetDevice(orig_device);
+            return ZENO_CUDA_ERR_MEM_INFO_FAILED;
         }
+        dev->free_memory_bytes = free_bytes;
 
-        // Query P2P peer access capabilities against all other devices
-        for (int j = 0; j < count; j++) {
+        // Query P2P peer access capabilities against reported devices
+        for (int j = 0; j < reported; j++) {
             if (i == j) {
-                dev->can_access_peer[j] = 1;
+                dev->can_access_peer[j] = 0; // Device is not its own peer
             } else {
                 int can_access = 0;
-                if (cudaDeviceCanAccessPeer(&can_access, i, j) == cudaSuccess) {
-                    dev->can_access_peer[j] = can_access;
-                } else {
-                    dev->can_access_peer[j] = 0;
+                if (cudaDeviceCanAccessPeer(&can_access, i, j) != cudaSuccess) {
+                    cudaSetDevice(orig_device);
+                    return ZENO_CUDA_ERR_PEER_QUERY_FAILED;
                 }
+                dev->can_access_peer[j] = can_access;
             }
         }
     }
 
+    cudaSetDevice(orig_device);
     return ZENO_CUDA_SUCCESS;
 }
 
@@ -186,9 +214,12 @@ const char *zeno_cuda_get_error_string(int error_code) {
     switch (error_code) {
         case ZENO_CUDA_SUCCESS: return "Success";
         case ZENO_CUDA_ERR_NO_DEVICE: return "No CUDA-capable device detected";
-        case ZENO_CUDA_ERR_DRIVER_ERROR: return "CUDA driver/runtime error";
+        case ZENO_CUDA_ERR_DRIVER_ERROR: return "CUDA driver or runtime error";
         case ZENO_CUDA_ERR_INVALID_PARAM: return "Invalid parameter passed to CUDA ABI";
-        case ZENO_CUDA_ERR_NOT_INITIALIZED: return "CUDA runtime not initialized";
+        case ZENO_CUDA_ERR_DEVICE_PROP_FAILED: return "Failed to query CUDA device properties";
+        case ZENO_CUDA_ERR_SET_DEVICE_FAILED: return "Failed to set active CUDA device";
+        case ZENO_CUDA_ERR_MEM_INFO_FAILED: return "Failed to query CUDA device memory information";
+        case ZENO_CUDA_ERR_PEER_QUERY_FAILED: return "Failed to query peer-to-peer access capability";
         default: return "Unknown CUDA error";
     }
 }
@@ -241,11 +272,16 @@ pub fn build(b: *std.Build) void {
     });
 
     if (enable_cuda) {
-        // Find nvcc compiler
+        // Find nvcc compiler and derive CUDA toolkit root directory
         const nvcc_path = b.findProgram(&.{"nvcc"}, &.{
             "/usr/local/cuda-13.3/bin",
             "/usr/local/cuda/bin",
         }) catch "nvcc";
+
+        // Derive toolkit root from nvcc path (e.g. /usr/local/cuda-13.3/bin/nvcc -> /usr/local/cuda-13.3)
+        const cuda_bin_dir = std.fs.path.dirname(nvcc_path) orelse "/usr/local/cuda/bin";
+        const cuda_root = std.fs.path.dirname(cuda_bin_dir) orelse "/usr/local/cuda";
+        const cuda_lib_dir = b.fmt("{s}/lib64", .{cuda_root});
 
         const arch_flag = b.fmt("-arch={s}", .{cuda_arch});
 
@@ -263,11 +299,9 @@ pub fn build(b: *std.Build) void {
         });
         const cuda_obj = nvcc_cmd.addOutputFileArg("zeno_cuda.o");
 
-        // Link CUDA object and runtime library into module and executable
-        zeno_mod.addObjectFile(cuda_obj);
+        // Single link owner: attach CUDA object and runtime library directly to executable
         exe.root_module.addObjectFile(cuda_obj);
-
-        exe.root_module.addLibraryPath(.{ .cwd_relative = "/usr/local/cuda/lib64" });
+        exe.root_module.addLibraryPath(.{ .cwd_relative = cuda_lib_dir });
         exe.root_module.linkSystemLibrary("cudart", .{});
         exe.root_module.link_libc = true;
     }
@@ -279,7 +313,7 @@ pub fn build(b: *std.Build) void {
 
 ### 3.4 Zig Host API (`src/cuda.zig`)
 
-Provides typed, ergonomic Zig access to the C ABI:
+Provides typed, ergonomic Zig access to the C ABI with value-type stack storage:
 
 ```zig
 const std = @import("std");
@@ -291,14 +325,18 @@ pub const CudaError = error{
     NoDevice,
     DriverError,
     InvalidParam,
-    NotInitialized,
+    DevicePropFailed,
+    SetDeviceFailed,
+    MemInfoFailed,
+    PeerQueryFailed,
     UnknownError,
     CudaDisabledAtBuild,
 };
 
 pub const DeviceInfo = struct {
     device_id: i32,
-    name: []const u8,
+    name_buf: [256]u8,
+    name_len: usize,
     compute_major: i32,
     compute_minor: i32,
     total_memory_bytes: usize,
@@ -306,18 +344,23 @@ pub const DeviceInfo = struct {
     multi_processor_count: i32,
     warp_size: i32,
     can_access_peer: [8]bool,
+
+    pub fn name(self: *const DeviceInfo) []const u8 {
+        return self.name_buf[0..self.name_len];
+    }
 };
 
 pub const Topology = struct {
+    total_visible_devices: usize,
+    reported_devices: usize,
     devices: [8]DeviceInfo,
-    count: usize,
 };
 
 pub fn getTopology() CudaError!Topology {
     if (!is_enabled) {
         return error.CudaDisabledAtBuild;
     }
-    // Call C ABI zeno_cuda_get_topology and convert to Zig struct
+    // Call C ABI zeno_cuda_get_topology, copy name inline, and convert to Zig struct
     ...
 }
 ```
@@ -331,7 +374,7 @@ When invoked, `zeno cuda-info` outputs human-readable hardware topology:
  Zeno CUDA Hardware Topology & Capabilities
 ======================================================================
 CUDA Backend:        ENABLED (Compiled with -Dcuda=true, sm_86)
-Detected Devices:    2
+Visible Devices:     2 (Reported: 2)
 
 [Device 0]
   Model:             NVIDIA GeForce RTX 3060
@@ -350,11 +393,12 @@ Detected Devices:    2
   Free VRAM:         12,275 MiB
 
 ----------------------------------------------------------------------
- Inter-GPU Peer-to-Peer (P2P) Direct Memory Access Matrix:
+ Inter-GPU Peer-to-Peer (P2P) Access Capability Matrix:
+ (Capability query only; does not imply P2P is currently enabled)
 ----------------------------------------------------------------------
-          GPU 0   GPU 1
-  GPU 0     YES     YES (Direct PCIe Access)
-  GPU 1     YES     YES (Direct PCIe Access)
+              GPU 0        GPU 1
+  GPU 0         —         Capable
+  GPU 1      Capable         —
 ======================================================================
 ```
 
@@ -374,9 +418,9 @@ Stage 1 exit gates conform to [`specs/cuda-roadmap.md`](cuda-roadmap.md) §3:
    - `zig build` compiles without invoking `nvcc` and without linking C/CUDA libraries.
    - `zig build test` passes all 44 unit tests with 0 memory leaks.
 2. **Gate 2: Native CUDA Build**:
-   - `zig build -Dcuda=true` successfully invokes `nvcc`, compiles `zeno_cuda.cu`, and links `libcudart`.
+   - `zig build -Dcuda=true` successfully invokes `nvcc`, compiles `zeno_cuda.cu`, and links `libcudart` from the derived toolkit path.
 3. **Gate 3: Device Discovery Execution**:
-   - `./zig-out/bin/zeno cuda-info` executes cleanly, detecting both RTX 3060 GPUs, compute capability 8.6, and peer access status.
+   - `./zig-out/bin/zeno cuda-info` executes cleanly, correctly detecting all visible CUDA devices on the test host and their peer-access capability (decoupled from fixed dual-GPU count; dual-GPU setup is validated when available).
 4. **Gate 4: Integration Safety**:
    - All 14 HTTP server tests (`python3 tools/test_server.py`) continue to pass without regression.
 
@@ -387,3 +431,4 @@ Stage 1 exit gates conform to [`specs/cuda-roadmap.md`](cuda-roadmap.md) §3:
 Upon review approval and Stage 1 verification:
 - **Stage 2**: Device memory allocation wrappers (`src/cuda_mem.zig`) and fused elementwise kernels (`src/cuda/ops.cu`: `rms_norm`, `rope`, `geglu`).
 - **Stage 3**: Quantized GEMV dot products (`Q4_K`, `Q6_K`, `Q8_0`).
+
