@@ -160,11 +160,17 @@ def main():
         assert "Duplicate Content-Length" in raw_resp
         print("✓ Correctly rejected duplicate Content-Length with 400 Bad Request")
 
-        # Test 8: Raw HTTP framing: Transfer-Encoding chunked (R6-06)
-        print("\n--- Test 8: Transfer-Encoding chunked rejection (501 Not Implemented) ---")
+        # Test 8: Raw HTTP framing: Transfer-Encoding rejection (R6-06, R9-02)
+        print("\n--- Test 8: Transfer-Encoding rejection (501 Not Implemented) ---")
         raw_resp = send_raw_http(b"POST /v1/systemone HTTP/1.1\r\nHost: 127.0.0.1\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n")
         assert "501 Not Implemented" in raw_resp, f"Expected 501, got: {raw_resp[:100]}"
+        assert "Transfer-Encoding is not supported" in raw_resp, f"Expected error message, got: {raw_resp[:200]}"
         print("✓ Correctly rejected chunked transfer encoding with 501 Not Implemented")
+
+        raw_resp_gzip = send_raw_http(b"POST /v1/systemone HTTP/1.1\r\nHost: 127.0.0.1\r\nTransfer-Encoding: gzip\r\n\r\n")
+        assert "501 Not Implemented" in raw_resp_gzip, f"Expected 501, got: {raw_resp_gzip[:100]}"
+        assert "Transfer-Encoding is not supported" in raw_resp_gzip, f"Expected error message, got: {raw_resp_gzip[:200]}"
+        print("✓ Correctly rejected non-chunked (gzip) transfer encoding with 501 Not Implemented")
 
         # Test 9: Prompt size bounding: Canvas Overflow (R6-03)
         print("\n--- Test 9: Prompt size bounding (Canvas Overflow) ---")

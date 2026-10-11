@@ -138,7 +138,7 @@ All non-200 responses return a standard RFC 8259-compliant JSON error object:
 | `411 Length Required` | `length_required` | POST request omitted `Content-Length` header. |
 | `413 Payload Too Large` | `payload_too_large` | Request body exceeds maximum allowed buffer size (64 KiB). |
 | `500 Internal Server Error` | `internal_error` | Internal engine or inference failure. |
-| `501 Not Implemented` | `not_implemented` | Request uses unsupported `Transfer-Encoding: chunked`. |
+| `501 Not Implemented` | `not_implemented` | Request specifies a `Transfer-Encoding` header (all transfer codings, including `chunked`, are unsupported). |
 | `505 Version Not Supported` | `http_version_not_supported` | Request line specifies an HTTP version other than `HTTP/1.0` or `HTTP/1.1`. |
 
 ### 3.4 Wire Format, Escaping & Numerical Precision

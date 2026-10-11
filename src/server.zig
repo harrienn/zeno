@@ -174,22 +174,20 @@ pub const Server = struct {
         return @as(i64, ts.sec) * 1000 + @divTrunc(ts.nsec, 1_000_000);
     }
 
-    /// Reads up to dest.len bytes with strict idle timeout (15s) and capped absolute deadline (30s) (R8-01).
+    /// Returns the remaining deadline in milliseconds (<= 30s), or null if the 30s absolute deadline has expired (R9-01).
+    fn getRemainingDeadlineMs(start_ms: i64) ?i64 {
+        const elapsed_ms = getMonotonicMs() - start_ms;
+        if (elapsed_ms >= 30_000) return null;
+        return 30_000 - elapsed_ms;
+    }
+
+    /// Reads up to dest.len bytes with strict idle timeout (15s) and capped absolute deadline (30s) (R8-01, R9-01).
     fn readChunkWithDeadline(
         client_fd: i32,
         dest: []u8,
         start_ms: i64,
         out_read: *usize,
     ) ReadResult {
-        const now_ms = getMonotonicMs();
-        const elapsed_ms = now_ms - start_ms;
-        if (elapsed_ms >= 30_000) {
-            return .deadline_timeout;
-        }
-
-        const remaining_deadline_ms = 30_000 - elapsed_ms;
-        const wait_ms: i32 = @intCast(@min(@as(i64, 15_000), remaining_deadline_ms));
-
         var pfd = [1]linux.pollfd{.{
             .fd = client_fd,
             .events = linux.POLL.IN,
@@ -197,13 +195,16 @@ pub const Server = struct {
         }};
 
         while (true) {
+            const remaining_ms = getRemainingDeadlineMs(start_ms) orelse return .deadline_timeout;
+            const wait_ms: i32 = @intCast(@min(@as(i64, 15_000), remaining_ms));
+
             const p_rc = linux.poll(&pfd, 1, wait_ms);
             const p_err = linux.errno(p_rc);
-            if (p_err == .INTR) continue;
+            if (p_err == .INTR) continue; // Recompute monotonic time and remaining deadline (R9-01)
             if (p_err != .SUCCESS) return .read_error;
             if (p_rc == 0) {
                 // Poll timed out without readable data
-                if (getMonotonicMs() - start_ms >= 30_000) {
+                if (getRemainingDeadlineMs(start_ms) == null) {
                     return .deadline_timeout;
                 }
                 return .idle_timeout;
@@ -212,12 +213,16 @@ pub const Server = struct {
         }
 
         while (true) {
+            if (getRemainingDeadlineMs(start_ms) == null) {
+                return .deadline_timeout;
+            }
+
             const r_rc = linux.read(client_fd, dest.ptr, dest.len);
             const r_err = linux.errno(r_rc);
-            if (r_err == .INTR) continue;
+            if (r_err == .INTR) continue; // Recheck deadline after interruption (R9-01)
             if (r_err != .SUCCESS) {
                 if (r_err == .AGAIN) {
-                    if (getMonotonicMs() - start_ms >= 30_000) return .deadline_timeout;
+                    if (getRemainingDeadlineMs(start_ms) == null) return .deadline_timeout;
                     return .idle_timeout;
                 }
                 return .read_error;
@@ -320,7 +325,7 @@ pub const Server = struct {
         }
 
         if (has_transfer_encoding) {
-            self.sendError(client_fd, 501, "not_implemented", "Transfer-Encoding (chunked) is not supported");
+            self.sendError(client_fd, 501, "not_implemented", "Transfer-Encoding is not supported");
             return;
         }
 
@@ -815,3 +820,19 @@ test "readChunkWithDeadline caps poll wait to remaining deadline and returns dea
     const status = Server.readChunkWithDeadline(sv[0], &dest_buf, near_deadline_start, &bytes_read);
     try std.testing.expectEqual(Server.ReadResult.deadline_timeout, status);
 }
+
+test "getRemainingDeadlineMs bounds and expiration (R9-01)" {
+    const now = Server.getMonotonicMs();
+    // Fresh start: remaining should be approximately 30_000ms
+    const rem_fresh = Server.getRemainingDeadlineMs(now);
+    try std.testing.expect(rem_fresh != null);
+    try std.testing.expect(rem_fresh.? <= 30_000 and rem_fresh.? >= 29_900);
+
+    // Expired start: 30s or more ago
+    const expired_start = now - 30_000;
+    try std.testing.expectEqual(@as(?i64, null), Server.getRemainingDeadlineMs(expired_start));
+
+    const way_past_start = now - 35_000;
+    try std.testing.expectEqual(@as(?i64, null), Server.getRemainingDeadlineMs(way_past_start));
+}
+
