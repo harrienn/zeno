@@ -233,6 +233,11 @@ const char *zeno_cuda_get_error_string(int error_code) {
 }
 ```
 
+> **Device Restoration Precedence Rule (R13-01)**:
+> - On the normal exit path, failure to restore the caller's initial active device returns `ZENO_CUDA_ERR_RESTORE_DEVICE_FAILED` (`error.RestoreDeviceFailed`).
+> - If a fatal query error occurs while inspecting an enumerated device (such as `cudaMemGetInfo` or `cudaGetDeviceProperties` failing), the function performs best-effort restoration of `orig_device` before returning the primary query error. The primary query error takes precedence; if restoration also fails on that error path, the caller's active device may remain altered.
+
+
 ### 3.3 Build System Integration (`build.zig`)
 
 `build.zig` receives two configurable options:
