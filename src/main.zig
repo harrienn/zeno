@@ -18,8 +18,9 @@ pub fn main(init: std.process.Init) !void {
 
     const args = try init.minimal.args.toSlice(arena);
     if (args.len > 1 and std.mem.eql(u8, args[1], "cuda-info")) {
-        try printCudaInfo(stdout_writer);
+        const res = printCudaInfo(stdout_writer);
         try stdout_writer.flush();
+        try res;
         return;
     } else if (args.len > 1 and std.mem.eql(u8, args[1], "serve")) {
         if (args.len < 3) {
@@ -433,7 +434,7 @@ fn printCudaInfo(writer: anytype) !void {
     const topo = zeno.cuda.getTopology() catch |err| {
         try writer.print("Error querying CUDA device topology: {}\n", .{err});
         try writer.print("======================================================================\n", .{});
-        return;
+        return err;
     };
 
     try writer.print("Visible Devices:     {d} (Reported: {d})\n", .{ topo.total_visible_devices, topo.reported_devices });

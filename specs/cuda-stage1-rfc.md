@@ -378,6 +378,9 @@ pub fn getTopology() CudaError!Topology {
 }
 ```
 
+> **Unit Test Portability Rule (R14-02)**:
+> In `src/cuda.zig`, the CUDA-enabled unit test `cuda module topology query when enabled` catches `error.NoDevice` and `error.DriverError` and returns `error.SkipZigTest`. This ensures `zig build test -Dcuda=true` passes cleanly on toolkit-only or headless build environments lacking an accessible GPU, while validating physical topology when GPU hardware is present.
+
 ### 3.5 CLI Subcommand (`zeno cuda-info`)
 
 When invoked, `zeno cuda-info` outputs human-readable hardware topology:
@@ -421,6 +424,10 @@ Zeno CUDA backend is DISABLED in this binary build.
 To enable CUDA support, rebuild with: zig build -Dcuda=true
 ```
 
+> **CLI Exit Code Contract (R14-01)**:
+> - Running `zeno cuda-info` against a binary built with `-Dcuda=false` prints the informational notice and exits successfully (`exit code 0`).
+> - When built with `-Dcuda=true`, any runtime failure from `getTopology()` (e.g. `error.NoDevice`, driver initialization errors) prints diagnostic context to stdout, flushes the writer buffer, and propagates the error so the process exits with a non-zero failure code (`exit code 1`). CI scripts checking exit status will correctly detect query failures.
+
 ---
 
 ## 4. Verification & Acceptance Criteria
@@ -429,11 +436,13 @@ Stage 1 exit gates conform to [`specs/cuda-roadmap.md`](cuda-roadmap.md) §3:
 
 1. **Gate 1: Default Build Isolation**:
    - `zig build` compiles without invoking `nvcc` and without linking C/CUDA libraries.
-   - `zig build test` passes all 44 unit tests with 0 memory leaks.
-2. **Gate 2: Native CUDA Build**:
+   - `zig build test` passes all unit tests (46 passed, 3 model tests skipped) with 0 memory leaks.
+2. **Gate 2: Native CUDA Build & Portable Unit Testing**:
    - `zig build -Dcuda=true` successfully invokes `nvcc`, compiles `zeno_cuda.cu`, and links `libcudart` from the derived toolkit path.
-3. **Gate 3: Device Discovery Execution**:
-   - `./zig-out/bin/zeno cuda-info` executes cleanly, correctly detecting all visible CUDA devices on the test host and their peer-access capability (decoupled from fixed dual-GPU count; dual-GPU setup is validated when available).
+   - `zig build test -Dcuda=true` succeeds on both GPU-equipped hosts (validating device properties) and toolkit-only hosts (skipping hardware query cleanly via `error.SkipZigTest`).
+3. **Gate 3: Device Discovery Execution & Exit Status**:
+   - `./zig-out/bin/zeno cuda-info` executes cleanly, correctly detecting all visible CUDA devices on the test host and their peer-access capability with exit code 0.
+   - Queries with missing devices (`CUDA_VISIBLE_DEVICES=""`) print diagnostic failure and terminate with non-zero exit code.
 4. **Gate 4: Integration Safety**:
    - All 14 HTTP server tests (`python3 tools/test_server.py`) continue to pass without regression.
 
