@@ -152,9 +152,7 @@ Exit condition:
 
 A seeded canvas query produces CPU results that match the chosen reference behavior within documented tolerances; calibration is evaluated on a labeled dataset and reported separately from normalization and entropy.
 
-**Implementation gate.** Before forward-pass implementation, U-01 through U-08, U-15, and U-18 in [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) must be `resolved` or explicitly `accepted-with-fallback`. U-04 also gates completion of Phase 2 `encode()`. Accepted fallbacks must be recorded with scope and risk; they permit implementation only and do not establish semantic correctness or parity. U-11 through U-14 must be `resolved` before parity fixtures are admissible.
-
-**Parity gate.** A parity claim requires all Phase 3 implementation questions and parity questions U-09 through U-18 and U-22/U-23 to be `resolved` with evidence, plus independently captured reference fixtures and validated per-field comparisons. U-11 pins the vLLM oracle; U-12 pins llama.cpp. All gating questions U-01 through U-23 are now `resolved` with evidence, and golden fixture `specs/fixtures/system_health_boolean.json` passes regression validation under `zeno.tolerance/v1`.
+**Parity gate.** A parity claim requires all Phase 3 implementation questions and parity questions U-09 through U-18 and U-22/U-23 to be `resolved` with evidence, plus independently captured reference fixtures and validated per-field comparisons. U-11 pins the vLLM oracle; U-12 pins llama.cpp. Implementation gating questions U-01 through U-18 and U-23 are resolved with evidence; all 5 golden fixtures reproduce exact discrete decisions and calibration bounds. However, external reference logit parity gates U-13 and U-22 remain open in [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) due to measured raw-logit differences against GGML SIMD dequantization. Per [`AGENTS.md`](AGENTS.md) §5, the internal CPU implementation serves as the authoritative semantic baseline for subsequent backend work while external raw-logit reconciliation proceeds.
 
 Parity is asserted exclusively through the golden-fixture format in [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) §5.
 
@@ -204,32 +202,35 @@ Zeno can execute end-to-end structured decision queries on the CPU reference pat
 
 Goal:
 
-Accelerate structured reads using CUDA and multi-GPU tensor parallelism while strictly preserving the established semantic behavior.
+Accelerate structured reads using CUDA while strictly preserving the established semantic behavior of the CPU reference implementation.
 
 Research topics informed by the [separate experimental community patch for llama.cpp PR #24423](https://github.com/readwrightexecute/llamacpp-diffusiongemma-multigpu):
 
+* **Single-device baseline**: establish end-to-end correctness, operator coverage, and precise memory footprint on a single GPU first;
 * **Prompt cache lifetime**: establish which context can be reused and whether reuse applies within a query, across steps, or across queries;
-* **Device-resident self-conditioning**: measure whether retaining state on GPU devices across steps helps the chosen execution path;
-* **Sharding strategy**: compare layer and tensor splits for the target model and supported hardware; the community patch tests a specific two-GPU layer split;
-* **Communication cost**: measure transfer and collective costs before choosing an optimization.
+* **Device-resident self-conditioning**: measure whether retaining state on GPU devices across steps helps the chosen execution path (Phase 4+);
+* **Multi-GPU decomposition**: evaluate pipeline layer splitting across available devices if memory fit requires sharding; the community patch tests a specific two-GPU layer split;
+* **Communication cost**: measure P2P transfer latency over PCIe before relying on multi-GPU pipelining.
 
 Approach:
 
 ```text
-CPU reference
+CPU reference implementation (semantic ground truth)
       ↓
-CUDA single-device forward pass
+CUDA build integration & device discovery spike (-Dcuda, nvcc, C ABI)
       ↓
-Multi-GPU tensor parallel sharding
+Single-device elementwise and quantized GEMV kernels (Q4_K, Q6_K, Q8_0)
       ↓
-verify numerical equivalence with reference
+Single-device transformer forward pass
       ↓
-latency profiling & benchmarking
+Multi-GPU pipeline layer splitting (if sharding required by memory)
+      ↓
+latency profiling & reproducible benchmarking
 ```
 
 Exit condition:
 
-CUDA and multi-GPU execution produces decisions and candidate metrics within documented tolerances of the CPU reference implementation; any throughput and latency gains are demonstrated by reproducible benchmarks.
+CUDA execution produces decisions and candidate metrics matching the CPU reference implementation within documented numerical tolerances; any throughput and latency gains are demonstrated by reproducible benchmarks.
 
 ---
 
@@ -334,12 +335,10 @@ Implement and validate the CPU representation of one denoising step.
 **Current objective:**
 
 ```text
-Record the exact artifact chat template and reproduce its prompt/canvas layout, then capture independent reference fixtures and establish evidence-based comparison bounds, closing U-05, U-13, and U-22.
+Conduct a bounded CUDA toolchain and device discovery spike (Stage 1), establishing nvcc build integration, C ABI headers, and visible device query while preserving zero-dependency CPU-only builds.
 ```
 
-This is deliberately a verification task rather than a model implementation task. Several open questions may be answerable by inspecting the pinned references, but their answers must be recorded with concrete source evidence. No Phase 3 parity claim is valid until the relevant contracts, artifact provenance, fixtures, and comparison rules are in place.
-
-Avoid parallel architectural changes while the active objective is unresolved.
+This active objective focuses on build and device discovery infrastructure without premature multi-GPU or tensor parallelism commitments. External reference logit parity gates (U-13, U-22) remain open in `specs/UNRESOLVED.md` and are evaluated against CPU execution, while the CPU implementation serves as the authoritative semantic baseline for CUDA kernel development (per `AGENTS.md` §5).
 
 ---
 

@@ -49,7 +49,7 @@ When running on devices where individual VRAM is under 24 GB, Zeno partitions la
   │     - Dense FFN (GeGLU) + 128-expert MoE (top-8 routing)
   └── Activations & KV workspace: ~1.0 GB
          │
-         ▼  cudaMemcpyPeerAsync (P2P direct PCIe transfer: [N, 2816] activations, ~2.88–5.77 MB in FP32; sub-ms)
+         ▼  cudaMemcpyPeerAsync (P2P direct PCIe transfer: [N, 2816] activations, ~2.75–11.00 MiB / 2.88–11.53 MB in FP32 for N in [256, 1024]; sub-ms)
 [GPU 1: Device 1 — 12 GB VRAM] (Allocated: ~8.3 GB)
   ├── Transformer Blocks 15 through 29 (15 layers: ~6.8 GB)
   │     - Attention + Dense FFN + 128-expert MoE
@@ -67,13 +67,13 @@ When running on devices where individual VRAM is under 24 GB, Zeno partitions la
 ## 3. Phased Implementation Stages
 
 ### Stage 1: Build Pipeline & Device Topology Discovery
-* **Goal**: Enable `zig build` to detect `nvcc`, compile native CUDA C++ sources into a static archive (`libzeno_cuda.a`), link it into the `zeno` executable, and verify dual-GPU topology.
+* **Goal**: Enable `zig build` to detect `nvcc`, compile native CUDA C++ sources into a static archive (`libzeno_cuda.a`), link it into the `zeno` executable, and report device topology (GPU models, compute capabilities, free/total VRAM, and P2P peer access matrix) while keeping the CPU-only build functional when CUDA is absent.
 * **Deliverables**:
-  * [`build.zig`](../build.zig) updated with `-Dcuda` flag (auto-detects `/usr/local/cuda-13.3/bin/nvcc`).
+  * [`build.zig`](../build.zig) updated with `-Dcuda` flag (defaulting to false or auto-detecting `/usr/local/cuda/bin/nvcc`, preserving zero-dependency CPU builds).
   * `src/cuda/zeno_cuda.h` defining the C-ABI function prototypes.
   * `src/cuda/zeno_cuda.cu` implementing device query functions.
-  * CLI command `zeno cuda-info` reporting GPU names, compute capabilities, free VRAM, and P2P peer access status.
-* **Exit Gate**: `zig build` compiles cleanly, and `zeno cuda-info` detects both RTX 3060 devices with P2P access confirmed.
+  * CLI command `zeno cuda-info` reporting GPU names, compute capabilities, free VRAM, and P2P peer access status across visible devices.
+* **Exit Gate**: `zig build` compiles cleanly, CPU-only build remains fully functional, and `zeno cuda-info` successfully queries visible CUDA devices and reports their capabilities and peer-access matrix.
 
 ### Stage 2: Device Memory Management & Fused Elementwise Kernels
 * **Goal**: Establish GPU memory buffers in Zig and implement core elementwise vector operations on CUDA.
@@ -87,11 +87,12 @@ When running on devices where individual VRAM is under 24 GB, Zeno partitions la
 * **Exit Gate**: Zig unit tests comparing each CUDA kernel against CPU reference implementations in `src/ops.zig` with numerical tolerance $\le 10^{-5}$.
 
 ### Stage 3: Quantized Matrix-Vector Multiplication (GEMV)
-* **Goal**: Implement high-throughput matrix-vector kernels for quantized weights.
+* **Goal**: Implement high-throughput matrix-vector kernels for quantized weights in the active inference path.
 * **Deliverables**:
-  * `src/cuda/gemv_q4k.cu`: Warp-parallel matrix-vector multiplication for Q4_K_M blocks using `__shfl_sync` warp reduction.
-  * `src/cuda/gemv_q5_0.cu`: Q5_0 dot product for expert down projection.
-  * `src/cuda/gemv_q6k.cu`: Q6_K dot product for token embeddings and candidate logit projection.
+  * `src/cuda/gemv_q4k.cu`: Warp-parallel matrix-vector multiplication for Q4_K_M blocks using `__shfl_sync` warp reduction (attention Q/K/O, shared FFN gate/up, MoE `ffn_gate_up_exps.weight`).
+  * `src/cuda/gemv_q8_0.cu`: Q8_0 dot product for shared FFN down (`ffn_down.weight`) and MoE expert down (`ffn_down_exps.weight`) (R10-01).
+  * `src/cuda/gemv_q6k.cu`: Q6_K dot product for token embeddings (`token_embd.weight`), attention V (`blk.{i}.attn_v.weight` in SWA layers), and candidate logit projection.
+  * *(Deferred to Phase 4+)* `src/cuda/gemv_q5_0.cu`: Q5_0 dot product for self-conditioning down projection (`self_cond_down.weight`), bypassed in one-step reads.
 * **Exit Gate**: Numerical agreement tests comparing GPU GEMV output against CPU `ops.gemvTensor` within quantization precision tolerance.
 
 ### Stage 4: Unified Attention & MoE Expert Execution
@@ -107,19 +108,20 @@ When running on devices where individual VRAM is under 24 GB, Zeno partitions la
 * **Exit Gate**: Single transformer layer forward pass on GPU matches CPU layer output.
 
 ### Stage 5: 2-GPU Pipeline Layer Split
-* **Goal**: Partition the 30-layer model across Device 0 (layers 0–14) and Device 1 (layers 15–29) and execute via asynchronous P2P transfer.
+* **Goal**: Partition the 30-layer model across Device 0 (layers 0–14) and Device 1 (layers 15–29) and execute via asynchronous P2P transfer (gated on dual-GPU availability and confirmed P2P capability).
 * **Deliverables**:
   * `src/infer_cuda.zig`: High-level GPU inference pipeline.
   * Enable direct P2P memory access: `cudaDeviceEnablePeerAccess(1, 0)` and `cudaDeviceEnablePeerAccess(0, 1)`.
   * Asynchronous stream coordination across Device 0 and Device 1.
-  * Layer boundary transfer: `cudaMemcpyPeerAsync` transfers $H_{15}$ ($[N, 2816]$ where $N = \text{prompt\_len} + 256$, ~2.88–5.77 MB in FP32) from Device 0 to Device 1. FP16 activation transfer is retained as a proposed bandwidth optimization subject to empirical numerical tolerance testing.
+  * Layer boundary transfer: `cudaMemcpyPeerAsync` transfers $H_{15}$ ($[N, 2816]$ where $N = \text{prompt\_len} + 256 \le 1024$, taking $2.75$ to $11.00$ MiB / $2.88$ to $11.53$ MB in FP32; sub-ms over PCIe 4.0). FP16 activation transfer ($1.38$ to $5.50$ MiB) is retained as a proposed bandwidth optimization subject to empirical numerical tolerance testing (R10-02).
 * **Exit Gate**: Full 30-layer model forward pass executes across both GPUs without host intervention during inference.
 
 ### Stage 6: Parity Validation & Latency Benchmarks
 * **Goal**: Integrate CUDA backend into `DecisionEngine` and validate against golden fixtures.
 * **Deliverables**:
+  * Implement explicit backend selection in the CLI (`zeno decide-fixture --backend=[cpu|cuda]`) and add `--backend` flag support to `tools/verify_all_oracles.sh` (R10-03).
   * Run `./tools/verify_all_oracles.sh --backend=cuda`.
-  * Verify 5/5 discrete decision matches (`Yes`, `Medium`, `No`, `Low`, `5`).
+  * Verify 5/5 discrete decision matches (`Yes`, `Medium`, `No`, `Low`, `5`) against CPU reference engine.
   * Evaluate candidate logits and probabilities against reference oracle records.
   * Reproducible latency benchmarks measuring single-query decision latency (target: sub-100ms).
-* **Exit Gate**: All golden fixtures evaluated, discrete decisions aligned, and reproducible performance benchmark registered in documentation.
+* **Exit Gate**: All golden fixtures evaluated, discrete decisions aligned, verifier reports executed engine, and reproducible performance benchmark registered in documentation.
