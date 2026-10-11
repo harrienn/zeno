@@ -67,7 +67,7 @@ When running on devices where individual VRAM is under 24 GB, Zeno partitions la
 ## 3. Phased Implementation Stages
 
 ### Stage 1: Build Pipeline & Device Topology Discovery
-* **Goal**: Enable `zig build` to detect `nvcc`, compile native CUDA C++ sources into a static archive (`libzeno_cuda.a`), link it into the `zeno` executable, and report device topology (GPU models, compute capabilities, free/total VRAM, and P2P peer access matrix) while keeping the CPU-only build functional when CUDA is absent.
+* **Goal**: Enable `zig build` to detect `nvcc`, compile native CUDA C++ sources into an object file (`zeno_cuda.o`), link it directly into the `zeno` executable, and report device topology (GPU models, compute capabilities, free/total VRAM, and P2P peer access matrix) while keeping the CPU-only build functional when CUDA is absent.
 * **Deliverables**:
   * [`build.zig`](../build.zig) updated with `-Dcuda` flag (defaulting to false or auto-detecting `/usr/local/cuda/bin/nvcc`, preserving zero-dependency CPU builds).
   * `src/cuda/zeno_cuda.h` defining the C-ABI function prototypes.

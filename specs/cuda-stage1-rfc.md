@@ -15,7 +15,7 @@ This RFC specifies **Stage 1** of the Zeno CUDA backend. Its purpose is to estab
 
 ### Key Objectives
 1. **Zero-Dependency CPU Build Invariant**: Building Zeno without `-Dcuda` (`zig build`, `zig build test`) remains 100% pure Zig with zero C/C++ compiler or library dependencies.
-2. **Explicit C ABI Boundary**: Native GPU code is written in standard CUDA C++ (`.cu`) compiled with `nvcc` into an object file/library, accessed from Zig through a minimal, extern-C header (`zeno_cuda.h`).
+2. **Explicit C ABI Boundary**: Native GPU code is written in standard CUDA C++ (`.cu`) compiled with `nvcc` into an object file (`zeno_cuda.o`) linked directly into the `zeno` executable, accessed from Zig through a minimal, extern-C header (`zeno_cuda.h`).
 3. **Decoupled Topology Discovery**: Query and report visible GPU devices and inter-device P2P direct memory access capabilities via CLI (`zeno cuda-info`), without making multi-GPU availability a hard blocker for single-GPU kernel development (per Codex Review Round 10 finding R10-05).
 4. **Deterministic Stack Memory**: All topology structures are value-allocated on the stack; zero dynamic heap allocations are performed during device query.
 
@@ -93,10 +93,12 @@ enum {
     ZENO_CUDA_ERR_NO_DEVICE = 1,
     ZENO_CUDA_ERR_DRIVER_ERROR = 2,
     ZENO_CUDA_ERR_INVALID_PARAM = 3,
-    ZENO_CUDA_ERR_DEVICE_PROP_FAILED = 4,
-    ZENO_CUDA_ERR_SET_DEVICE_FAILED = 5,
-    ZENO_CUDA_ERR_MEM_INFO_FAILED = 6,
-    ZENO_CUDA_ERR_PEER_QUERY_FAILED = 7,
+    ZENO_CUDA_ERR_GET_DEVICE_FAILED = 4,
+    ZENO_CUDA_ERR_DEVICE_PROP_FAILED = 5,
+    ZENO_CUDA_ERR_SET_DEVICE_FAILED = 6,
+    ZENO_CUDA_ERR_MEM_INFO_FAILED = 7,
+    ZENO_CUDA_ERR_PEER_QUERY_FAILED = 8,
+    ZENO_CUDA_ERR_RESTORE_DEVICE_FAILED = 9,
     ZENO_CUDA_ERR_UNKNOWN = 99
 };
 
@@ -155,10 +157,10 @@ int zeno_cuda_get_topology(ZenoCudaTopology *out_topo) {
     const int reported = (count > ZENO_CUDA_MAX_DEVICES) ? ZENO_CUDA_MAX_DEVICES : count;
     out_topo->reported_devices = reported;
 
-    // Save caller's original device to restore upon return
+    // Record caller's current device before enumeration; fail immediately if device state cannot be queried
     int orig_device = 0;
     if (cudaGetDevice(&orig_device) != cudaSuccess) {
-        orig_device = 0;
+        return ZENO_CUDA_ERR_GET_DEVICE_FAILED;
     }
 
     for (int i = 0; i < reported; i++) {
@@ -167,7 +169,7 @@ int zeno_cuda_get_topology(ZenoCudaTopology *out_topo) {
 
         cudaDeviceProp prop;
         if (cudaGetDeviceProperties(&prop, i) != cudaSuccess) {
-            cudaSetDevice(orig_device);
+            (void)cudaSetDevice(orig_device); // best-effort restore
             return ZENO_CUDA_ERR_DEVICE_PROP_FAILED;
         }
 
@@ -180,13 +182,13 @@ int zeno_cuda_get_topology(ZenoCudaTopology *out_topo) {
         dev->total_memory_bytes = prop.totalGlobalMem;
 
         if (cudaSetDevice(i) != cudaSuccess) {
-            cudaSetDevice(orig_device);
+            (void)cudaSetDevice(orig_device); // best-effort restore
             return ZENO_CUDA_ERR_SET_DEVICE_FAILED;
         }
 
         size_t free_bytes = 0, total_bytes = 0;
         if (cudaMemGetInfo(&free_bytes, &total_bytes) != cudaSuccess) {
-            cudaSetDevice(orig_device);
+            (void)cudaSetDevice(orig_device); // best-effort restore
             return ZENO_CUDA_ERR_MEM_INFO_FAILED;
         }
         dev->free_memory_bytes = free_bytes;
@@ -198,7 +200,7 @@ int zeno_cuda_get_topology(ZenoCudaTopology *out_topo) {
             } else {
                 int can_access = 0;
                 if (cudaDeviceCanAccessPeer(&can_access, i, j) != cudaSuccess) {
-                    cudaSetDevice(orig_device);
+                    (void)cudaSetDevice(orig_device); // best-effort restore
                     return ZENO_CUDA_ERR_PEER_QUERY_FAILED;
                 }
                 dev->can_access_peer[j] = can_access;
@@ -206,7 +208,9 @@ int zeno_cuda_get_topology(ZenoCudaTopology *out_topo) {
         }
     }
 
-    cudaSetDevice(orig_device);
+    if (cudaSetDevice(orig_device) != cudaSuccess) {
+        return ZENO_CUDA_ERR_RESTORE_DEVICE_FAILED;
+    }
     return ZENO_CUDA_SUCCESS;
 }
 
@@ -216,10 +220,12 @@ const char *zeno_cuda_get_error_string(int error_code) {
         case ZENO_CUDA_ERR_NO_DEVICE: return "No CUDA-capable device detected";
         case ZENO_CUDA_ERR_DRIVER_ERROR: return "CUDA driver or runtime error";
         case ZENO_CUDA_ERR_INVALID_PARAM: return "Invalid parameter passed to CUDA ABI";
+        case ZENO_CUDA_ERR_GET_DEVICE_FAILED: return "Failed to query current active CUDA device";
         case ZENO_CUDA_ERR_DEVICE_PROP_FAILED: return "Failed to query CUDA device properties";
         case ZENO_CUDA_ERR_SET_DEVICE_FAILED: return "Failed to set active CUDA device";
         case ZENO_CUDA_ERR_MEM_INFO_FAILED: return "Failed to query CUDA device memory information";
         case ZENO_CUDA_ERR_PEER_QUERY_FAILED: return "Failed to query peer-to-peer access capability";
+        case ZENO_CUDA_ERR_RESTORE_DEVICE_FAILED: return "Failed to restore original active CUDA device";
         default: return "Unknown CUDA error";
     }
 }
@@ -325,10 +331,12 @@ pub const CudaError = error{
     NoDevice,
     DriverError,
     InvalidParam,
+    GetDeviceFailed,
     DevicePropFailed,
     SetDeviceFailed,
     MemInfoFailed,
     PeerQueryFailed,
+    RestoreDeviceFailed,
     UnknownError,
     CudaDisabledAtBuild,
 };
