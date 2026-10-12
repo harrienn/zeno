@@ -340,7 +340,7 @@ int zeno_cuda_gemv_q8_0(
     void *stream
 ) {
     if (!W || !x || !out) return ZENO_CUDA_ERR_INVALID_PARAM;
-    if (out_dim <= 0 || in_dim <= 0 || batch_size <= 0) return ZENO_CUDA_ERR_INVALID_PARAM;
+    if (out_dim <= 0 || in_dim <= 0 || batch_size <= 0 || batch_size > 65535) return ZENO_CUDA_ERR_INVALID_PARAM;
     if ((in_dim % 32) != 0) return ZENO_CUDA_ERR_INVALID_PARAM;
 
     int blocks_per_row = in_dim / 32;
@@ -385,7 +385,7 @@ int zeno_cuda_gemv_q4k(
     void *stream
 ) {
     if (!W || !x || !out) return ZENO_CUDA_ERR_INVALID_PARAM;
-    if (out_dim <= 0 || in_dim <= 0 || batch_size <= 0) return ZENO_CUDA_ERR_INVALID_PARAM;
+    if (out_dim <= 0 || in_dim <= 0 || batch_size <= 0 || batch_size > 65535) return ZENO_CUDA_ERR_INVALID_PARAM;
     if ((in_dim % 256) != 0) return ZENO_CUDA_ERR_INVALID_PARAM;
 
     int blocks_per_row = in_dim / 256;
@@ -430,7 +430,7 @@ int zeno_cuda_gemv_q6k(
     void *stream
 ) {
     if (!W || !x || !out) return ZENO_CUDA_ERR_INVALID_PARAM;
-    if (out_dim <= 0 || in_dim <= 0 || batch_size <= 0) return ZENO_CUDA_ERR_INVALID_PARAM;
+    if (out_dim <= 0 || in_dim <= 0 || batch_size <= 0 || batch_size > 65535) return ZENO_CUDA_ERR_INVALID_PARAM;
     if ((in_dim % 256) != 0) return ZENO_CUDA_ERR_INVALID_PARAM;
 
     int blocks_per_row = in_dim / 256;
@@ -475,7 +475,7 @@ int zeno_cuda_gemv_q5_0(
     void *stream
 ) {
     if (!W || !x || !out) return ZENO_CUDA_ERR_INVALID_PARAM;
-    if (out_dim <= 0 || in_dim <= 0 || batch_size <= 0) return ZENO_CUDA_ERR_INVALID_PARAM;
+    if (out_dim <= 0 || in_dim <= 0 || batch_size <= 0 || batch_size > 65535) return ZENO_CUDA_ERR_INVALID_PARAM;
     if ((in_dim % 32) != 0) return ZENO_CUDA_ERR_INVALID_PARAM;
 
     int blocks_per_row = in_dim / 32;

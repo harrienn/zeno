@@ -96,9 +96,8 @@ pub const Server = struct {
             self.listen_fd = null;
         }
 
-        // Wait up to 500ms for active connections to finish cleanly
-        var wait_ms: usize = 0;
-        while (self.active_connections.load(.acquire) > 0 and wait_ms < 500) : (wait_ms += 10) {
+        // Wait cleanly for all active connections to drain (R21-02)
+        while (self.active_connections.load(.acquire) > 0) {
             const ts = std.posix.timespec{ .sec = 0, .nsec = 10_000_000 };
             _ = std.posix.system.nanosleep(&ts, null);
         }
@@ -165,7 +164,23 @@ pub const Server = struct {
 
             const client_fd: i32 = @intCast(client_rc);
 
-            if (self.active_connections.load(.acquire) >= max_active_connections) {
+            if (self.should_stop.load(.acquire)) {
+                _ = linux.close(client_fd);
+                break;
+            }
+
+            // Atomically reserve a connection slot before spawning a worker (R21-01)
+            var cur_conns = self.active_connections.load(.monotonic);
+            const reserved = while (true) {
+                if (cur_conns >= max_active_connections) break false;
+                if (self.active_connections.cmpxchgWeak(cur_conns, cur_conns + 1, .acquire, .monotonic)) |actual| {
+                    cur_conns = actual;
+                } else {
+                    break true;
+                }
+            };
+
+            if (!reserved) {
                 self.sendError(client_fd, 503, "service_unavailable", "Server connection capacity reached");
                 _ = linux.shutdown(client_fd, linux.SHUT.WR);
                 _ = linux.close(client_fd);
@@ -178,6 +193,7 @@ pub const Server = struct {
             _ = linux.setsockopt(client_fd, linux.SOL.SOCKET, linux.SO.SNDTIMEO, @ptrCast(&tv), @sizeOf(linux.timeval));
 
             const thread = std.Thread.spawn(.{}, workerConnectionHandler, .{ self, client_fd }) catch {
+                _ = self.active_connections.fetchSub(1, .release);
                 self.sendError(client_fd, 503, "service_unavailable", "Server busy: unable to spawn connection worker");
                 _ = linux.shutdown(client_fd, linux.SHUT.WR);
                 _ = linux.close(client_fd);
@@ -188,7 +204,6 @@ pub const Server = struct {
     }
 
     fn workerConnectionHandler(self: *Server, client_fd: i32) void {
-        _ = self.active_connections.fetchAdd(1, .release);
         defer _ = self.active_connections.fetchSub(1, .release);
         self.handleClient(client_fd);
     }
@@ -214,8 +229,9 @@ pub const Server = struct {
         return 30_000 - elapsed_ms;
     }
 
-    /// Reads up to dest.len bytes with strict idle timeout (15s) and capped absolute deadline (30s) (R8-01, R9-01).
+    /// Reads up to dest.len bytes with strict idle timeout (15s) and capped absolute deadline (30s) (R8-01, R9-01, R21-02).
     fn readChunkWithDeadline(
+        self: ?*Server,
         client_fd: i32,
         dest: []u8,
         start_ms: i64,
@@ -227,20 +243,33 @@ pub const Server = struct {
             .revents = 0,
         }};
 
+        const poll_start_ms = getMonotonicMs();
+
         while (true) {
+            if (self) |s| {
+                if (s.should_stop.load(.acquire)) return .read_error;
+            }
+
             const remaining_ms = getRemainingDeadlineMs(start_ms) orelse return .deadline_timeout;
-            const wait_ms: i32 = @intCast(@min(@as(i64, 15_000), remaining_ms));
+            // Poll in bounded slices of at most 250ms to check should_stop promptly (R21-02)
+            const wait_ms: i32 = @intCast(@min(@as(i64, 250), @min(@as(i64, 15_000), remaining_ms)));
 
             const p_rc = linux.poll(&pfd, 1, wait_ms);
             const p_err = linux.errno(p_rc);
             if (p_err == .INTR) continue; // Recompute monotonic time and remaining deadline (R9-01)
             if (p_err != .SUCCESS) return .read_error;
             if (p_rc == 0) {
-                // Poll timed out without readable data
+                // Poll slice timed out without readable data
+                if (self) |s| {
+                    if (s.should_stop.load(.acquire)) return .read_error;
+                }
                 if (getRemainingDeadlineMs(start_ms) == null) {
                     return .deadline_timeout;
                 }
-                return .idle_timeout;
+                if (getMonotonicMs() - poll_start_ms >= 15_000) {
+                    return .idle_timeout;
+                }
+                continue;
             }
             break;
         }
@@ -280,7 +309,7 @@ pub const Server = struct {
         // Read request header (bounded by 15s idle timeout and strict 30s overall deadline)
         while (total_read < buf.len) {
             var chunk_len: usize = 0;
-            const res = readChunkWithDeadline(client_fd, buf[total_read..], start_ms, &chunk_len);
+            const res = readChunkWithDeadline(self, client_fd, buf[total_read..], start_ms, &chunk_len);
             switch (res) {
                 .ok => {
                     total_read += chunk_len;
@@ -415,7 +444,7 @@ pub const Server = struct {
 
             while (body_read < cl) {
                 var chunk_len: usize = 0;
-                const res = readChunkWithDeadline(client_fd, body_buf[body_read..], start_ms, &chunk_len);
+                const res = readChunkWithDeadline(self, client_fd, body_buf[body_read..], start_ms, &chunk_len);
                 switch (res) {
                     .ok => {
                         body_read += chunk_len;
@@ -914,7 +943,7 @@ test "readChunkWithDeadline immediate return on expired deadline (R8-01)" {
     var dest_buf: [16]u8 = undefined;
     var bytes_read: usize = 0;
     const fake_past_start = Server.getMonotonicMs() - 35_000;
-    const status = Server.readChunkWithDeadline(0, &dest_buf, fake_past_start, &bytes_read);
+    const status = Server.readChunkWithDeadline(null, 0, &dest_buf, fake_past_start, &bytes_read);
     try std.testing.expectEqual(Server.ReadResult.deadline_timeout, status);
 }
 
@@ -931,7 +960,7 @@ test "readChunkWithDeadline caps poll wait to remaining deadline and returns dea
     var bytes_read: usize = 0;
     // Set start time to 29.95s ago (only 50ms remaining before 30s deadline)
     const near_deadline_start = Server.getMonotonicMs() - 29_950;
-    const status = Server.readChunkWithDeadline(sv[0], &dest_buf, near_deadline_start, &bytes_read);
+    const status = Server.readChunkWithDeadline(null, sv[0], &dest_buf, near_deadline_start, &bytes_read);
     try std.testing.expectEqual(Server.ReadResult.deadline_timeout, status);
 }
 

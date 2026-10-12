@@ -144,6 +144,9 @@ For a single answer slot and turn close ($|\text{template}| + 1 = 2$), vLLM exec
 
 ### 6.2 Empirical Benchmark Results (ReleaseFast CPU)
 
+> [!NOTE]
+> **Preliminary Exploratory Scope (R21-04)**: The latency numbers and discrete decision agreement recorded below are preliminary, exploratory single-sample observations on CPU (ReleaseFast) evaluated against the local CPU $C=256$ baseline run. They are not warm-up averaged distributions or comparisons against an independent oracle runtime. The default remains $C=256$.
+
 The table below records empirical latency (ms) and discrete decision agreement across all 5 golden fixtures for $C \in \{16, 32, 64, 128, 256\}$ on CPU:
 
 | Fixture | Prompt $P$ | Baseline $C=256$ Latency | $C=16$ Latency | $C=16$ Speedup | $C=16$ Agreement | Intermediate $C \in \{32..128\}$ Notes |
@@ -156,6 +159,6 @@ The table below records empirical latency (ms) and discrete decision agreement a
 
 ### 6.3 Invariants & Operational Guidance
 
-1. **Exact Decision Parity at $C=16$**: Across all 5 golden fixtures, $C=16$ produces **100% discrete decision agreement** with the $C=256$ baseline while achieving a **$3.2\times$ to $6.4\times$ latency reduction** on CPU.
+1. **Decision Parity at $C=16$ on Fixture Suite**: Across the 5 golden fixtures evaluated, $C=16$ produces **100% discrete decision agreement** with the local $C=256$ CPU run while achieving a **$3.2\times$ to $6.4\times$ latency reduction** on CPU. Broader decision and numerical stability across larger evaluation datasets remain unestablished.
 2. **Intermediate Instability**: Canvas widths $C \in \{32, 64, 128\}$ exhibit representation drift due to intermediate ratios of unmasked `PAD` tokens in bidirectional attention. Intermediate canvas widths should not be used arbitrarily.
 3. **API Contract**: The default canvas width remains $C = 256$ to preserve exact fixture regression parity. Applications requiring low-latency CPU System One decisions may supply `canvas_length: 16` in `DecisionRequest`, `options.canvas_length: 16` in POST `/v1/systemone`, or `--canvas 16` via CLI.

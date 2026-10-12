@@ -433,7 +433,7 @@ pub fn gemvQ8_0(
     if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
     if (out_dim == 0 or in_dim == 0 or batch_size == 0) return error.InvalidParam;
     if (in_dim % quant.QK8_0 != 0) return error.InvalidParam;
-    if (out_dim > std.math.maxInt(c_int) or in_dim > std.math.maxInt(c_int) or batch_size > std.math.maxInt(c_int)) {
+    if (out_dim > std.math.maxInt(c_int) or in_dim > std.math.maxInt(c_int) or batch_size > 65535) {
         return error.InvalidParam;
     }
 
@@ -485,7 +485,7 @@ pub fn gemvQ4_K(
     if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
     if (out_dim == 0 or in_dim == 0 or batch_size == 0) return error.InvalidParam;
     if (in_dim % quant.QK_K != 0) return error.InvalidParam;
-    if (out_dim > std.math.maxInt(c_int) or in_dim > std.math.maxInt(c_int) or batch_size > std.math.maxInt(c_int)) {
+    if (out_dim > std.math.maxInt(c_int) or in_dim > std.math.maxInt(c_int) or batch_size > 65535) {
         return error.InvalidParam;
     }
 
@@ -537,7 +537,7 @@ pub fn gemvQ6_K(
     if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
     if (out_dim == 0 or in_dim == 0 or batch_size == 0) return error.InvalidParam;
     if (in_dim % quant.QK_K != 0) return error.InvalidParam;
-    if (out_dim > std.math.maxInt(c_int) or in_dim > std.math.maxInt(c_int) or batch_size > std.math.maxInt(c_int)) {
+    if (out_dim > std.math.maxInt(c_int) or in_dim > std.math.maxInt(c_int) or batch_size > 65535) {
         return error.InvalidParam;
     }
 
@@ -589,7 +589,7 @@ pub fn gemvQ5_0(
     if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
     if (out_dim == 0 or in_dim == 0 or batch_size == 0) return error.InvalidParam;
     if (in_dim % quant.QK5_0 != 0) return error.InvalidParam;
-    if (out_dim > std.math.maxInt(c_int) or in_dim > std.math.maxInt(c_int) or batch_size > std.math.maxInt(c_int)) {
+    if (out_dim > std.math.maxInt(c_int) or in_dim > std.math.maxInt(c_int) or batch_size > 65535) {
         return error.InvalidParam;
     }
 
@@ -1720,4 +1720,7 @@ test "CUDA GEMV dimension validation and error conditions" {
 
     // Size mismatch (d_x.len is 256, but in_dim 32 * batch 1 expects len 32)
     try std.testing.expectError(error.InvalidParam, gemvQ8_0(d_w.slice(), d_x.slice(), d_out.slice(), 32, 32, 1, null));
+
+    // R21-03: batch_size exceeding 65535 grid-Y limit should error InvalidParam
+    try std.testing.expectError(error.InvalidParam, gemvQ8_0(d_w.slice(), d_x.slice(), d_out.slice(), 32, 32, 65536, null));
 }
