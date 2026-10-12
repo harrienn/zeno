@@ -2,6 +2,7 @@
 #include <cuda_runtime.h>
 #include <math.h>
 #include <stddef.h>
+#include <stdint.h>
 
 static inline int set_cuda_device(int device_id, int *orig_device) {
     if (device_id < 0) return ZENO_CUDA_ERR_INVALID_DEVICE;
@@ -24,8 +25,31 @@ static inline int set_cuda_device(int device_id, int *orig_device) {
     return ZENO_CUDA_SUCCESS;
 }
 
-static inline void restore_cuda_device(int orig_device) {
-    (void)cudaSetDevice(orig_device);
+static inline int restore_cuda_device(int orig_device, int op_status) {
+    cudaError_t err = cudaSetDevice(orig_device);
+    if (op_status != ZENO_CUDA_SUCCESS) {
+        // Operation failed: preserve primary error
+        return op_status;
+    }
+    // Operation succeeded: check restoration error
+    if (err != cudaSuccess) {
+        return ZENO_CUDA_ERR_RESTORE_DEVICE_FAILED;
+    }
+    return ZENO_CUDA_SUCCESS;
+}
+
+static inline bool ranges_overlap(const void *p1, size_t n1, const void *p2, size_t n2) {
+    if (!p1 || !p2 || n1 == 0 || n2 == 0) return false;
+    uintptr_t s1 = (uintptr_t)p1;
+    uintptr_t e1 = s1 + n1;
+    uintptr_t s2 = (uintptr_t)p2;
+    uintptr_t e2 = s2 + n2;
+    return (s1 < e2 && s2 < e1);
+}
+
+static inline bool partial_overlap(const void *p1, size_t n1, const void *p2, size_t n2) {
+    if (p1 == p2) return false; // Exact alias is permitted
+    return ranges_overlap(p1, n1, p2, n2);
 }
 
 static inline int next_power_of_two(int n) {
@@ -191,11 +215,11 @@ int zeno_cuda_malloc(void **out_ptr, size_t bytes, int device_id) {
     if (rc != ZENO_CUDA_SUCCESS) return rc;
 
     cudaError_t err = cudaMalloc(out_ptr, bytes);
-    restore_cuda_device(orig);
+    int op_rc = ZENO_CUDA_SUCCESS;
+    if (err == cudaErrorMemoryAllocation) op_rc = ZENO_CUDA_ERR_OUT_OF_MEMORY;
+    else if (err != cudaSuccess) op_rc = ZENO_CUDA_ERR_DRIVER_ERROR;
 
-    if (err == cudaErrorMemoryAllocation) return ZENO_CUDA_ERR_OUT_OF_MEMORY;
-    if (err != cudaSuccess) return ZENO_CUDA_ERR_DRIVER_ERROR;
-    return ZENO_CUDA_SUCCESS;
+    return restore_cuda_device(orig, op_rc);
 }
 
 int zeno_cuda_free(void *ptr, int device_id) {
@@ -205,10 +229,9 @@ int zeno_cuda_free(void *ptr, int device_id) {
     if (rc != ZENO_CUDA_SUCCESS) return rc;
 
     cudaError_t err = cudaFree(ptr);
-    restore_cuda_device(orig);
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_DRIVER_ERROR : ZENO_CUDA_SUCCESS;
 
-    if (err != cudaSuccess) return ZENO_CUDA_ERR_DRIVER_ERROR;
-    return ZENO_CUDA_SUCCESS;
+    return restore_cuda_device(orig, op_rc);
 }
 
 int zeno_cuda_memcpy_h2d(void *dst, const void *src, size_t bytes, int device_id) {
@@ -220,10 +243,9 @@ int zeno_cuda_memcpy_h2d(void *dst, const void *src, size_t bytes, int device_id
     if (rc != ZENO_CUDA_SUCCESS) return rc;
 
     cudaError_t err = cudaMemcpy(dst, src, bytes, cudaMemcpyHostToDevice);
-    restore_cuda_device(orig);
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_COPY_FAILED : ZENO_CUDA_SUCCESS;
 
-    if (err != cudaSuccess) return ZENO_CUDA_ERR_COPY_FAILED;
-    return ZENO_CUDA_SUCCESS;
+    return restore_cuda_device(orig, op_rc);
 }
 
 int zeno_cuda_memcpy_d2h(void *dst, const void *src, size_t bytes, int device_id) {
@@ -235,10 +257,9 @@ int zeno_cuda_memcpy_d2h(void *dst, const void *src, size_t bytes, int device_id
     if (rc != ZENO_CUDA_SUCCESS) return rc;
 
     cudaError_t err = cudaMemcpy(dst, src, bytes, cudaMemcpyDeviceToHost);
-    restore_cuda_device(orig);
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_COPY_FAILED : ZENO_CUDA_SUCCESS;
 
-    if (err != cudaSuccess) return ZENO_CUDA_ERR_COPY_FAILED;
-    return ZENO_CUDA_SUCCESS;
+    return restore_cuda_device(orig, op_rc);
 }
 
 int zeno_cuda_memcpy_d2d(void *dst, const void *src, size_t bytes, int device_id) {
@@ -250,10 +271,9 @@ int zeno_cuda_memcpy_d2d(void *dst, const void *src, size_t bytes, int device_id
     if (rc != ZENO_CUDA_SUCCESS) return rc;
 
     cudaError_t err = cudaMemcpy(dst, src, bytes, cudaMemcpyDeviceToDevice);
-    restore_cuda_device(orig);
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_COPY_FAILED : ZENO_CUDA_SUCCESS;
 
-    if (err != cudaSuccess) return ZENO_CUDA_ERR_COPY_FAILED;
-    return ZENO_CUDA_SUCCESS;
+    return restore_cuda_device(orig, op_rc);
 }
 
 int zeno_cuda_memset(void *dst, int value, size_t bytes, int device_id) {
@@ -265,10 +285,9 @@ int zeno_cuda_memset(void *dst, int value, size_t bytes, int device_id) {
     if (rc != ZENO_CUDA_SUCCESS) return rc;
 
     cudaError_t err = cudaMemset(dst, value, bytes);
-    restore_cuda_device(orig);
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_DRIVER_ERROR : ZENO_CUDA_SUCCESS;
 
-    if (err != cudaSuccess) return ZENO_CUDA_ERR_DRIVER_ERROR;
-    return ZENO_CUDA_SUCCESS;
+    return restore_cuda_device(orig, op_rc);
 }
 
 int zeno_cuda_stream_create(void **out_stream, int device_id) {
@@ -280,11 +299,14 @@ int zeno_cuda_stream_create(void **out_stream, int device_id) {
 
     cudaStream_t s = NULL;
     cudaError_t err = cudaStreamCreateWithFlags(&s, cudaStreamNonBlocking);
-    restore_cuda_device(orig);
+    int op_rc = ZENO_CUDA_SUCCESS;
+    if (err != cudaSuccess) {
+        op_rc = ZENO_CUDA_ERR_STREAM_FAILED;
+    } else {
+        *out_stream = (void *)s;
+    }
 
-    if (err != cudaSuccess) return ZENO_CUDA_ERR_STREAM_FAILED;
-    *out_stream = (void *)s;
-    return ZENO_CUDA_SUCCESS;
+    return restore_cuda_device(orig, op_rc);
 }
 
 int zeno_cuda_stream_destroy(void *stream, int device_id) {
@@ -295,16 +317,20 @@ int zeno_cuda_stream_destroy(void *stream, int device_id) {
     if (rc != ZENO_CUDA_SUCCESS) return rc;
 
     cudaError_t err = cudaStreamDestroy((cudaStream_t)stream);
-    restore_cuda_device(orig);
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_STREAM_FAILED : ZENO_CUDA_SUCCESS;
 
-    if (err != cudaSuccess) return ZENO_CUDA_ERR_STREAM_FAILED;
-    return ZENO_CUDA_SUCCESS;
+    return restore_cuda_device(orig, op_rc);
 }
 
-int zeno_cuda_stream_sync(void *stream) {
+int zeno_cuda_stream_sync(void *stream, int device_id) {
+    int orig = 0;
+    int rc = set_cuda_device(device_id, &orig);
+    if (rc != ZENO_CUDA_SUCCESS) return rc;
+
     cudaError_t err = stream ? cudaStreamSynchronize((cudaStream_t)stream) : cudaStreamSynchronize(0);
-    if (err != cudaSuccess) return ZENO_CUDA_ERR_STREAM_FAILED;
-    return ZENO_CUDA_SUCCESS;
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_STREAM_FAILED : ZENO_CUDA_SUCCESS;
+
+    return restore_cuda_device(orig, op_rc);
 }
 
 int zeno_cuda_rms_norm(
@@ -323,10 +349,12 @@ int zeno_cuda_rms_norm(
     if (eps <= 0.0f) return ZENO_CUDA_ERR_INVALID_PARAM;
     if (num_rows == 0) return ZENO_CUDA_SUCCESS;
 
-    // Check partial overlap when buffers are not identical (in-place out == x is supported)
-    if (out != x) {
-        size_t total = (size_t)num_rows * (size_t)dim;
-        if (out < x + total && x < out + total) return ZENO_CUDA_ERR_INVALID_PARAM;
+    size_t total_bytes = (size_t)num_rows * (size_t)dim * sizeof(float);
+    if (partial_overlap(out, total_bytes, x, total_bytes)) return ZENO_CUDA_ERR_INVALID_PARAM;
+    if (weight) {
+        size_t dim_bytes = (size_t)dim * sizeof(float);
+        if (partial_overlap(out, total_bytes, weight, dim_bytes)) return ZENO_CUDA_ERR_INVALID_PARAM;
+        if (partial_overlap(x, total_bytes, weight, dim_bytes)) return ZENO_CUDA_ERR_INVALID_PARAM;
     }
 
     int orig = 0;
@@ -340,10 +368,9 @@ int zeno_cuda_rms_norm(
 
     rms_norm_kernel<<<grid, block, 0, custream>>>(x, weight, out, num_rows, dim, eps);
     cudaError_t err = cudaGetLastError();
-    restore_cuda_device(orig);
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED : ZENO_CUDA_SUCCESS;
 
-    if (err != cudaSuccess) return ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED;
-    return ZENO_CUDA_SUCCESS;
+    return restore_cuda_device(orig, op_rc);
 }
 
 int zeno_cuda_geglu(
@@ -358,12 +385,11 @@ int zeno_cuda_geglu(
     if (count > (((size_t)1 << 31) - 1)) return ZENO_CUDA_ERR_INVALID_PARAM;
     if (count == 0) return ZENO_CUDA_SUCCESS;
 
-    // Check partial overlap when buffers are not identical (in-place out == gate or out == up is supported)
-    if (out != gate && out != up) {
-        if ((out < gate + count && gate < out + count) || (out < up + count && up < out + count)) {
-            return ZENO_CUDA_ERR_INVALID_PARAM;
-        }
-    }
+    size_t bytes = count * sizeof(float);
+    // Disallow partial overlap between any pair. Exact in-place aliases are permitted.
+    if (partial_overlap(out, bytes, gate, bytes)) return ZENO_CUDA_ERR_INVALID_PARAM;
+    if (partial_overlap(out, bytes, up, bytes)) return ZENO_CUDA_ERR_INVALID_PARAM;
+    if (partial_overlap(gate, bytes, up, bytes)) return ZENO_CUDA_ERR_INVALID_PARAM;
 
     int orig = 0;
     int rc = set_cuda_device(device_id, &orig);
@@ -375,10 +401,9 @@ int zeno_cuda_geglu(
 
     geglu_kernel<<<num_blocks, block_size, 0, custream>>>(gate, up, out, count);
     cudaError_t err = cudaGetLastError();
-    restore_cuda_device(orig);
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED : ZENO_CUDA_SUCCESS;
 
-    if (err != cudaSuccess) return ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED;
-    return ZENO_CUDA_SUCCESS;
+    return restore_cuda_device(orig, op_rc);
 }
 
 int zeno_cuda_rope(
@@ -400,6 +425,12 @@ int zeno_cuda_rope(
     if (theta <= 0.0f) return ZENO_CUDA_ERR_INVALID_PARAM;
     if (num_tokens == 0) return ZENO_CUDA_SUCCESS;
 
+    if (freq_factors) {
+        size_t vec_bytes = (size_t)num_tokens * (size_t)num_heads * (size_t)head_dim * sizeof(float);
+        size_t ff_bytes = ((size_t)head_dim / 2) * sizeof(float);
+        if (ranges_overlap(vec, vec_bytes, freq_factors, ff_bytes)) return ZENO_CUDA_ERR_INVALID_PARAM;
+    }
+
     int orig = 0;
     int rc = set_cuda_device(device_id, &orig);
     if (rc != ZENO_CUDA_SUCCESS) return rc;
@@ -410,10 +441,9 @@ int zeno_cuda_rope(
 
     rope_kernel<<<grid, block, 0, custream>>>(vec, num_heads, head_dim, pos_offset, theta, freq_factors);
     cudaError_t err = cudaGetLastError();
-    restore_cuda_device(orig);
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED : ZENO_CUDA_SUCCESS;
 
-    if (err != cudaSuccess) return ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED;
-    return ZENO_CUDA_SUCCESS;
+    return restore_cuda_device(orig, op_rc);
 }
 
 int zeno_cuda_add_residual(
@@ -428,8 +458,8 @@ int zeno_cuda_add_residual(
     if (count > (((size_t)1 << 31) - 1)) return ZENO_CUDA_ERR_INVALID_PARAM;
     if (count == 0) return ZENO_CUDA_SUCCESS;
 
-    // Check partial overlap
-    if (x < residual + count && residual < x + count) return ZENO_CUDA_ERR_INVALID_PARAM;
+    size_t bytes = count * sizeof(float);
+    if (ranges_overlap(x, bytes, residual, bytes)) return ZENO_CUDA_ERR_INVALID_PARAM;
 
     int orig = 0;
     int rc = set_cuda_device(device_id, &orig);
@@ -441,10 +471,9 @@ int zeno_cuda_add_residual(
 
     add_residual_kernel<<<num_blocks, block_size, 0, custream>>>(x, residual, count);
     cudaError_t err = cudaGetLastError();
-    restore_cuda_device(orig);
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED : ZENO_CUDA_SUCCESS;
 
-    if (err != cudaSuccess) return ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED;
-    return ZENO_CUDA_SUCCESS;
+    return restore_cuda_device(orig, op_rc);
 }
 
 int zeno_cuda_scale(
@@ -468,10 +497,9 @@ int zeno_cuda_scale(
 
     scale_kernel<<<num_blocks, block_size, 0, custream>>>(x, scale, count);
     cudaError_t err = cudaGetLastError();
-    restore_cuda_device(orig);
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED : ZENO_CUDA_SUCCESS;
 
-    if (err != cudaSuccess) return ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED;
-    return ZENO_CUDA_SUCCESS;
+    return restore_cuda_device(orig, op_rc);
 }
 
 } // extern "C"

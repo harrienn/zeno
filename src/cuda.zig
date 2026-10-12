@@ -95,7 +95,7 @@ pub const c = if (is_enabled) struct {
     pub extern "c" fn zeno_cuda_memset(dst: ?*anyopaque, value: c_int, bytes: usize, device_id: c_int) c_int;
     pub extern "c" fn zeno_cuda_stream_create(out_stream: *?*anyopaque, device_id: c_int) c_int;
     pub extern "c" fn zeno_cuda_stream_destroy(stream: ?*anyopaque, device_id: c_int) c_int;
-    pub extern "c" fn zeno_cuda_stream_sync(stream: ?*anyopaque) c_int;
+    pub extern "c" fn zeno_cuda_stream_sync(stream: ?*anyopaque, device_id: c_int) c_int;
 
     // Fused Elementwise Kernels ABI
     pub extern "c" fn zeno_cuda_rms_norm(

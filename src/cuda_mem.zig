@@ -99,10 +99,8 @@ pub const CudaStream = struct {
 
     pub fn synchronize(self: *const CudaStream) cuda.CudaError!void {
         if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
-        if (self.handle) |h| {
-            const rc = cuda.c.zeno_cuda_stream_sync(h);
-            if (rc != 0) return cuda.mapCudaErrorCode(rc);
-        }
+        const rc = cuda.c.zeno_cuda_stream_sync(self.handle, self.device_id);
+        if (rc != 0) return cuda.mapCudaErrorCode(rc);
     }
 };
 
@@ -246,6 +244,8 @@ pub fn rmsNorm(
     stream: ?*const CudaStream,
 ) cuda.CudaError!void {
     if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    // R20-03: Validate bounds before casting to c_int
+    if (num_rows > 65535 or dim < 1 or dim > 8192 or eps <= 0.0) return error.InvalidParam;
     const total = std.math.mul(usize, num_rows, dim) catch return error.InvalidParam;
     if (x.len != total or out.len != total) return error.InvalidParam;
     if (x.device_id != out.device_id) return error.DeviceMismatch;
@@ -285,6 +285,8 @@ pub fn geglu(
     stream: ?*const CudaStream,
 ) cuda.CudaError!void {
     if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    // R20-03: Validate count bound before C ABI call
+    if (gate.len > (((@as(usize, 1) << 31) - 1))) return error.InvalidParam;
     if (gate.len != up.len or gate.len != out.len) return error.InvalidParam;
     if (gate.device_id != up.device_id or gate.device_id != out.device_id) return error.DeviceMismatch;
     if (stream) |s| {
@@ -321,6 +323,12 @@ pub fn rope(
     stream: ?*const CudaStream,
 ) cuda.CudaError!void {
     if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    // R20-03: Validate all dimension bounds before casting to c_int
+    if (num_tokens > 65535 or num_heads < 1 or num_heads > 64) return error.InvalidParam;
+    if (head_dim < 1 or head_dim > 1024 or (head_dim % 2) != 0) return error.InvalidParam;
+    if (pos_offset > std.math.maxInt(c_int)) return error.InvalidParam;
+    if (theta <= 0.0) return error.InvalidParam;
+
     const total_heads = std.math.mul(usize, num_tokens, num_heads) catch return error.InvalidParam;
     const total_elems = std.math.mul(usize, total_heads, head_dim) catch return error.InvalidParam;
     if (vec.len != total_elems) return error.InvalidParam;
@@ -358,6 +366,8 @@ pub fn addResidual(
     stream: ?*const CudaStream,
 ) cuda.CudaError!void {
     if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    // R20-03: Validate count bound before C ABI call
+    if (x.len > (((@as(usize, 1) << 31) - 1))) return error.InvalidParam;
     if (x.len != residual.len) return error.InvalidParam;
     if (x.device_id != residual.device_id) return error.DeviceMismatch;
     if (stream) |s| {
@@ -386,6 +396,8 @@ pub fn scale(
     stream: ?*const CudaStream,
 ) cuda.CudaError!void {
     if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    // R20-03: Validate count bound before C ABI call
+    if (x.len > (((@as(usize, 1) << 31) - 1))) return error.InvalidParam;
     if (stream) |s| {
         if (s.device_id != x.device_id) return error.DeviceMismatch;
     }
@@ -561,6 +573,74 @@ test "CudaStream lifecycle, move, and sync" {
     try std.testing.expect(moved.handle != null);
 
     try moved.synchronize();
+}
+
+test "CUDA kernel wrapper dimension bounds checking" {
+    if (!cuda.is_enabled) return;
+    const dummy = DeviceSlice(f32).empty(0);
+
+    // RMSNorm bounds validation
+    try std.testing.expectError(error.InvalidParam, rmsNorm(dummy, null, dummy, 70000, 256, 1e-5, null));
+    try std.testing.expectError(error.InvalidParam, rmsNorm(dummy, null, dummy, 1, 0, 1e-5, null));
+    try std.testing.expectError(error.InvalidParam, rmsNorm(dummy, null, dummy, 1, 10000, 1e-5, null));
+    try std.testing.expectError(error.InvalidParam, rmsNorm(dummy, null, dummy, 1, 256, -1.0, null));
+    try std.testing.expectError(error.InvalidParam, rmsNorm(dummy, null, dummy, 1, 256, 0.0, null));
+
+    // RoPE bounds validation
+    try std.testing.expectError(error.InvalidParam, rope(dummy, 70000, 8, 256, 0, 10000.0, null, null));
+    try std.testing.expectError(error.InvalidParam, rope(dummy, 1, 0, 256, 0, 10000.0, null, null));
+    try std.testing.expectError(error.InvalidParam, rope(dummy, 1, 100, 256, 0, 10000.0, null, null));
+    try std.testing.expectError(error.InvalidParam, rope(dummy, 1, 8, 0, 0, 10000.0, null, null));
+    try std.testing.expectError(error.InvalidParam, rope(dummy, 1, 8, 1025, 0, 10000.0, null, null));
+    try std.testing.expectError(error.InvalidParam, rope(dummy, 1, 8, 255, 0, 10000.0, null, null));
+    try std.testing.expectError(error.InvalidParam, rope(dummy, 1, 8, 256, @as(usize, std.math.maxInt(c_int)) + 1, 10000.0, null, null));
+    try std.testing.expectError(error.InvalidParam, rope(dummy, 1, 8, 256, 0, 0.0, null, null));
+    try std.testing.expectError(error.InvalidParam, rope(dummy, 1, 8, 256, 0, -1.0, null, null));
+
+    // GeGLU, AddResidual, Scale count bound validation
+    const huge_slice = DeviceSlice(f32){ .ptr = null, .len = (@as(usize, 1) << 31), .device_id = 0 };
+    try std.testing.expectError(error.InvalidParam, geglu(huge_slice, huge_slice, huge_slice, null));
+    try std.testing.expectError(error.InvalidParam, addResidual(huge_slice, huge_slice, null));
+    try std.testing.expectError(error.InvalidParam, scale(huge_slice, 1.0, null));
+}
+
+test "CUDA device memory leak accounting" {
+    if (!cuda.is_enabled) return;
+    const dev = requireHardwareDevice() catch |err| switch (err) {
+        error.SkipZigTest => return,
+        else => return err,
+    };
+
+    // Warm up CUDA runtime context on this device so driver context initialization allocations are complete
+    {
+        var warmup = try DeviceBuffer(f32).init(dev, 1024);
+        warmup.deinit();
+    }
+
+    const topo_before = try cuda.getTopology();
+    const free_before = topo_before.devices[@intCast(dev)].free_memory_bytes;
+
+    // Allocate 64 MiB (16M floats * 4 bytes)
+    const alloc_floats: usize = 16 * 1024 * 1024;
+    {
+        var buf1 = try DeviceBuffer(f32).init(dev, alloc_floats / 2);
+        defer buf1.deinit();
+        var buf2 = try DeviceBuffer(f32).init(dev, alloc_floats / 2);
+        defer buf2.deinit();
+
+        const topo_during = try cuda.getTopology();
+        const free_during = topo_during.devices[@intCast(dev)].free_memory_bytes;
+
+        // Verify that free memory decreased during allocation
+        try std.testing.expect(free_during < free_before);
+    }
+
+    // After buf1 and buf2 are deinit'd, query topology again
+    const topo_after = try cuda.getTopology();
+    const free_after = topo_after.devices[@intCast(dev)].free_memory_bytes;
+
+    // Verify all allocated VRAM has been reclaimed (0 bytes leaked)
+    try std.testing.expectEqual(free_before, free_after);
 }
 
 test "CUDA RMSNorm numerical parity (weighted)" {
@@ -884,10 +964,16 @@ test "Stage 2 Numerical Parity 10000 points empirical measurement" {
         try rmsNorm(d_x.slice(), d_w.slice(), d_out.slice(), num_rows, d, eps, null);
         try d_out.copyToHost(gpu_out);
 
+        var max_abs: f32 = 0.0;
+        var max_rel: f32 = 0.0;
         for (cpu_out, gpu_out) |c, g| {
             const diff = @abs(c - g);
+            if (diff > max_abs) max_abs = diff;
+            const rel = if (@abs(c) > 1e-7) diff / @abs(c) else diff;
+            if (rel > max_rel) max_rel = rel;
             try std.testing.expect(diff <= 1e-4 + 1e-4 * @abs(c));
         }
+        std.debug.print("\n[parity] RMSNorm (Weighted): max_abs = {e:.4}, max_rel = {e:.4}\n", .{ max_abs, max_rel });
     }
 
     // 2. RMSNorm (Unweighted): 4 rows x 2816 = 11,264 points
@@ -919,10 +1005,16 @@ test "Stage 2 Numerical Parity 10000 points empirical measurement" {
         try rmsNorm(d_x.slice(), null, d_out.slice(), num_rows, d, eps, null);
         try d_out.copyToHost(gpu_out);
 
+        var max_abs: f32 = 0.0;
+        var max_rel: f32 = 0.0;
         for (cpu_out, gpu_out) |c, g| {
             const diff = @abs(c - g);
+            if (diff > max_abs) max_abs = diff;
+            const rel = if (@abs(c) > 1e-7) diff / @abs(c) else diff;
+            if (rel > max_rel) max_rel = rel;
             try std.testing.expect(diff <= 1e-4 + 1e-4 * @abs(c));
         }
+        std.debug.print("[parity] RMSNorm (Unweighted): max_abs = {e:.4}, max_rel = {e:.4}\n", .{ max_abs, max_rel });
     }
 
     // 3. GeGLU: 10,000 points
@@ -955,10 +1047,16 @@ test "Stage 2 Numerical Parity 10000 points empirical measurement" {
         try geglu(d_gate.slice(), d_up.slice(), d_out.slice(), null);
         try d_out.copyToHost(gpu_out);
 
+        var max_abs: f32 = 0.0;
+        var max_rel: f32 = 0.0;
         for (cpu_out, gpu_out) |c, g| {
             const diff = @abs(c - g);
+            if (diff > max_abs) max_abs = diff;
+            const rel = if (@abs(c) > 1e-7) diff / @abs(c) else diff;
+            if (rel > max_rel) max_rel = rel;
             try std.testing.expect(diff <= 1e-5 + 1e-4 * @abs(c));
         }
+        std.debug.print("[parity] GeGLU: max_abs = {e:.4}, max_rel = {e:.4}\n", .{ max_abs, max_rel });
     }
 
     // 4. RoPE: 4 tokens x 8 heads x 512 dim = 16,384 points (> 10,000 points)
@@ -994,10 +1092,16 @@ test "Stage 2 Numerical Parity 10000 points empirical measurement" {
         try rope(d_vec.slice(), num_tokens, num_heads, head_dim, pos_offset, theta, null, null);
         try d_vec.copyToHost(gpu_vec);
 
+        var max_abs: f32 = 0.0;
+        var max_rel: f32 = 0.0;
         for (cpu_vec, gpu_vec) |c, g| {
             const diff = @abs(c - g);
+            if (diff > max_abs) max_abs = diff;
+            const rel = if (@abs(c) > 1e-7) diff / @abs(c) else diff;
+            if (rel > max_rel) max_rel = rel;
             try std.testing.expect(diff <= 1e-5 + 1e-4 * @abs(c));
         }
+        std.debug.print("[parity] RoPE: max_abs = {e:.4}, max_rel = {e:.4}\n", .{ max_abs, max_rel });
     }
 
     // 5. Residual Add & Scale: 10,000 points
@@ -1035,9 +1139,15 @@ test "Stage 2 Numerical Parity 10000 points empirical measurement" {
 
         try d_x.copyToHost(gpu_x);
 
+        var max_abs: f32 = 0.0;
+        var max_rel: f32 = 0.0;
         for (cpu_x, gpu_x) |c, g| {
             const diff = @abs(c - g);
+            if (diff > max_abs) max_abs = diff;
+            const rel = if (@abs(c) > 1e-7) diff / @abs(c) else diff;
+            if (rel > max_rel) max_rel = rel;
             try std.testing.expect(diff <= 1e-6 + 1e-6 * @abs(c));
         }
+        std.debug.print("[parity] Residual Add & Scale: max_abs = {e:.4}, max_rel = {e:.4}\n", .{ max_abs, max_rel });
     }
 }

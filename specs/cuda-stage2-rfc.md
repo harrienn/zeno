@@ -145,7 +145,7 @@ int zeno_cuda_memset(void *dst, int value, size_t bytes, int device_id);
 
 int zeno_cuda_stream_create(void **out_stream, int device_id);
 int zeno_cuda_stream_destroy(void *stream, int device_id);
-int zeno_cuda_stream_sync(void *stream);
+int zeno_cuda_stream_sync(void *stream, int device_id);
 
 // --- Fused Elementwise Kernels ABI ---
 
@@ -368,10 +368,9 @@ pub const CudaStream = struct {
     }
 
     pub fn synchronize(self: *const CudaStream) cuda.CudaError!void {
-        if (self.handle) |h| {
-            const rc = cuda.c.zeno_cuda_stream_sync(h);
-            if (rc != 0) return cuda.mapCudaErrorCode(rc);
-        }
+        if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+        const rc = cuda.c.zeno_cuda_stream_sync(self.handle, self.device_id);
+        if (rc != 0) return cuda.mapCudaErrorCode(rc);
     }
 };
 
