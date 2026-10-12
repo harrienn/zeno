@@ -24,6 +24,12 @@ pub const CudaError = error{
     MemInfoFailed,
     PeerQueryFailed,
     RestoreDeviceFailed,
+    OutOfMemory,
+    CopyFailed,
+    StreamFailed,
+    KernelLaunchFailed,
+    InvalidDevice,
+    DeviceMismatch,
     UnknownError,
     CudaDisabledAtBuild,
 };
@@ -55,10 +61,10 @@ pub const Topology = struct {
 };
 
 // C ABI extern declarations (compiled only when CUDA is enabled)
-const c = if (is_enabled) struct {
-    const ZENO_CUDA_MAX_DEVICES = 8;
+pub const c = if (is_enabled) struct {
+    pub const ZENO_CUDA_MAX_DEVICES = 8;
 
-    const ZenoCudaDeviceInfo = extern struct {
+    pub const ZenoCudaDeviceInfo = extern struct {
         device_id: c_int,
         name: [256]u8,
         major: c_int,
@@ -70,18 +76,18 @@ const c = if (is_enabled) struct {
         can_access_peer: [ZENO_CUDA_MAX_DEVICES]c_int,
     };
 
-    const ZenoCudaTopology = extern struct {
+    pub const ZenoCudaTopology = extern struct {
         total_visible_devices: c_int,
         reported_devices: c_int,
         devices: [ZENO_CUDA_MAX_DEVICES]ZenoCudaDeviceInfo,
     };
 
-    extern "c" fn zeno_cuda_get_device_count(out_count: *c_int) c_int;
-    extern "c" fn zeno_cuda_get_topology(out_topo: *ZenoCudaTopology) c_int;
-    extern "c" fn zeno_cuda_get_error_string(error_code: c_int) [*:0]const u8;
+    pub extern "c" fn zeno_cuda_get_device_count(out_count: *c_int) c_int;
+    pub extern "c" fn zeno_cuda_get_topology(out_topo: *ZenoCudaTopology) c_int;
+    pub extern "c" fn zeno_cuda_get_error_string(error_code: c_int) [*:0]const u8;
 } else struct {};
 
-fn mapCudaErrorCode(rc: c_int) CudaError {
+pub fn mapCudaErrorCode(rc: c_int) CudaError {
     return switch (rc) {
         0 => unreachable, // Success
         1 => error.NoDevice,
@@ -93,6 +99,12 @@ fn mapCudaErrorCode(rc: c_int) CudaError {
         7 => error.MemInfoFailed,
         8 => error.PeerQueryFailed,
         9 => error.RestoreDeviceFailed,
+        10 => error.OutOfMemory,
+        11 => error.CopyFailed,
+        12 => error.StreamFailed,
+        13 => error.KernelLaunchFailed,
+        14 => error.InvalidDevice,
+        15 => error.DeviceMismatch,
         else => error.UnknownError,
     };
 }
