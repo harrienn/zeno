@@ -170,7 +170,7 @@ test "cuda module build disabled check" {
 test "cuda module topology query when enabled" {
     if (is_enabled) {
         const topo = getTopology() catch |err| switch (err) {
-            error.NoDevice, error.DriverError => return error.SkipZigTest,
+            error.NoDevice => return error.SkipZigTest,
             else => return err,
         };
         try std.testing.expect(topo.total_visible_devices >= 1);

@@ -1,6 +1,6 @@
 # RFC: Zeno CUDA Backend — Stage 2: Device Memory Management & Fused Elementwise Kernels
 
-- **Status**: Proposed / Under Review
+- **Status**: Proposed / Under Review (Round 15 Revision)
 - **Author**: Antigravity (Pair Programming with User)
 - **Target Release**: Zeno Phase 5 (CUDA & Multi-GPU Execution)
 - **Governing Specs**: [`AGENTS.md`](../AGENTS.md), [`specs/cuda-roadmap.md`](cuda-roadmap.md), [`specs/transformer.md`](transformer.md), [`specs/UNRESOLVED.md`](UNRESOLVED.md)
@@ -11,29 +11,30 @@
 
 ## 1. Executive Summary
 
-This RFC specifies **Stage 2** of the Zeno CUDA backend. Following the successful completion of Stage 1 (build pipeline, C ABI boundary, and physical device discovery), Stage 2 establishes:
+This RFC specifies **Stage 2** of the Zeno CUDA backend. Following the successful completion and acceptance of Stage 1 (build integration, C ABI boundary, and physical device discovery), Stage 2 establishes:
 
-1. **Deterministic Device Memory Ownership in Zig** ([`src/cuda_mem.zig`](../src/cuda_mem.zig)):
-   - RAII typed buffer abstraction `DeviceBuffer(T)` with explicit device assignment, bounds checking, and zero dynamic heap dependencies on the host.
-   - Non-blocking asynchronous copy primitives (`copyFromHostAsync`, `copyToHostAsync`, `copyFromDeviceAsync`) and explicit stream synchronization (`CudaStream`).
-   - Strict conformity with [`AGENTS.md`](../AGENTS.md) §6 (explicit allocator, owner, lifetime, and release).
+1. **Deterministic Device Memory Ownership & Stream Control** ([`src/cuda_mem.zig`](../src/cuda_mem.zig)):
+   - Single-owner, move-only typed buffer abstraction `DeviceBuffer(T)` with explicit device assignment, nullable pointer discipline, safe idempotent deinitialization, and zero host heap allocations (R15-01).
+   - Synchronous memory copy primitives by default, with an explicit asynchronous stream API (`CudaStream`) with documented host-buffer lifetime invariants (R15-02).
+   - Comprehensive CUDA memory and execution error mappings in `src/cuda.zig` (R15-03).
 
 2. **Native Ampere Elementwise Kernels in CUDA C++** ([`src/cuda/ops.cu`](../src/cuda/ops.cu)):
-   - **Fused RMSNorm (`cuda_rms_norm`)**: Fast warp-level reduction (`__shfl_down_sync`) supporting both learned scale weights and unweighted normalization, configured for $d = 2816$ (residual streams) and $d \in \{256, 512\}$ (per-head Q/K/V norms).
+   - **Fused RMSNorm (`cuda_rms_norm`)**: Fast warp-level reduction (`__shfl_down_sync`) supporting learned scale weights and unweighted normalization (for both V-head norm and MoE router preprocessing), configured for $d = 2816$ and $d \in \{256, 512\}$.
    - **Fused GeGLU (`cuda_geglu`)**: Elementwise $\text{GELU}_{\text{tanh}}(a) \times b$ activation kernel for Gemma 4 shared dense MLP and MoE expert branches.
    - **Rotary Position Embedding (`cuda_rope`)**: High-throughput NeoX-style half-split RoPE over query and key head vectors, supporting dual frequency bases ($\theta_{\text{swa}} = 10,000.0, d = 256$ and $\theta_{\text{global}} = 1,000,000.0, d = 512$) with optional frequency scaling factors.
    - **Fused Residual Add & Scaling (`cuda_add_residual`, `cuda_scale`)**: In-place elementwise operations for decoder block residual junctions and layer output scaling.
+   - Explicit kernel preconditions, contiguous memory layouts, and launch bounds (R15-04).
 
 3. **Mechanical Parity & Acceptance Verification**:
-   - Zero tolerance inflation: all GPU kernel outputs must match CPU reference implementations in [`src/ops.zig`](../src/ops.zig) and [`src/infer.zig`](../src/infer.zig) within $\le 10^{-5}$ absolute numerical difference.
+   - Mixed absolute/relative numerical tolerance policy justified by reduction reordering and hardware transcendental approximations, validated against deterministic test vectors (R15-05).
+   - Strict unit test portability skipping only on unambiguous `error.NoDevice`, preserving genuine driver initialization failures as test errors (R15-06).
    - Zero-dependency CPU build invariant preserved when `-Dcuda=false`.
-   - Portable test execution skipping cleanly (`error.SkipZigTest`) on toolkit-only build environments without GPUs.
 
 ---
 
 ## 2. Architecture & Memory Management
 
-### 2.1 Memory Ownership Model ([`AGENTS.md`](../AGENTS.md) §6)
+### 2.1 Memory Ownership Model ([`AGENTS.md`](../AGENTS.md) §6, R15-01)
 
 In Zeno, device memory buffers must have unambiguous lifetime boundaries. Accidental temporary device allocations or implicit global device contexts are strictly avoided.
 
@@ -42,8 +43,9 @@ In Zeno, device memory buffers must have unambiguous lifetime boundaries. Accide
 │                      Host (Zig)                        │
 │   src/cuda_mem.zig: DeviceBuffer(T), CudaStream       │
 │   - Explicit device_id assignment                      │
-│   - Value-type handle with RAII deinit()               │
-│   - Non-copyable semantics                             │
+│   - Move-only discipline: ptr: ?[*]T, len: usize       │
+│   - Safe idempotent deinit() via ptr = null            │
+│   - Non-owning DeviceSlice(T) for views                │
 └───────────────────────────────┬────────────────────────┘
                                 │ C ABI: extern "C"
 ┌───────────────────────────────▼────────────────────────┐
@@ -53,26 +55,44 @@ In Zeno, device memory buffers must have unambiguous lifetime boundaries. Accide
                                 │ CUDA Driver / Runtime
 ┌───────────────────────────────▼────────────────────────┐
 │                   GPU VRAM (Device)                    │
-│   cudaSetDevice(id) -> cudaMalloc / cudaFreeAsync      │
+│   cudaSetDevice(id) -> cudaMalloc / cudaFree           │
 │   Linear device pointers: [*]T (sm_86 aligned)         │
 └────────────────────────────────────────────────────────┘
 ```
 
-#### Ownership Questions Answered:
-- **Who allocates it?** The host engine creates `DeviceBuffer(T).init(device_id, count)`.
-- **Who owns it?** The struct holding the `DeviceBuffer(T)` instance.
-- **How long does it live?** Bound to the owning struct's lifecycle (e.g. `InferenceWorkspaceCuda` for scratch activations, `ModelCuda` for long-lived weights).
-- **Who releases or resets it?** Explicit `buf.deinit()` calling `zeno_cuda_free`. The buffer pointer is nulled out immediately to prevent use-after-free.
-- **Can it move between CPU and GPU?** Explicit transfers only via `copyFromHost` / `copyToHost`.
-- **Can another component retain a reference to it?** Only via non-owning `DeviceSlice(T)` handles that cannot perform deallocation.
+#### Ownership Contract:
+- **Single-Owner Discipline**: A `DeviceBuffer(T)` instance uniquely owns its underlying GPU pointer. To prevent accidental double-free from Zig shallow copies, ownership transfer is performed via an explicit `move(self: *Self) Self` method that nullifies the source pointer (`src.ptr = null, src.len = 0`).
+- **Idempotent Deinitialization**: `deinit(self: *Self)` checks `if (self.ptr) |p|`. Upon calling `zeno_cuda_free`, `self.ptr` is immediately set to `null` and `self.len = 0`. Repeated calls to `deinit()` are guaranteed safe no-ops.
+- **Deallocation Error Surfacing**: In accordance with Zig conventions, `deinit()` does not return an error (to ensure safe use in `defer`), but if `zeno_cuda_free` returns a non-zero error code, the failure is logged via `std.log.err` and asserted in debug mode (`std.debug.assert(rc == 0)`).
+- **Zero-Length Allocations**: If `count == 0`, `DeviceBuffer(T).init(device_id, 0)` returns an empty buffer with `ptr = null` and `len = 0` without invoking CUDA runtime allocation APIs.
+- **Non-Owning Views**: Slices of a buffer are represented by `DeviceSlice(T)`. `DeviceSlice(T)` holds a non-owning raw device pointer and length, provides bounds-checked sub-slicing, and does not have a `deinit()` method.
+
+---
+
+### 2.2 Host-Device Transfer & Stream Synchronization Contract (R15-02)
+
+Stage 2 provides both synchronous and asynchronous transfer paths:
+
+1. **Synchronous Transfers (Default)**:
+   - `copyFromHost(self: *Self, host_slice: []const T) CudaError!void`
+   - `copyToHost(self: *const Self, host_slice: []T) CudaError!void`
+   - `copyFromDevice(self: *Self, src: DeviceSlice(T)) CudaError!void`
+   - **Contract**: These calls block the calling host thread until the data transfer completes (`cudaMemcpy`). The host buffer has no lifetime requirements beyond the return of the function.
+   - **Device Matching**: `copyFromDevice` verifies `self.device_id == src.device_id`. Cross-device transfers return `error.DeviceMismatch` (multi-GPU P2P transfers are governed by Stage 5).
+
+2. **Asynchronous Transfers (`CudaStream`)**:
+   - `copyFromHostAsync(self: *Self, host_slice: []const T, stream: *const CudaStream) CudaError!void`
+   - `copyToHostAsync(self: *const Self, host_slice: []T, stream: *const CudaStream) CudaError!void`
+   - **Contract & Lifetime Invariant**: The host caller guarantees that `host_slice` remains allocated, pinned/valid, and unmodified until `stream.synchronize()` returns.
+   - **Stream-Device Association**: Every `CudaStream` is bound to an explicit `device_id`. An asynchronous operation on a buffer requires `stream.device_id == buffer.device_id`, returning `error.DeviceMismatch` otherwise.
 
 ---
 
 ## 3. Detailed Technical Specification
 
-### 3.1 C ABI Header Additions (`src/cuda/zeno_cuda.h`)
+### 3.1 C ABI Header Additions (`src/cuda/zeno_cuda.h`, R15-03)
 
-Extends the Stage 1 C ABI with memory management, streams, and elementwise kernel entry points:
+Extends the Stage 1 C ABI with new error codes, memory management, streams, and elementwise kernel entry points:
 
 ```c
 #ifndef ZENO_CUDA_H
@@ -86,6 +106,27 @@ extern "C" {
 #endif
 
 // ... (Stage 1 declarations: ZenoCudaDeviceInfo, ZenoCudaTopology, device query functions)
+
+// --- Extended Error Codes (R15-03) ---
+enum {
+    ZENO_CUDA_SUCCESS = 0,
+    ZENO_CUDA_ERR_NO_DEVICE = 1,
+    ZENO_CUDA_ERR_DRIVER_ERROR = 2,
+    ZENO_CUDA_ERR_INVALID_PARAM = 3,
+    ZENO_CUDA_ERR_GET_DEVICE_FAILED = 4,
+    ZENO_CUDA_ERR_DEVICE_PROP_FAILED = 5,
+    ZENO_CUDA_ERR_SET_DEVICE_FAILED = 6,
+    ZENO_CUDA_ERR_MEM_INFO_FAILED = 7,
+    ZENO_CUDA_ERR_PEER_QUERY_FAILED = 8,
+    ZENO_CUDA_ERR_RESTORE_DEVICE_FAILED = 9,
+    ZENO_CUDA_ERR_OUT_OF_MEMORY = 10,
+    ZENO_CUDA_ERR_COPY_FAILED = 11,
+    ZENO_CUDA_ERR_STREAM_FAILED = 12,
+    ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED = 13,
+    ZENO_CUDA_ERR_INVALID_DEVICE = 14,
+    ZENO_CUDA_ERR_DEVICE_MISMATCH = 15,
+    ZENO_CUDA_ERR_UNKNOWN = 99
+};
 
 // --- Memory Management ABI ---
 
@@ -108,7 +149,7 @@ int zeno_cuda_stream_sync(void *stream);
 // out[row, i] = (x[row, i] / sqrt(mean_i(x[row, i]^2) + eps)) * (weight ? weight[i] : 1.0)
 int zeno_cuda_rms_norm(
     const float *x,
-    const float *weight,      // NULL for unweighted RMSNorm (router preprocessing)
+    const float *weight,      // NULL for unweighted RMSNorm (router preprocessing, V-head norm)
     float *out,
     int num_rows,
     int dim,
@@ -172,47 +213,67 @@ int zeno_cuda_scale(
 
 ---
 
-### 3.2 CUDA Kernel Implementations (`src/cuda/ops.cu`)
+### 3.2 Kernel Preconditions, Memory Layouts, and Launch Bounds (R15-04)
 
-All kernels are compiled by `nvcc -arch=sm_86 -O3 -Xcompiler -fPIC`.
+All device buffers must be row-major and contiguous float32 without row padding.
 
 #### 1. Fused RMSNorm (`zeno_cuda_rms_norm`)
-- **Block Layout**: 1 row per threadblock. Block size = 256 threads (for $d \in \{256, 512\}$) or 512 threads (for $d = 2816$).
+- **Preconditions**:
+  - `x != NULL`, `out != NULL`.
+  - `num_rows >= 0`, `dim > 0`, `eps > 0.0`.
+  - If `num_rows == 0`, the kernel immediately returns `ZENO_CUDA_SUCCESS` (no-op).
+  - If `weight != NULL`, `weight` must point to at least `dim` contiguous floats.
+  - If `weight == NULL`, unweighted normalization is performed. This covers both V-head normalization in SWA/Global layers and MoE router preprocessing.
+  - `dim` supported range: $1 \le dim \le 8192$. Specifically verified on $dim \in \{256, 512, 2816\}$.
+- **Launch Geometry**:
+  - Grid: `dim3(num_rows)`. Each thread block normalizes exactly one row.
+  - Block: `dim3(block_size)` where `block_size` is 256 (for $dim \le 512$) or 512 (for $dim = 2816$).
 - **Algorithm**:
-  1. Each thread accumulates partial sum of squares: `float sum_sq = 0.0f; for (int i = tid; i < dim; i += blockDim.x) sum_sq += x[row_offset + i] * x[row_offset + i];`
-  2. Intra-warp reduction using `__shfl_down_sync(0xffffffff, sum_sq, offset)`.
-  3. Inter-warp reduction using `__shared__ float s_warp_sums[32]`.
-  4. Thread 0 computes `inv_rms = rsqrtf(sum_sq / dim + eps)` and stores in shared memory.
-  5. All threads read `inv_rms` and apply scaling:
-     `out[row_offset + i] = x[row_offset + i] * inv_rms * (weight ? weight[i] : 1.0f);`
-- **Numerical Behavior**: Uses `rsqrtf` with float32 accumulation to match CPU `1.0 / @sqrt(mean_sq + eps)`.
+  - Grid-stride loop computes partial sum of squares in each thread.
+  - Warp reduction via `__shfl_down_sync(0xffffffff, sum_sq, offset)`.
+  - Shared memory inter-warp reduction across warps (`__shared__ float s_warp_sums[32]`).
+  - Thread 0 computes `inv_rms = rsqrtf(sum_sq / dim + eps)` and broadcasts via shared memory.
+  - Threads apply scaling and write output.
 
 #### 2. Fused GeGLU (`zeno_cuda_geglu`)
-- **Grid Layout**: 1D grid, block size = 256 threads. Grid size = $\lceil \text{count} / 256 \rceil$.
+- **Preconditions**:
+  - `gate != NULL`, `up != NULL`, `out != NULL`.
+  - `count >= 0`. If `count == 0`, returns `ZENO_CUDA_SUCCESS` (no-op).
+  - In-place evaluation (`out == gate` or `out == up`) is supported. Partial overlapping of non-identical buffers is disallowed.
+- **Launch Geometry**:
+  - Grid: `dim3((count + 255) / 256)`.
+  - Block: `dim3(256)`.
 - **Algorithm**:
-  $$\text{gelu\_tanh}(x) = 0.5f \times x \times (1.0f + \tanh(0.7978845608028654f \times (x + 0.044715f \times x^3)))$$
-  $$\text{out}_i = \text{gelu\_tanh}(\text{gate}_i) \times \text{up}_i$$
-- Fully coalesced 32-bit reads and writes.
+  - Evaluates $\text{gelu\_tanh}(g) = 0.5f \times g \times (1.0f + \tanh(0.7978845608028654f \times (g + 0.044715f \times g^3)))$.
+  - Multiplies by $u$ and writes to `out`.
 
 #### 3. NeoX-style RoPE (`zeno_cuda_rope`)
-- **Grid Layout**:
-  - `blockDim.x = head_dim / 2` (128 for $d_{\text{head}}=256$, 256 for $d_{\text{head}}=512$).
-  - `gridDim.x = num_heads`.
-  - `gridDim.y = num_tokens`.
+- **Preconditions**:
+  - `vec != NULL`, `num_tokens >= 0`, `num_heads > 0`, `head_dim > 0`.
+  - `head_dim` must be even ($head\_dim \pmod 2 == 0$). Returns `ZENO_CUDA_ERR_INVALID_PARAM` if odd. Specifically targeting $head\_dim \in \{256, 512\}$.
+  - If `num_tokens == 0`, returns `ZENO_CUDA_SUCCESS` (no-op).
+  - `pos_offset >= 0`, `theta > 0.0`.
+  - `freq_factors`: `NULL` or points to at least `head_dim / 2` floats.
+- **Memory Layout**:
+  - Contiguous 3D tensor of shape `[num_tokens, num_heads, head_dim]`.
+  - Head stride: `head_dim`. Token stride: `num_heads * head_dim`.
+- **Launch Geometry**:
+  - Grid: `dim3(num_heads, num_tokens)`.
+  - Block: `dim3(head_dim / 2)` (128 threads for $head\_dim = 256$, 256 threads for $head\_dim = 512$).
 - **Algorithm**:
-  - Token position $p = \text{blockIdx.y} + \text{pos\_offset}$.
-  - Coordinate index $i = \text{threadIdx.x} < \text{half\_dim}$.
-  - Frequency $\text{freq} = (\theta^{-2i / d_{\text{head}}}) / (\text{freq\_factors} ? \text{freq\_factors}[i] : 1.0f)$.
-  - Angle $\alpha = p \times \text{freq}$.
-  - Vector offsets: $v_0 = \text{vec}[\text{offset} + i]$, $v_1 = \text{vec}[\text{offset} + \text{half\_dim} + i]$.
-  - Rotation:
-    $$\text{vec}[\text{offset} + i] = v_0 \cos(\alpha) - v_1 \sin(\alpha)$$
-    $$\text{vec}[\text{offset} + \text{half\_dim} + i] = v_0 \sin(\alpha) + v_1 \cos(\alpha)$$
-  - Zero shared memory overhead; executes in a single non-blocking pass.
+  - Thread $i$ processes coordinate pair $(i, i + half)$.
+  - Computes frequency, angle, cosine, sine, and applies in-place planar rotation.
+
+#### 4. Residual Add & Scale (`zeno_cuda_add_residual`, `zeno_cuda_scale`)
+- **Preconditions**:
+  - Non-null pointers, `count >= 0`. Returns `ZENO_CUDA_SUCCESS` if `count == 0`.
+- **Launch Geometry**:
+  - Grid: `dim3((count + 255) / 256)`.
+  - Block: `dim3(256)`.
 
 ---
 
-### 3.3 Zig Device Memory Abstraction (`src/cuda_mem.zig`)
+### 3.3 Zig Wrapper Implementation (`src/cuda_mem.zig`, R15-01, R15-02)
 
 ```zig
 const std = @import("std");
@@ -233,19 +294,61 @@ pub const DeviceSlice = struct {
     }
 };
 
+pub const CudaStream = struct {
+    handle: ?*anyopaque,
+    device_id: i32,
+
+    pub fn init(device_id: i32) cuda.CudaError!CudaStream {
+        if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+        var raw_stream: ?*anyopaque = null;
+        const rc = cuda.c.zeno_cuda_stream_create(&raw_stream, device_id);
+        if (rc != 0) return cuda.mapCudaErrorCode(rc);
+        return .{
+            .handle = raw_stream,
+            .device_id = device_id,
+        };
+    }
+
+    pub fn deinit(self: *CudaStream) void {
+        if (self.handle) |h| {
+            const rc = cuda.c.zeno_cuda_stream_destroy(h, self.device_id);
+            if (rc != 0) {
+                std.log.err("zeno_cuda_stream_destroy failed with rc={d}", .{rc});
+                std.debug.assert(rc == 0);
+            }
+            self.handle = null;
+        }
+    }
+
+    pub fn synchronize(self: *const CudaStream) cuda.CudaError!void {
+        if (self.handle) |h| {
+            const rc = cuda.c.zeno_cuda_stream_sync(h);
+            if (rc != 0) return cuda.mapCudaErrorCode(rc);
+        }
+    }
+};
+
 pub fn DeviceBuffer(comptime T: type) type {
     return struct {
         const Self = @This();
 
-        ptr: [*]T,
+        ptr: ?[*]T,
         len: usize,
         device_id: i32,
 
         pub fn init(device_id: i32, count: usize) cuda.CudaError!Self {
             if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+            if (count == 0) {
+                return .{
+                    .ptr = null,
+                    .len = 0,
+                    .device_id = device_id,
+                };
+            }
+
             var raw_ptr: ?*anyopaque = null;
             const bytes = count * @sizeOf(T);
-            const rc = c.zeno_cuda_malloc(&raw_ptr, bytes, device_id);
+            const rc = cuda.c.zeno_cuda_malloc(&raw_ptr, bytes, device_id);
             if (rc != 0) return cuda.mapCudaErrorCode(rc);
 
             return .{
@@ -255,31 +358,75 @@ pub fn DeviceBuffer(comptime T: type) type {
             };
         }
 
+        pub fn move(self: *Self) Self {
+            const moved = Self{
+                .ptr = self.ptr,
+                .len = self.len,
+                .device_id = self.device_id,
+            };
+            self.ptr = null;
+            self.len = 0;
+            return moved;
+        }
+
         pub fn deinit(self: *Self) void {
-            if (self.len > 0) {
-                _ = c.zeno_cuda_free(self.ptr, self.device_id);
-                self.ptr = undefined;
+            if (self.ptr) |p| {
+                const rc = cuda.c.zeno_cuda_free(p, self.device_id);
+                if (rc != 0) {
+                    std.log.err("zeno_cuda_free failed for device {d} with rc={d}", .{ self.device_id, rc });
+                    std.debug.assert(rc == 0);
+                }
+                self.ptr = null;
                 self.len = 0;
             }
         }
 
         pub fn copyFromHost(self: *Self, host_slice: []const T) cuda.CudaError!void {
             std.debug.assert(host_slice.len == self.len);
+            if (self.len == 0) return;
             const bytes = self.len * @sizeOf(T);
-            const rc = c.zeno_cuda_memcpy_h2d(self.ptr, host_slice.ptr, bytes, self.device_id, null);
+            const rc = cuda.c.zeno_cuda_memcpy_h2d(self.ptr.?, host_slice.ptr, bytes, self.device_id, null);
             if (rc != 0) return cuda.mapCudaErrorCode(rc);
         }
 
         pub fn copyToHost(self: *const Self, host_slice: []T) cuda.CudaError!void {
             std.debug.assert(host_slice.len == self.len);
+            if (self.len == 0) return;
             const bytes = self.len * @sizeOf(T);
-            const rc = c.zeno_cuda_memcpy_d2h(host_slice.ptr, self.ptr, bytes, self.device_id, null);
+            const rc = cuda.c.zeno_cuda_memcpy_d2h(host_slice.ptr, self.ptr.?, bytes, self.device_id, null);
+            if (rc != 0) return cuda.mapCudaErrorCode(rc);
+        }
+
+        pub fn copyFromDevice(self: *Self, src: DeviceSlice) cuda.CudaError!void {
+            if (self.device_id != src.device_id) return error.DeviceMismatch;
+            std.debug.assert(src.len == self.len);
+            if (self.len == 0) return;
+            const bytes = self.len * @sizeOf(T);
+            const rc = cuda.c.zeno_cuda_memcpy_d2d(self.ptr.?, src.ptr, bytes, self.device_id, null);
+            if (rc != 0) return cuda.mapCudaErrorCode(rc);
+        }
+
+        pub fn copyFromHostAsync(self: *Self, host_slice: []const T, stream: *const CudaStream) cuda.CudaError!void {
+            if (self.device_id != stream.device_id) return error.DeviceMismatch;
+            std.debug.assert(host_slice.len == self.len);
+            if (self.len == 0) return;
+            const bytes = self.len * @sizeOf(T);
+            const rc = cuda.c.zeno_cuda_memcpy_h2d(self.ptr.?, host_slice.ptr, bytes, self.device_id, stream.handle);
+            if (rc != 0) return cuda.mapCudaErrorCode(rc);
+        }
+
+        pub fn copyToHostAsync(self: *const Self, host_slice: []T, stream: *const CudaStream) cuda.CudaError!void {
+            if (self.device_id != stream.device_id) return error.DeviceMismatch;
+            std.debug.assert(host_slice.len == self.len);
+            if (self.len == 0) return;
+            const bytes = self.len * @sizeOf(T);
+            const rc = cuda.c.zeno_cuda_memcpy_d2h(host_slice.ptr, self.ptr.?, bytes, self.device_id, stream.handle);
             if (rc != 0) return cuda.mapCudaErrorCode(rc);
         }
 
         pub fn slice(self: *const Self) DeviceSlice {
             return .{
-                .ptr = @ptrCast(self.ptr),
+                .ptr = if (self.ptr) |p| @ptrCast(p) else undefined,
                 .len = self.len,
                 .device_id = self.device_id,
             };
@@ -290,7 +437,36 @@ pub fn DeviceBuffer(comptime T: type) type {
 
 ---
 
-## 4. Verification Strategy & Acceptance Gates
+## 4. Numerical Tolerance Policy (R15-05)
+
+### 4.1 Reduction Re-ordering and Transcendental Divergence
+1. **Parallel Sum of Squares**:
+   - The CPU `ops.rmsNorm` computes $\sum x_i^2$ sequentially in 32-bit floating point.
+   - The CUDA kernel accumulates sums within warps and reduces using tree-structured `__shfl_down_sync`. Floating-point addition is non-associative ($(a + b) + c \ne a + (b + c)$); across $d = 2816$ additions, the low mantissa bits will legitimately diverge.
+2. **CUDA Transcendental Functions**:
+   - NVIDIA `rsqrtf`, `tanhf`, `sinf`, and `cosf` implement hardware-accelerated polynomial approximations that differ by up to 1–2 ULPs from host glibc/musl implementations.
+   - For outputs with large magnitudes, absolute divergence scales proportionally with magnitude.
+
+### 4.2 Mixed Tolerance Formula
+Numerical acceptance comparisons use a standard mixed absolute and relative tolerance:
+$$|y_{\text{gpu}} - y_{\text{cpu}}| \le \text{atol} + \text{rtol} \times |y_{\text{cpu}}|$$
+
+### 4.3 Provisional Thresholds on Deterministic Test Vectors
+Evaluated over deterministic pseudo-random test vectors with values in $[-3.0, 3.0]$:
+
+| Operation | Parameters / Shapes | $\text{atol}$ | $\text{rtol}$ | Rationale |
+|---|---|---|---|---|
+| **RMSNorm (Weighted)** | $N \in [1, 256], d = 2816$, learned $w \in [0.1, 2.0]$ | $1 \times 10^{-4}$ | $1 \times 10^{-4}$ | Tree reduction over 2816 elements + `rsqrtf`. |
+| **RMSNorm (Unweighted)** | $N \in [1, 256], d \in \{256, 512, 2816\}$ | $1 \times 10^{-4}$ | $1 \times 10^{-4}$ | Covers router and V-head normalization. |
+| **GeGLU** | $N \le 4096$, inputs in $[-3.0, 3.0]$ | $1 \times 10^{-5}$ | $1 \times 10^{-4}$ | Elementwise `tanhf` approximation error. |
+| **NeoX RoPE** | $N \le 256, H \in \{8, 16\}, d \in \{256, 512\}, \theta \in \{10^4, 10^6\}$ | $1 \times 10^{-5}$ | $1 \times 10^{-4}$ | Planar rotation with hardware `cosf`/`sinf`. |
+| **Residual Add / Scale** | $N \le 4096$, scale factor $1.5$ | $1 \times 10^{-6}$ | $1 \times 10^{-6}$ | Direct IEEE-754 elementwise operations. |
+
+> **Verification Rule**: These thresholds are provisional. During Stage 2 implementation, maximum observed absolute and relative errors across 10,000 deterministic sample points will be measured and recorded in the Stage 2 verification report before finalizing the exit gate.
+
+---
+
+## 5. Verification Strategy & Acceptance Gates
 
 Stage 2 acceptance requires satisfying four strict gates:
 
@@ -298,17 +474,20 @@ Stage 2 acceptance requires satisfying four strict gates:
    - `zig build` and `zig build test` compile cleanly without CUDA toolchains.
    - All CPU unit tests pass with zero leaks.
 
-2. **Gate 2: Portable CUDA Test Suite (R14-02 Conformant)**:
+2. **Gate 2: Portable CUDA Test Suite (R14-02, R15-06)**:
    - `zig build test -Dcuda=true` compiles `ops.cu` and links `libcudart`.
-   - On toolkit-only build environments without GPUs, tests detecting `error.NoDevice` or `error.DriverError` cleanly skip via `error.SkipZigTest`.
+   - On toolkit-only build environments without GPUs, tests catching `error.NoDevice` skip cleanly via `error.SkipZigTest`.
+   - Genuine driver initialization failures (`error.DriverError`) are not skipped and fail the test run.
    - On GPU hardware, all tests execute and validate numerical accuracy.
 
-3. **Gate 3: Numerical Parity with CPU Reference ($\le 10^{-5}$)**:
-   - **RMSNorm Test**: Compare GPU `cuda_rms_norm` and `cuda_unweighted_rms_norm` against [`ops.rmsNorm`](../src/ops.zig#L10) and [`ops.unweightedRmsNorm`](../src/ops.zig#L28) on random vectors across dimensions $d \in \{256, 512, 2816\}$. Maximum absolute difference $\le 10^{-5}$.
-   - **GeGLU Test**: Compare GPU `cuda_geglu` against [`ops.geglu`](../src/ops.zig#L120) across random inputs. Maximum absolute difference $\le 10^{-5}$.
-   - **RoPE Test**: Compare GPU `cuda_rope` against [`infer.applyRoPE`](../src/infer.zig#L115) across SWA ($\theta = 10000, d = 256$) and Global ($\theta = 1000000, d = 512$) layers across sequence length $N = 256$. Maximum absolute difference $\le 10^{-5}$.
-   - **Residual & Scale Test**: Compare GPU in-place additions and scalings against CPU slice arithmetic.
+3. **Gate 3: Empirical Numerical Parity ($\text{atol} / \text{rtol}$ Verified)**:
+   - Verify `cuda_rms_norm` and `cuda_unweighted_rms_norm` against `ops.rmsNorm` and `ops.unweightedRmsNorm`.
+   - Verify `cuda_geglu` against `ops.geglu`.
+   - Verify `cuda_rope` against `infer.applyRoPE`.
+   - Verify `cuda_add_residual` and `cuda_scale` against CPU reference arithmetic.
+   - Record maximum observed delta in verification documentation.
 
-4. **Gate 4: Integration Safety & Memory Lifetime**:
-   - Verify `DeviceBuffer` allocations, copies, and deallocations leave zero device memory leaks.
+4. **Gate 4: Memory Safety & Zero Leaks**:
+   - Verify `DeviceBuffer` allocations, synchronous copies, asynchronous copies, and deallocations leave zero device memory leaks.
+   - Repeated `deinit()` calls do not fault or corrupt runtime state.
    - Run full HTTP decision server test suite (`python3 tools/test_server.py`) to confirm zero CPU regression.

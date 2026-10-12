@@ -378,8 +378,8 @@ pub fn getTopology() CudaError!Topology {
 }
 ```
 
-> **Unit Test Portability Rule (R14-02)**:
-> In `src/cuda.zig`, the CUDA-enabled unit test `cuda module topology query when enabled` catches `error.NoDevice` and `error.DriverError` and returns `error.SkipZigTest`. This ensures `zig build test -Dcuda=true` passes cleanly on toolkit-only or headless build environments lacking an accessible GPU, while validating physical topology when GPU hardware is present.
+> **Unit Test Portability Rule (R14-02, R15-06)**:
+> In `src/cuda.zig`, the CUDA-enabled unit test `cuda module topology query when enabled` catches `error.NoDevice` and returns `error.SkipZigTest`. Genuine driver initialization failures (`error.DriverError`) are not skipped, ensuring environment defects are caught while allowing test execution on toolkit-only or headless build environments lacking an accessible GPU.
 
 ### 3.5 CLI Subcommand (`zeno cuda-info`)
 
