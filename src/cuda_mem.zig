@@ -626,6 +626,190 @@ pub fn gemvQ5_0(
 }
 
 // ---------------------------------------------------------------------------
+// Stage 4 Unified Attention & MoE Expert Execution Wrappers
+// ---------------------------------------------------------------------------
+
+/// Unified multi-head attention with causal prompt masking and bidirectional canvas visibility:
+/// out[t, h, d] = sum_{s < visible} softmax(dot(q[t,h], k[s,kv])) * v[s,kv,d]
+pub fn attention(
+    q: DeviceSlice(f32),
+    k: DeviceSlice(f32),
+    v: DeviceSlice(f32),
+    out: DeviceSlice(f32),
+    num_tokens: usize,
+    prompt_len: usize,
+    num_q_heads: usize,
+    num_kv_heads: usize,
+    head_dim: usize,
+    stride_q: usize,
+    stride_k: usize,
+    stride_v: usize,
+    stride_out: usize,
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (num_tokens == 0 or num_tokens > 512 or prompt_len > num_tokens) return error.InvalidParam;
+    if (num_q_heads == 0 or num_kv_heads == 0 or (num_q_heads % num_kv_heads) != 0) return error.InvalidParam;
+    if (head_dim != 256 and head_dim != 512) return error.InvalidParam;
+    if (stride_q < num_q_heads * head_dim or stride_k < num_kv_heads * head_dim or stride_v < num_kv_heads * head_dim or stride_out < num_q_heads * head_dim) {
+        return error.InvalidParam;
+    }
+
+    const min_q_len = std.math.mul(usize, num_tokens, stride_q) catch return error.InvalidParam;
+    const min_k_len = std.math.mul(usize, num_tokens, stride_k) catch return error.InvalidParam;
+    const min_v_len = std.math.mul(usize, num_tokens, stride_v) catch return error.InvalidParam;
+    const min_out_len = std.math.mul(usize, num_tokens, stride_out) catch return error.InvalidParam;
+
+    if (q.len < min_q_len or k.len < min_k_len or v.len < min_v_len or out.len < min_out_len) {
+        return error.InvalidParam;
+    }
+
+    if (q.device_id != k.device_id or q.device_id != v.device_id or q.device_id != out.device_id) {
+        return error.DeviceMismatch;
+    }
+    if (stream) |s| {
+        if (s.device_id != q.device_id) return error.DeviceMismatch;
+    }
+
+    const q_ptr = q.ptr orelse return error.InvalidParam;
+    const k_ptr = k.ptr orelse return error.InvalidParam;
+    const v_ptr = v.ptr orelse return error.InvalidParam;
+    const out_ptr = out.ptr orelse return error.InvalidParam;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_attention(
+        q_ptr,
+        k_ptr,
+        v_ptr,
+        out_ptr,
+        @intCast(num_tokens),
+        @intCast(prompt_len),
+        @intCast(num_q_heads),
+        @intCast(num_kv_heads),
+        @intCast(head_dim),
+        @intCast(stride_q),
+        @intCast(stride_k),
+        @intCast(stride_v),
+        @intCast(stride_out),
+        q.device_id,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
+/// Prepares MoE router input: r_in[t, dim] *= root_size * router_scale[dim]
+pub fn moeRouterPrep(
+    r_in: DeviceSlice(f32),
+    router_scale: DeviceSlice(f32),
+    root_size: f32,
+    num_tokens: usize,
+    dim: usize,
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (num_tokens == 0 or dim == 0) return error.InvalidParam;
+    const min_len = std.math.mul(usize, num_tokens, dim) catch return error.InvalidParam;
+    if (r_in.len < min_len or router_scale.len < dim) return error.InvalidParam;
+
+    if (r_in.device_id != router_scale.device_id) return error.DeviceMismatch;
+    if (stream) |s| {
+        if (s.device_id != r_in.device_id) return error.DeviceMismatch;
+    }
+
+    const r_ptr = r_in.ptr orelse return error.InvalidParam;
+    const s_ptr = router_scale.ptr orelse return error.InvalidParam;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_moe_router_prep(
+        r_ptr,
+        s_ptr,
+        root_size,
+        @intCast(num_tokens),
+        @intCast(dim),
+        r_in.device_id,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
+/// Selects top-8 experts from 128 router logits, computes softmax renormalization, and applies per-expert output scaling
+pub fn moeRouterTop8(
+    router_logits: DeviceSlice(f32),
+    exp_down_scale: ?DeviceSlice(f32),
+    out_indices: DeviceSlice(i32),
+    out_weights: DeviceSlice(f32),
+    num_tokens: usize,
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (num_tokens == 0) return error.InvalidParam;
+
+    const min_logits_len = std.math.mul(usize, num_tokens, 128) catch return error.InvalidParam;
+    const min_out_len = std.math.mul(usize, num_tokens, 8) catch return error.InvalidParam;
+
+    if (router_logits.len < min_logits_len or out_indices.len < min_out_len or out_weights.len < min_out_len) {
+        return error.InvalidParam;
+    }
+
+    if (router_logits.device_id != out_indices.device_id or router_logits.device_id != out_weights.device_id) {
+        return error.DeviceMismatch;
+    }
+    if (exp_down_scale) |eds| {
+        if (eds.device_id != router_logits.device_id or eds.len < 128) return error.DeviceMismatch;
+    }
+    if (stream) |s| {
+        if (s.device_id != router_logits.device_id) return error.DeviceMismatch;
+    }
+
+    const logits_ptr = router_logits.ptr orelse return error.InvalidParam;
+    const eds_ptr = if (exp_down_scale) |eds| (eds.ptr orelse return error.InvalidParam) else null;
+    const indices_ptr = out_indices.ptr orelse return error.InvalidParam;
+    const weights_ptr = out_weights.ptr orelse return error.InvalidParam;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_moe_router_topk(
+        logits_ptr,
+        eds_ptr,
+        @ptrCast(indices_ptr),
+        weights_ptr,
+        @intCast(num_tokens),
+        router_logits.device_id,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
+/// Accumulates scaled vector: accum[i] += x[i] * scale_factor
+pub fn accumulateScaled(
+    accum: DeviceSlice(f32),
+    x: DeviceSlice(f32),
+    scale_factor: f32,
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (accum.len != x.len) return error.InvalidParam;
+    if (accum.device_id != x.device_id) return error.DeviceMismatch;
+    if (stream) |s| {
+        if (s.device_id != accum.device_id) return error.DeviceMismatch;
+    }
+    if (accum.len == 0) return;
+
+    const a_ptr = accum.ptr orelse return error.InvalidParam;
+    const x_ptr = x.ptr orelse return error.InvalidParam;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_accumulate_scaled(
+        a_ptr,
+        x_ptr,
+        scale_factor,
+        accum.len,
+        accum.device_id,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
+// ---------------------------------------------------------------------------
 // Unit Tests & Numerical Parity Verification
 // ---------------------------------------------------------------------------
 
@@ -1723,4 +1907,386 @@ test "CUDA GEMV dimension validation and error conditions" {
 
     // R21-03: batch_size exceeding 65535 grid-Y limit should error InvalidParam
     try std.testing.expectError(error.InvalidParam, gemvQ8_0(d_w.slice(), d_x.slice(), d_out.slice(), 32, 32, 65536, null));
+}
+
+fn cpuReferenceAttention(
+    q: []const f32,
+    k: []const f32,
+    v: []const f32,
+    out: []f32,
+    num_tokens: usize,
+    prompt_len: usize,
+    num_q_heads: usize,
+    num_kv_heads: usize,
+    head_dim: usize,
+) void {
+    const gqa_ratio = num_q_heads / num_kv_heads;
+    const q_dim = num_q_heads * head_dim;
+    const k_dim = num_kv_heads * head_dim;
+
+    for (0..num_tokens) |t| {
+        const is_prompt_query = (t < prompt_len);
+        const visible_len = if (is_prompt_query) t + 1 else num_tokens;
+
+        for (0..num_q_heads) |h| {
+            const kv = h / gqa_ratio;
+            const q_head = q[t * q_dim + h * head_dim .. t * q_dim + (h + 1) * head_dim];
+
+            var scores: [512]f32 = undefined;
+            for (0..visible_len) |s| {
+                const k_head = k[s * k_dim + kv * head_dim .. s * k_dim + (kv + 1) * head_dim];
+                var dot: f32 = 0.0;
+                for (q_head, k_head) |qh, kh| {
+                    dot += qh * kh;
+                }
+                scores[s] = dot;
+            }
+            if (visible_len < num_tokens) {
+                @memset(scores[visible_len..num_tokens], -1e30);
+            }
+
+            var weights: [512]f32 = undefined;
+            ops.softmax(scores[0..num_tokens], 1.0, weights[0..num_tokens]);
+
+            const out_head = out[t * q_dim + h * head_dim .. t * q_dim + (h + 1) * head_dim];
+            @memset(out_head, 0.0);
+            for (0..visible_len) |s| {
+                const w = weights[s];
+                if (w == 0.0) continue;
+                const v_head = v[s * k_dim + kv * head_dim .. s * k_dim + (kv + 1) * head_dim];
+                for (out_head, v_head) |*oh, vh| {
+                    oh.* += w * vh;
+                }
+            }
+        }
+    }
+}
+
+test "CUDA attention parity across SWA and Global heads" {
+    if (!cuda.is_enabled) return;
+    const dev = requireHardwareDevice() catch |err| switch (err) {
+        error.SkipZigTest => return,
+        else => return err,
+    };
+
+    const allocator = std.testing.allocator;
+    var prng = std.Random.DefaultPrng.init(0x1337_5432);
+    const rand = prng.random();
+
+    // 1. SWA configuration: num_q_heads=16, num_kv_heads=8, head_dim=256
+    {
+        const num_tokens: usize = 4;
+        const prompt_len: usize = 2;
+        const num_q_heads: usize = 16;
+        const num_kv_heads: usize = 8;
+        const head_dim: usize = 256;
+
+        const q_dim = num_q_heads * head_dim;
+        const k_dim = num_kv_heads * head_dim;
+
+        const host_q = try allocator.alloc(f32, num_tokens * q_dim);
+        defer allocator.free(host_q);
+        const host_k = try allocator.alloc(f32, num_tokens * k_dim);
+        defer allocator.free(host_k);
+        const host_v = try allocator.alloc(f32, num_tokens * k_dim);
+        defer allocator.free(host_v);
+
+        for (host_q) |*x| x.* = (rand.float(f32) * 2.0) - 1.0;
+        for (host_k) |*x| x.* = (rand.float(f32) * 2.0) - 1.0;
+        for (host_v) |*x| x.* = (rand.float(f32) * 2.0) - 1.0;
+
+        const cpu_out = try allocator.alloc(f32, num_tokens * q_dim);
+        defer allocator.free(cpu_out);
+        cpuReferenceAttention(host_q, host_k, host_v, cpu_out, num_tokens, prompt_len, num_q_heads, num_kv_heads, head_dim);
+
+        var d_q = try DeviceBuffer(f32).init(dev, host_q.len);
+        defer d_q.deinit();
+        try d_q.copyFromHost(host_q);
+
+        var d_k = try DeviceBuffer(f32).init(dev, host_k.len);
+        defer d_k.deinit();
+        try d_k.copyFromHost(host_k);
+
+        var d_v = try DeviceBuffer(f32).init(dev, host_v.len);
+        defer d_v.deinit();
+        try d_v.copyFromHost(host_v);
+
+        var d_out = try DeviceBuffer(f32).init(dev, num_tokens * q_dim);
+        defer d_out.deinit();
+
+        try attention(
+            d_q.slice(),
+            d_k.slice(),
+            d_v.slice(),
+            d_out.slice(),
+            num_tokens,
+            prompt_len,
+            num_q_heads,
+            num_kv_heads,
+            head_dim,
+            q_dim,
+            k_dim,
+            k_dim,
+            q_dim,
+            null,
+        );
+
+        const gpu_out = try allocator.alloc(f32, num_tokens * q_dim);
+        defer allocator.free(gpu_out);
+        try d_out.copyToHost(gpu_out);
+
+        var max_diff: f32 = 0.0;
+        for (cpu_out, gpu_out) |c, g| {
+            const diff = @abs(c - g);
+            if (diff > max_diff) max_diff = diff;
+            try std.testing.expect(diff <= 5e-4 + 5e-4 * @abs(c));
+        }
+        std.debug.print("\n[parity] SWA Attention (16x8, d=256): max_diff = {e:.4}\n", .{max_diff});
+    }
+
+    // 2. Global configuration: num_q_heads=16, num_kv_heads=2, head_dim=512
+    {
+        const num_tokens: usize = 3;
+        const prompt_len: usize = 1;
+        const num_q_heads: usize = 16;
+        const num_kv_heads: usize = 2;
+        const head_dim: usize = 512;
+
+        const q_dim = num_q_heads * head_dim;
+        const k_dim = num_kv_heads * head_dim;
+
+        const host_q = try allocator.alloc(f32, num_tokens * q_dim);
+        defer allocator.free(host_q);
+        const host_k = try allocator.alloc(f32, num_tokens * k_dim);
+        defer allocator.free(host_k);
+        const host_v = try allocator.alloc(f32, num_tokens * k_dim);
+        defer allocator.free(host_v);
+
+        for (host_q) |*x| x.* = (rand.float(f32) * 2.0) - 1.0;
+        for (host_k) |*x| x.* = (rand.float(f32) * 2.0) - 1.0;
+        for (host_v) |*x| x.* = (rand.float(f32) * 2.0) - 1.0;
+
+        const cpu_out = try allocator.alloc(f32, num_tokens * q_dim);
+        defer allocator.free(cpu_out);
+        cpuReferenceAttention(host_q, host_k, host_v, cpu_out, num_tokens, prompt_len, num_q_heads, num_kv_heads, head_dim);
+
+        var d_q = try DeviceBuffer(f32).init(dev, host_q.len);
+        defer d_q.deinit();
+        try d_q.copyFromHost(host_q);
+
+        var d_k = try DeviceBuffer(f32).init(dev, host_k.len);
+        defer d_k.deinit();
+        try d_k.copyFromHost(host_k);
+
+        var d_v = try DeviceBuffer(f32).init(dev, host_v.len);
+        defer d_v.deinit();
+        try d_v.copyFromHost(host_v);
+
+        var d_out = try DeviceBuffer(f32).init(dev, num_tokens * q_dim);
+        defer d_out.deinit();
+
+        try attention(
+            d_q.slice(),
+            d_k.slice(),
+            d_v.slice(),
+            d_out.slice(),
+            num_tokens,
+            prompt_len,
+            num_q_heads,
+            num_kv_heads,
+            head_dim,
+            q_dim,
+            k_dim,
+            k_dim,
+            q_dim,
+            null,
+        );
+
+        const gpu_out = try allocator.alloc(f32, num_tokens * q_dim);
+        defer allocator.free(gpu_out);
+        try d_out.copyToHost(gpu_out);
+
+        var max_diff: f32 = 0.0;
+        for (cpu_out, gpu_out) |c, g| {
+            const diff = @abs(c - g);
+            if (diff > max_diff) max_diff = diff;
+            try std.testing.expect(diff <= 5e-4 + 5e-4 * @abs(c));
+        }
+        std.debug.print("[parity] Global Attention (16x2, d=512): max_diff = {e:.4}\n", .{max_diff});
+    }
+}
+
+test "CUDA MoE router top-8 selection and softmax parity" {
+    if (!cuda.is_enabled) return;
+    const dev = requireHardwareDevice() catch |err| switch (err) {
+        error.SkipZigTest => return,
+        else => return err,
+    };
+
+    const allocator = std.testing.allocator;
+    var prng = std.Random.DefaultPrng.init(0x9988_7766);
+    const rand = prng.random();
+
+    const num_tokens: usize = 4;
+    const host_logits = try allocator.alloc(f32, num_tokens * 128);
+    defer allocator.free(host_logits);
+    for (host_logits) |*x| x.* = (rand.float(f32) * 20.0) - 10.0;
+
+    const host_down_scales = try allocator.alloc(f32, 128);
+    defer allocator.free(host_down_scales);
+    for (host_down_scales) |*s| s.* = rand.float(f32) * 1.5 + 0.5;
+
+    // CPU Reference top-8 and softmax
+    const cpu_indices = try allocator.alloc(usize, num_tokens * 8);
+    defer allocator.free(cpu_indices);
+    const cpu_weights = try allocator.alloc(f32, num_tokens * 8);
+    defer allocator.free(cpu_weights);
+
+    for (0..num_tokens) |t| {
+        const tok_logits = host_logits[t * 128 .. (t + 1) * 128];
+        var top_idx: [8]usize = undefined;
+        var top_w: [8]f32 = undefined;
+        infer.topKExperts(tok_logits, 8, &top_idx, &top_w);
+
+        for (0..8) |e| {
+            top_w[e] *= host_down_scales[top_idx[e]];
+            cpu_indices[t * 8 + e] = top_idx[e];
+            cpu_weights[t * 8 + e] = top_w[e];
+        }
+    }
+
+    var d_logits = try DeviceBuffer(f32).init(dev, host_logits.len);
+    defer d_logits.deinit();
+    try d_logits.copyFromHost(host_logits);
+
+    var d_down_scales = try DeviceBuffer(f32).init(dev, host_down_scales.len);
+    defer d_down_scales.deinit();
+    try d_down_scales.copyFromHost(host_down_scales);
+
+    var d_indices = try DeviceBuffer(i32).init(dev, num_tokens * 8);
+    defer d_indices.deinit();
+
+    var d_weights = try DeviceBuffer(f32).init(dev, num_tokens * 8);
+    defer d_weights.deinit();
+
+    try moeRouterTop8(
+        d_logits.slice(),
+        d_down_scales.slice(),
+        d_indices.slice(),
+        d_weights.slice(),
+        num_tokens,
+        null,
+    );
+
+    const gpu_indices = try allocator.alloc(i32, num_tokens * 8);
+    defer allocator.free(gpu_indices);
+    try d_indices.copyToHost(gpu_indices);
+
+    const gpu_weights = try allocator.alloc(f32, num_tokens * 8);
+    defer allocator.free(gpu_weights);
+    try d_weights.copyToHost(gpu_weights);
+
+    var max_weight_diff: f32 = 0.0;
+    for (0..num_tokens * 8) |i| {
+        // Exact top-8 index agreement
+        try std.testing.expectEqual(@as(i32, @intCast(cpu_indices[i])), gpu_indices[i]);
+        const w_diff = @abs(cpu_weights[i] - gpu_weights[i]);
+        if (w_diff > max_weight_diff) max_weight_diff = w_diff;
+        try std.testing.expect(w_diff <= 1e-5);
+    }
+    std.debug.print("[parity] MoE Router Top-8 Selection & Softmax: max_diff = {e:.4}\n", .{max_weight_diff});
+}
+
+test "CUDA MoE router prep and vector accumulation parity" {
+    if (!cuda.is_enabled) return;
+    const dev = requireHardwareDevice() catch |err| switch (err) {
+        error.SkipZigTest => return,
+        else => return err,
+    };
+
+    const allocator = std.testing.allocator;
+    var prng = std.Random.DefaultPrng.init(0x1122_3344);
+    const rand = prng.random();
+
+    const num_tokens: usize = 2;
+    const dim: usize = 2816;
+    const root_size: f32 = 1.0 / @sqrt(@as(f32, @floatFromInt(dim)));
+
+    const host_r_in = try allocator.alloc(f32, num_tokens * dim);
+    defer allocator.free(host_r_in);
+    for (host_r_in) |*x| x.* = (rand.float(f32) * 4.0) - 2.0;
+
+    const host_scale = try allocator.alloc(f32, dim);
+    defer allocator.free(host_scale);
+    for (host_scale) |*x| x.* = rand.float(f32) * 1.5 + 0.2;
+
+    const cpu_prep = try allocator.alloc(f32, num_tokens * dim);
+    defer allocator.free(cpu_prep);
+    @memcpy(cpu_prep, host_r_in);
+    for (0..num_tokens) |t| {
+        for (0..dim) |d| {
+            cpu_prep[t * dim + d] *= root_size * host_scale[d];
+        }
+    }
+
+    var d_r_in = try DeviceBuffer(f32).init(dev, host_r_in.len);
+    defer d_r_in.deinit();
+    try d_r_in.copyFromHost(host_r_in);
+
+    var d_scale = try DeviceBuffer(f32).init(dev, host_scale.len);
+    defer d_scale.deinit();
+    try d_scale.copyFromHost(host_scale);
+
+    try moeRouterPrep(d_r_in.slice(), d_scale.slice(), root_size, num_tokens, dim, null);
+
+    const gpu_prep = try allocator.alloc(f32, num_tokens * dim);
+    defer allocator.free(gpu_prep);
+    try d_r_in.copyToHost(gpu_prep);
+
+    var max_prep_diff: f32 = 0.0;
+    for (cpu_prep, gpu_prep) |c, g| {
+        const diff = @abs(c - g);
+        if (diff > max_prep_diff) max_prep_diff = diff;
+        try std.testing.expect(diff <= 1e-6);
+    }
+    std.debug.print("[parity] MoE Router Prep: max_diff = {e:.4}\n", .{max_prep_diff});
+
+    // Test vector accumulate
+    const host_accum = try allocator.alloc(f32, dim);
+    defer allocator.free(host_accum);
+    for (host_accum) |*x| x.* = (rand.float(f32) * 2.0) - 1.0;
+
+    const host_x = try allocator.alloc(f32, dim);
+    defer allocator.free(host_x);
+    for (host_x) |*x| x.* = (rand.float(f32) * 2.0) - 1.0;
+
+    const factor: f32 = 0.42;
+
+    const cpu_accum = try allocator.alloc(f32, dim);
+    defer allocator.free(cpu_accum);
+    for (cpu_accum, host_accum, host_x) |*ca, ha, hx| {
+        ca.* = ha + hx * factor;
+    }
+
+    var d_accum = try DeviceBuffer(f32).init(dev, dim);
+    defer d_accum.deinit();
+    try d_accum.copyFromHost(host_accum);
+
+    var d_x = try DeviceBuffer(f32).init(dev, dim);
+    defer d_x.deinit();
+    try d_x.copyFromHost(host_x);
+
+    try accumulateScaled(d_accum.slice(), d_x.slice(), factor, null);
+
+    const gpu_accum = try allocator.alloc(f32, dim);
+    defer allocator.free(gpu_accum);
+    try d_accum.copyToHost(gpu_accum);
+
+    var max_acc_diff: f32 = 0.0;
+    for (cpu_accum, gpu_accum) |c, g| {
+        const diff = @abs(c - g);
+        if (diff > max_acc_diff) max_acc_diff = diff;
+        try std.testing.expect(diff <= 1e-6);
+    }
+    std.debug.print("[parity] Accumulate Scaled: max_diff = {e:.4}\n", .{max_acc_diff});
 }

@@ -183,6 +183,54 @@ pub const c = if (is_enabled) struct {
         device_id: c_int,
         stream: ?*anyopaque,
     ) c_int;
+
+    // Stage 4 Unified Attention & MoE Execution ABI
+    pub extern "c" fn zeno_cuda_attention(
+        q: [*]const f32,
+        k: [*]const f32,
+        v: [*]const f32,
+        out: [*]f32,
+        num_tokens: c_int,
+        prompt_len: c_int,
+        num_q_heads: c_int,
+        num_kv_heads: c_int,
+        head_dim: c_int,
+        stride_q: c_int,
+        stride_k: c_int,
+        stride_v: c_int,
+        stride_out: c_int,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
+
+    pub extern "c" fn zeno_cuda_moe_router_prep(
+        r_in: [*]f32,
+        router_scale: [*]const f32,
+        root_size: f32,
+        num_tokens: c_int,
+        dim: c_int,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
+
+    pub extern "c" fn zeno_cuda_moe_router_topk(
+        router_logits: [*]const f32,
+        exp_down_scale: ?[*]const f32,
+        out_indices: [*]c_int,
+        out_weights: [*]f32,
+        num_tokens: c_int,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
+
+    pub extern "c" fn zeno_cuda_accumulate_scaled(
+        accum: [*]f32,
+        x: [*]const f32,
+        scale: f32,
+        count: usize,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
 } else struct {};
 
 pub fn mapCudaErrorCode(rc: c_int) CudaError {

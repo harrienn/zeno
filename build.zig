@@ -119,9 +119,37 @@ pub fn build(b: *std.Build) void {
         nvcc_gemv_cmd.addArg("-o");
         const gemv_obj = nvcc_gemv_cmd.addOutputFileArg("gemv.o");
 
+        const nvcc_attn_cmd = b.addSystemCommand(&.{
+            nvcc_path,
+            "-c",
+            "-O3",
+            "-Xcompiler",
+            "-fPIC",
+            arch_flag,
+            "-Isrc/cuda",
+        });
+        nvcc_attn_cmd.addFileArg(b.path("src/cuda/attention.cu"));
+        nvcc_attn_cmd.addArg("-o");
+        const attn_obj = nvcc_attn_cmd.addOutputFileArg("attention.o");
+
+        const nvcc_moe_cmd = b.addSystemCommand(&.{
+            nvcc_path,
+            "-c",
+            "-O3",
+            "-Xcompiler",
+            "-fPIC",
+            arch_flag,
+            "-Isrc/cuda",
+        });
+        nvcc_moe_cmd.addFileArg(b.path("src/cuda/moe.cu"));
+        nvcc_moe_cmd.addArg("-o");
+        const moe_obj = nvcc_moe_cmd.addOutputFileArg("moe.o");
+
         zeno_mod.addObjectFile(cuda_obj);
         zeno_mod.addObjectFile(ops_obj);
         zeno_mod.addObjectFile(gemv_obj);
+        zeno_mod.addObjectFile(attn_obj);
+        zeno_mod.addObjectFile(moe_obj);
         zeno_mod.addLibraryPath(.{ .cwd_relative = cuda_lib_dir });
         zeno_mod.linkSystemLibrary("cudart", .{});
         zeno_mod.linkSystemLibrary("stdc++", .{});
@@ -135,6 +163,8 @@ pub fn build(b: *std.Build) void {
         model_tests.root_module.addObjectFile(cuda_obj);
         model_tests.root_module.addObjectFile(ops_obj);
         model_tests.root_module.addObjectFile(gemv_obj);
+        model_tests.root_module.addObjectFile(attn_obj);
+        model_tests.root_module.addObjectFile(moe_obj);
         model_tests.root_module.addLibraryPath(.{ .cwd_relative = cuda_lib_dir });
         model_tests.root_module.linkSystemLibrary("cudart", .{});
         model_tests.root_module.linkSystemLibrary("stdc++", .{});

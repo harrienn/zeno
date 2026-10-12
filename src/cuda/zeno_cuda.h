@@ -153,6 +153,54 @@ int zeno_cuda_gemv_q5_0(
     void *stream
 );
 
+// Stage 4 Unified Attention & MoE Execution ABI
+int zeno_cuda_attention(
+    const float *q,
+    const float *k,
+    const float *v,
+    float *out,
+    int num_tokens,
+    int prompt_len,
+    int num_q_heads,
+    int num_kv_heads,
+    int head_dim,
+    int stride_q,
+    int stride_k,
+    int stride_v,
+    int stride_out,
+    int device_id,
+    void *stream
+);
+
+int zeno_cuda_moe_router_prep(
+    float *r_in,
+    const float *router_scale,
+    float root_size,
+    int num_tokens,
+    int dim,
+    int device_id,
+    void *stream
+);
+
+int zeno_cuda_moe_router_topk(
+    const float *router_logits,
+    const float *exp_down_scale,
+    int *out_indices,
+    float *out_weights,
+    int num_tokens,
+    int device_id,
+    void *stream
+);
+
+int zeno_cuda_accumulate_scaled(
+    float *accum,
+    const float *x,
+    float scale,
+    size_t count,
+    int device_id,
+    void *stream
+);
+
 #ifdef __cplusplus
 }
 #endif
