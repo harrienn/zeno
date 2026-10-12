@@ -303,8 +303,45 @@ def main():
         assert "incomplete_body" in resp_str, f"Expected incomplete_body in response"
         print("✓ Correctly returned 400 Bad Request with incomplete_body on truncated client transmission")
 
+        # Test 15: Concurrent /health probe during in-flight decision query (F4)
+        print("\n--- Test 15: Concurrent /health probe during in-flight decision query (F4) ---")
+        import threading
+        decision_result = {}
+        def run_decision():
+            s_t = time.time()
+            st, dt = test_request("POST", "/v1/systemone", body={
+                "query": "Is system health nominal?",
+                "schema": {
+                    "type": "boolean",
+                    "candidates": [{"token": "Yes", "label": "Yes"}, {"token": "No", "label": "No"}]
+                },
+                "options": {"step_cap": 1, "canvas_length": 16}
+            })
+            decision_result["status"] = st
+            decision_result["data"] = dt
+            decision_result["elapsed"] = time.time() - s_t
+
+        dec_thread = threading.Thread(target=run_decision)
+        dec_thread.start()
+
+        # Give the decision thread a moment to connect and enter inference
+        time.sleep(0.3)
+
+        # While decision is running in the background, send 3 consecutive /health checks
+        for probe_i in range(3):
+            p_start = time.time()
+            h_status, h_data = test_request("GET", "/health")
+            p_elapsed = time.time() - p_start
+            assert h_status == 200 and h_data.get("status") == "ok", f"Health probe failed: {h_status}, {h_data}"
+            assert p_elapsed < 0.2, f"Health probe took too long ({p_elapsed:.3f}s), blocked by inference!"
+            print(f"✓ Health probe {probe_i+1} responded in {p_elapsed*1000:.1f}ms during active inference")
+
+        dec_thread.join()
+        assert decision_result.get("status") == 200, f"Decision query failed: {decision_result}"
+        print(f"✓ In-flight decision completed in {decision_result['elapsed']:.2f}s without blocking health probes!")
+
         print("\n=======================================================")
-        print(" ALL HTTP SERVER INTEGRATION TESTS PASSED (14/14)")
+        print(" ALL HTTP SERVER INTEGRATION TESTS PASSED (15/15)")
         print("=======================================================")
 
     finally:

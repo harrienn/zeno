@@ -22,8 +22,17 @@ pub const Mutex = struct {
     inner: std.atomic.Mutex = .unlocked,
 
     pub fn lock(self: *Mutex) void {
+        var spin_count: usize = 0;
         while (!self.inner.tryLock()) {
-            std.Thread.yield() catch {};
+            spin_count += 1;
+            if (spin_count < 100) {
+                std.atomic.spinLoopHint();
+            } else if (spin_count < 1000) {
+                std.Thread.yield() catch {};
+            } else {
+                const ts = std.posix.timespec{ .sec = 0, .nsec = 1_000_000 };
+                _ = std.posix.system.nanosleep(&ts, null);
+            }
         }
     }
 

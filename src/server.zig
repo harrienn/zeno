@@ -63,12 +63,15 @@ pub fn parseIp4(str: []const u8) !u32 {
 
 /// HTTP API Server for Zeno System One Decision Engine.
 pub const Server = struct {
+    pub const max_active_connections: usize = 64;
+
     allocator: std.mem.Allocator,
     engine: *DecisionEngine,
     host: []const u8,
     port: u16,
     listen_fd: ?i32 = null,
     should_stop: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+    active_connections: std.atomic.Value(usize) = std.atomic.Value(usize).init(0),
 
     pub fn init(allocator: std.mem.Allocator, engine: *DecisionEngine, host: []const u8, port: u16) Server {
         return .{
@@ -78,6 +81,7 @@ pub const Server = struct {
             .port = port,
             .listen_fd = null,
             .should_stop = std.atomic.Value(bool).init(false),
+            .active_connections = std.atomic.Value(usize).init(0),
         };
     }
 
@@ -90,6 +94,13 @@ pub const Server = struct {
         if (self.listen_fd) |fd| {
             _ = linux.close(fd);
             self.listen_fd = null;
+        }
+
+        // Wait up to 500ms for active connections to finish cleanly
+        var wait_ms: usize = 0;
+        while (self.active_connections.load(.acquire) > 0 and wait_ms < 500) : (wait_ms += 10) {
+            const ts = std.posix.timespec{ .sec = 0, .nsec = 10_000_000 };
+            _ = std.posix.system.nanosleep(&ts, null);
         }
     }
 
@@ -153,12 +164,33 @@ pub const Server = struct {
             }
 
             const client_fd: i32 = @intCast(client_rc);
+
+            if (self.active_connections.load(.acquire) >= max_active_connections) {
+                self.sendError(client_fd, 503, "service_unavailable", "Server connection capacity reached");
+                _ = linux.shutdown(client_fd, linux.SHUT.WR);
+                _ = linux.close(client_fd);
+                continue;
+            }
+
             // Configure socket read/write timeouts (15s) to prevent slowloris / stalled clients (R6-02)
             const tv = linux.timeval{ .sec = 15, .usec = 0 };
             _ = linux.setsockopt(client_fd, linux.SOL.SOCKET, linux.SO.RCVTIMEO, @ptrCast(&tv), @sizeOf(linux.timeval));
             _ = linux.setsockopt(client_fd, linux.SOL.SOCKET, linux.SO.SNDTIMEO, @ptrCast(&tv), @sizeOf(linux.timeval));
-            self.handleClient(client_fd);
+
+            const thread = std.Thread.spawn(.{}, workerConnectionHandler, .{ self, client_fd }) catch {
+                self.sendError(client_fd, 503, "service_unavailable", "Server busy: unable to spawn connection worker");
+                _ = linux.shutdown(client_fd, linux.SHUT.WR);
+                _ = linux.close(client_fd);
+                continue;
+            };
+            thread.detach();
         }
+    }
+
+    fn workerConnectionHandler(self: *Server, client_fd: i32) void {
+        _ = self.active_connections.fetchAdd(1, .release);
+        defer _ = self.active_connections.fetchSub(1, .release);
+        self.handleClient(client_fd);
     }
 
     const ReadResult = enum {
@@ -790,6 +822,85 @@ test "Server GET /health over loopback TCP" {
 
     server_inst.stop();
     // Wake up accept by sending one dummy connection to allow thread to exit cleanly
+    const wake_rc = linux.socket(linux.AF.INET, linux.SOCK.STREAM | linux.SOCK.CLOEXEC, 0);
+    if (linux.errno(wake_rc) == .SUCCESS) {
+        const wake_fd: i32 = @intCast(wake_rc);
+        _ = linux.connect(wake_fd, @ptrCast(&addr), @sizeOf(linux.sockaddr.in));
+        _ = linux.close(wake_fd);
+    }
+    thread.join();
+}
+
+test "Server concurrent /health response while active connection is open (F4)" {
+    const allocator = std.testing.allocator;
+    var server_inst = Server.init(allocator, undefined, "127.0.0.1", 0);
+    try server_inst.listen();
+    defer server_inst.deinit();
+
+    const thread = try std.Thread.spawn(.{}, struct {
+        fn run(s: *Server) void {
+            s.serve() catch {};
+        }
+    }.run, .{&server_inst});
+
+    var addr: linux.sockaddr.in = .{
+        .family = linux.AF.INET,
+        .port = std.mem.nativeToBig(u16, server_inst.port),
+        .addr = try parseIp4("127.0.0.1"),
+        .zero = [8]u8{ 0, 0, 0, 0, 0, 0, 0, 0 },
+    };
+
+    // Client 1 connects and holds connection open (simulating active connection)
+    const rc1 = linux.socket(linux.AF.INET, linux.SOCK.STREAM | linux.SOCK.CLOEXEC, 0);
+    try std.testing.expect(linux.errno(rc1) == .SUCCESS);
+    const client1_fd: i32 = @intCast(rc1);
+
+    const c1_rc = linux.connect(client1_fd, @ptrCast(&addr), @sizeOf(linux.sockaddr.in));
+    try std.testing.expect(linux.errno(c1_rc) == .SUCCESS);
+
+    // Send partial line so client 1 stays active in read loop
+    const partial_data = "POST /v1/";
+    _ = linux.write(client1_fd, partial_data.ptr, partial_data.len);
+
+    // Give server worker thread a few ms to pick up client 1
+    const ts_wait = std.posix.timespec{ .sec = 0, .nsec = 20_000_000 };
+    _ = std.posix.system.nanosleep(&ts_wait, null);
+
+    // Verify active_connections is at least 1
+    try std.testing.expect(server_inst.active_connections.load(.acquire) >= 1);
+
+    // Client 2 connects to GET /health concurrently
+    const rc2 = linux.socket(linux.AF.INET, linux.SOCK.STREAM | linux.SOCK.CLOEXEC, 0);
+    try std.testing.expect(linux.errno(rc2) == .SUCCESS);
+    const client2_fd: i32 = @intCast(rc2);
+    defer _ = linux.close(client2_fd);
+
+    const c2_rc = linux.connect(client2_fd, @ptrCast(&addr), @sizeOf(linux.sockaddr.in));
+    try std.testing.expect(linux.errno(c2_rc) == .SUCCESS);
+
+    const health_req = "GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
+    const start_time = Server.getMonotonicMs();
+    _ = linux.write(client2_fd, health_req.ptr, health_req.len);
+
+    var resp_buf: [1024]u8 = undefined;
+    var total_read: usize = 0;
+    while (total_read < resp_buf.len) {
+        const r_rc = linux.read(client2_fd, resp_buf[total_read..].ptr, resp_buf.len - total_read);
+        if (linux.errno(r_rc) != .SUCCESS or r_rc == 0) break;
+        total_read += r_rc;
+    }
+    const elapsed_ms = Server.getMonotonicMs() - start_time;
+
+    const resp_text = resp_buf[0..total_read];
+    try std.testing.expect(std.mem.indexOf(u8, resp_text, "200 OK") != null);
+    try std.testing.expect(std.mem.indexOf(u8, resp_text, "{\"status\":\"ok\"}") != null);
+    // /health must respond immediately (< 500ms), proving it was NOT blocked by client 1
+    try std.testing.expect(elapsed_ms < 500.0);
+
+    // Now close client 1 cleanly
+    _ = linux.close(client1_fd);
+
+    server_inst.stop();
     const wake_rc = linux.socket(linux.AF.INET, linux.SOCK.STREAM | linux.SOCK.CLOEXEC, 0);
     if (linux.errno(wake_rc) == .SUCCESS) {
         const wake_fd: i32 = @intCast(wake_rc);

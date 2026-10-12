@@ -79,7 +79,7 @@ pub fn main(init: std.process.Init) !void {
         };
         defer engine.deinit();
 
-        var server_inst = zeno.Server.init(arena, &engine, host, port);
+        var server_inst = zeno.Server.init(std.heap.page_allocator, &engine, host, port);
         try server_inst.listen();
         defer server_inst.deinit();
 
