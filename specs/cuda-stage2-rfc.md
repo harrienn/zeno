@@ -1,6 +1,6 @@
 # RFC: Zeno CUDA Backend — Stage 2: Device Memory Management & Fused Elementwise Kernels
 
-- **Status**: Proposed / Under Review (Round 17 Revision)
+- **Status**: Proposed / Under Review (Round 18 Revision)
 - **Author**: Antigravity (Pair Programming with User)
 - **Target Release**: Zeno Phase 5 (CUDA & Multi-GPU Execution)
 - **Governing Specs**: [`AGENTS.md`](../AGENTS.md), [`specs/cuda-roadmap.md`](cuda-roadmap.md), [`specs/transformer.md`](transformer.md), [`specs/stage1-verification.md`](stage1-verification.md), [`specs/UNRESOLVED.md`](UNRESOLVED.md)
@@ -14,10 +14,10 @@
 This RFC specifies **Stage 2** of the Zeno CUDA backend. Following the Stage 1 implementation and physical hardware verification on local RTX 3060 dual-GPU host (documented in [`specs/stage1-verification.md`](stage1-verification.md), commits `457af85` and `ee31f5c`, R16-06, R17-04), Stage 2 establishes:
 
 1. **Deterministic Device Memory Management in Zig** ([`src/cuda_mem.zig`](../src/cuda_mem.zig)):
-   - A single-owner typed buffer abstraction `DeviceBuffer(T)` with explicit device assignment, manual move semantics via `move()`, nullable pointer discipline, safe idempotent deinitialization, and zero host heap allocations (R15-01, R16-02).
-   - Generic, non-owning view abstraction `DeviceSlice(T)` (R16-01).
-   - Explicitly synchronous host-device transfers (`copyFromHost`, `copyToHost`, `copyFromDevice`) by default, eliminating pinned-memory and stream-lifetime hazards from Stage 2 (R16-03).
-   - Execution stream wrapper `CudaStream` for kernel scheduling, while deferring asynchronous host streaming and pinned host memory (`cudaHostAlloc`) to Stage 5 pipelining (R16-03).
+   - A single-owner typed buffer abstraction `DeviceBuffer(T)` constrained to non-zero POD numeric types (`f32, f16, i32, u32, u8`), with checked allocation byte bounds (16 GiB guard cap), manual move semantics via `move()`, nullable pointer discipline, safe idempotent deinitialization, and zero host heap allocations (R15-01, R16-02, R18-02).
+   - Generic, non-owning view abstraction `DeviceSlice(T)` with checked arithmetic in `subslice` returning `error.InvalidParam` on overflow or out-of-bounds in all build modes (R16-01, R18-01).
+   - Explicitly synchronous host-device transfers (`copyFromHost`, `copyToHost`, `copyFromDevice`) with release-mode runtime length validation returning `error.InvalidParam` on mismatch across all build modes, eliminating pinned-memory and stream-lifetime hazards from Stage 2 (R16-03, R18-01).
+   - Execution stream wrapper `CudaStream` with explicit single-owner move semantics (`move()`), release-mode handle retention on failed destruction, and strict kernel scheduling scoping, while deferring asynchronous host streaming and pinned host memory (`cudaHostAlloc`) to Stage 5 pipelining (R16-03, R18-03).
    - Complete public C ABI boundary and error mappings in `src/cuda.zig` and `src/cuda/zeno_cuda.h` (R15-03, R16-01, R17-01).
 
 2. **Native Ampere Elementwise Kernels in CUDA C++** ([`src/cuda/ops.cu`](../src/cuda/ops.cu)):
@@ -63,16 +63,17 @@ In Zeno, device memory buffers must have unambiguous lifetime boundaries. Accide
 ```
 
 #### Ownership Discipline:
-- **Manually Enforced Single Ownership (R16-02)**: Like standard Zig allocators and file handles, Zig does not have linear/affine types or compiler-enforced move semantics. `DeviceBuffer(T)` is an explicitly single-owner struct governed by programmer discipline. Duplicating owning handles (e.g. assigning `var b2 = b1` and calling `deinit` on both) is a contract violation.
-- **Explicit Move Semantics**: To transfer ownership across scopes or structs, callers must call `var b2 = b1.move()`, which returns the active handle and sets `b1.ptr = null, b1.len = 0`.
-- **Non-Owning Views**: Slices of a buffer are represented by `DeviceSlice(T)`. `DeviceSlice(T)` holds a non-owning raw device pointer and length, provides bounds-checked sub-slicing, and does not have a `deinit()` method (R16-01).
-- **Idempotent Deinitialization**: `deinit(self: *Self)` checks `if (self.ptr) |p|`. If `zeno_cuda_free` succeeds, `self.ptr` is immediately set to `null` and `self.len = 0`. Repeated calls to `deinit()` are guaranteed safe no-ops.
-- **Failed Deallocation Behavior (R16-02)**: If `zeno_cuda_free` fails, `deinit()` logs the error via `std.log.err` and asserts in debug mode. In release builds, `self.ptr` is **retained** rather than zeroed, ensuring the failure does not silently drop the handle from memory tracking.
+- **Manually Enforced Single Ownership (R16-02, R18-03)**: Like standard Zig allocators and file handles, Zig does not have linear/affine types or compiler-enforced move semantics. Both `DeviceBuffer(T)` and `CudaStream` are explicitly single-owner structs governed by programmer discipline. Duplicating owning handles (e.g. assigning `var b2 = b1` and calling `deinit` on both) is a contract violation.
+- **Explicit Move Semantics (R16-02, R18-03)**: To transfer ownership across scopes or structs, callers must invoke `var b2 = b1.move()` (for buffers) or `var s2 = s1.move()` (for streams), which transfers the active handle and zeroes/nulls the source (`b1.ptr = null, b1.len = 0` or `s1.handle = null`).
+- **Non-Owning Views (R16-01, R18-01)**: Slices of a buffer are represented by `DeviceSlice(T)`. `DeviceSlice(T)` holds a non-owning raw device pointer and length, provides bounds-checked sub-slicing via `subslice(start, length)` returning `error.InvalidParam` on overflow or out-of-bounds, and does not have a `deinit()` method.
+- **Idempotent Deinitialization**: `deinit(self: *Self)` checks `if (self.ptr) |p|` (or `if (self.handle) |h|`). If destruction succeeds, the pointer/handle is immediately set to `null` (and `len = 0` for buffers). Repeated calls to `deinit()` are guaranteed safe no-ops.
+- **Failed Deallocation & Destruction Behavior (R16-02, R18-03)**: If `zeno_cuda_free` or `zeno_cuda_stream_destroy` fails, `deinit()` logs the error via `std.log.err` and asserts in debug mode. In release builds, `self.ptr` and `self.handle` are **retained** rather than zeroed, ensuring the failure does not silently drop the handle or leak the runtime resource from tracking.
 - **Zero-Length Allocations**: If `count == 0`, `DeviceBuffer(T).init(device_id, 0)` returns an empty buffer with `ptr = null` and `len = 0` without calling CUDA runtime allocation.
+- **POD Type Constraints & Allocation Bounds (R18-02)**: `DeviceBuffer(T)` is constrained at compile time to POD numeric types (`f32, f16, i32, u32, u8`) with `@sizeOf(T) > 0`. Byte calculations use checked arithmetic (`std.math.mul(usize, count, @sizeOf(T)) catch return error.InvalidParam`). Maximum allocation size is capped at 16 GiB (`MAX_ALLOC_BYTES = 16 * 1024 * 1024 * 1024`) to prevent integer overflow and unserviceable device requests.
 
 ---
 
-### 2.2 Host-Device Transfer Contract (R15-02, R16-03)
+### 2.2 Host-Device Transfer Contract (R15-02, R16-03, R18-01)
 
 To ensure memory safety and avoid complex pinned-memory hazards in Stage 2:
 
@@ -81,6 +82,8 @@ To ensure memory safety and avoid complex pinned-memory hazards in Stage 2:
    - `copyToHost(self: *const Self, host_slice: []T) CudaError!void`
    - `copyFromDevice(self: *Self, src: DeviceSlice(T)) CudaError!void`
    - **Contract**: Transfers are executed synchronously via `cudaMemcpy(..., cudaMemcpyHostToDevice / cudaMemcpyDeviceToHost / cudaMemcpyDeviceToDevice)`. The host thread blocks until transfer completion. Host buffers require no lifetime guarantees beyond function return, and ordinary pageable Zig slices are safely supported.
+   - **Runtime Length Validation (R18-01)**: Every copy method validates `host_slice.len == self.len` (or `src.len == self.len`) at runtime in all build modes (`ReleaseFast`, `ReleaseSafe`, `ReleaseSmall`, `Debug`), returning `error.InvalidParam` on mismatch before issuing any copy. Never rely on debug assertions for API bounds checking.
+   - **Checked Range Arithmetic (R18-01)**: `DeviceSlice(T).subslice(start, length)` performs checked arithmetic (`std.math.add(usize, start, length) catch return error.InvalidParam; if (end > self.len) return error.InvalidParam;`) and returns `CudaError!DeviceSlice(T)`.
    - **Device Matching**: `copyFromDevice` verifies `self.device_id == src.device_id`. Cross-device transfers return `error.DeviceMismatch`.
 
 2. **Stream Execution vs. Asynchronous Transfers (R16-03)**:
@@ -280,7 +283,7 @@ All device buffers must be row-major and contiguous float32 without padding.
 
 ---
 
-### 3.3 Zig Wrapper Implementation (`src/cuda_mem.zig`, R16-01, R16-02, R16-03, R17-01)
+### 3.3 Zig Wrapper Implementation (`src/cuda_mem.zig`, R16-01, R16-02, R16-03, R17-01, R18-01, R18-02, R18-03)
 
 The implementation in `src/cuda_mem.zig` directly binds to the public `cuda.c` declarations:
 
@@ -296,8 +299,11 @@ pub fn DeviceSlice(comptime T: type) type {
         len: usize,
         device_id: i32,
 
-        pub fn subslice(self: Self, start: usize, length: usize) Self {
-            std.debug.assert(start + length <= self.len);
+        /// Returns a subslice [start, start + length).
+        /// Performs checked addition and bounds checking in all build modes (R18-01).
+        pub fn subslice(self: Self, start: usize, length: usize) cuda.CudaError!Self {
+            const end = std.math.add(usize, start, length) catch return error.InvalidParam;
+            if (end > self.len) return error.InvalidParam;
             return .{
                 .ptr = self.ptr + start,
                 .len = length,
@@ -322,12 +328,26 @@ pub const CudaStream = struct {
         };
     }
 
+    /// Explicitly transfers ownership to the caller, leaving source stream empty (R18-03).
+    pub fn move(self: *CudaStream) CudaStream {
+        const moved = CudaStream{
+            .handle = self.handle,
+            .device_id = self.device_id,
+        };
+        self.handle = null;
+        return moved;
+    }
+
+    /// Idempotent stream destruction. If stream destruction fails, logs error
+    /// and retains handle in release mode so the resource failure is not masked (R18-03).
     pub fn deinit(self: *CudaStream) void {
         if (self.handle) |h| {
             const rc = cuda.c.zeno_cuda_stream_destroy(h, self.device_id);
             if (rc != 0) {
-                std.log.err("zeno_cuda_stream_destroy failed with rc={d}", .{rc});
+                std.log.err("zeno_cuda_stream_destroy failed for device {d} with rc={d}", .{ self.device_id, rc });
                 std.debug.assert(rc == 0);
+                // Retain handle on failure in release mode matching DeviceBuffer
+                return;
             }
             self.handle = null;
         }
@@ -342,8 +362,22 @@ pub const CudaStream = struct {
 };
 
 pub fn DeviceBuffer(comptime T: type) type {
+    comptime {
+        // Enforce POD numeric types suitable for tensor and parameter buffers (R18-02)
+        const valid = switch (T) {
+            f32, f16, i32, u32, u8 => true,
+            else => false,
+        };
+        if (!valid or @sizeOf(T) == 0) {
+            @compileError("DeviceBuffer only supports non-zero-sized POD numeric types (f32, f16, i32, u32, u8)");
+        }
+    }
+
     return struct {
         const Self = @This();
+
+        /// Guard cap preventing integer overflow and unserviceable device requests (16 GiB)
+        pub const MAX_ALLOC_BYTES: usize = 16 * 1024 * 1024 * 1024;
 
         ptr: ?[*]T,
         len: usize,
@@ -359,8 +393,11 @@ pub fn DeviceBuffer(comptime T: type) type {
                 };
             }
 
+            // Checked multiplication prevents overflow before issuing CUDA allocation (R18-02)
+            const bytes = std.math.mul(usize, count, @sizeOf(T)) catch return error.InvalidParam;
+            if (bytes > MAX_ALLOC_BYTES) return error.InvalidParam;
+
             var raw_ptr: ?*anyopaque = null;
-            const bytes = count * @sizeOf(T);
             const rc = cuda.c.zeno_cuda_malloc(&raw_ptr, bytes, device_id);
             if (rc != 0) return cuda.mapCudaErrorCode(rc);
 
@@ -371,6 +408,7 @@ pub fn DeviceBuffer(comptime T: type) type {
             };
         }
 
+        /// Explicitly transfers ownership to the caller, leaving source buffer empty (R16-02).
         pub fn move(self: *Self) Self {
             const moved = Self{
                 .ptr = self.ptr,
@@ -382,6 +420,8 @@ pub fn DeviceBuffer(comptime T: type) type {
             return moved;
         }
 
+        /// Idempotent device buffer deallocation. If free fails, logs error
+        /// and retains pointer in release mode to preserve trackable state (R16-02).
         pub fn deinit(self: *Self) void {
             if (self.ptr) |p| {
                 const rc = cuda.c.zeno_cuda_free(p, self.device_id);
@@ -396,27 +436,33 @@ pub fn DeviceBuffer(comptime T: type) type {
             }
         }
 
+        /// Synchronous copy from host slice to device buffer.
+        /// Validates slice lengths at runtime in all build modes (R18-01).
         pub fn copyFromHost(self: *Self, host_slice: []const T) cuda.CudaError!void {
-            std.debug.assert(host_slice.len == self.len);
+            if (host_slice.len != self.len) return error.InvalidParam;
             if (self.len == 0) return;
-            const bytes = self.len * @sizeOf(T);
+            const bytes = std.math.mul(usize, self.len, @sizeOf(T)) catch return error.InvalidParam;
             const rc = cuda.c.zeno_cuda_memcpy_h2d(self.ptr.?, host_slice.ptr, bytes, self.device_id);
             if (rc != 0) return cuda.mapCudaErrorCode(rc);
         }
 
+        /// Synchronous copy from device buffer to host slice.
+        /// Validates slice lengths at runtime in all build modes (R18-01).
         pub fn copyToHost(self: *const Self, host_slice: []T) cuda.CudaError!void {
-            std.debug.assert(host_slice.len == self.len);
+            if (host_slice.len != self.len) return error.InvalidParam;
             if (self.len == 0) return;
-            const bytes = self.len * @sizeOf(T);
+            const bytes = std.math.mul(usize, self.len, @sizeOf(T)) catch return error.InvalidParam;
             const rc = cuda.c.zeno_cuda_memcpy_d2h(host_slice.ptr, self.ptr.?, bytes, self.device_id);
             if (rc != 0) return cuda.mapCudaErrorCode(rc);
         }
 
+        /// Synchronous copy from device slice to device buffer.
+        /// Validates device ID matching and slice lengths at runtime in all build modes (R18-01).
         pub fn copyFromDevice(self: *Self, src: DeviceSlice(T)) cuda.CudaError!void {
             if (self.device_id != src.device_id) return error.DeviceMismatch;
-            std.debug.assert(src.len == self.len);
+            if (src.len != self.len) return error.InvalidParam;
             if (self.len == 0) return;
-            const bytes = self.len * @sizeOf(T);
+            const bytes = std.math.mul(usize, self.len, @sizeOf(T)) catch return error.InvalidParam;
             const rc = cuda.c.zeno_cuda_memcpy_d2d(self.ptr.?, src.ptr, bytes, self.device_id);
             if (rc != 0) return cuda.mapCudaErrorCode(rc);
         }

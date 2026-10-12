@@ -52,9 +52,9 @@ Visible Devices:     2 (Reported: 2)
  Inter-GPU Peer-to-Peer (P2P) Access Capability Matrix:
  (Capability query only; does not imply P2P is currently enabled)
 ----------------------------------------------------------------------
-                 GPU 0       GPU 1   
-  GPU 0            —        Not Capable  
-  GPU 1       Not Capable        —       
+                 GPU 0       GPU 1
+  GPU 0            —        Not Capable
+  GPU 1       Not Capable        —
 ======================================================================
 ```
 Exit code: `0`.
