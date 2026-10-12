@@ -85,6 +85,62 @@ pub const c = if (is_enabled) struct {
     pub extern "c" fn zeno_cuda_get_device_count(out_count: *c_int) c_int;
     pub extern "c" fn zeno_cuda_get_topology(out_topo: *ZenoCudaTopology) c_int;
     pub extern "c" fn zeno_cuda_get_error_string(error_code: c_int) [*:0]const u8;
+
+    // Memory & Stream ABI
+    pub extern "c" fn zeno_cuda_malloc(out_ptr: *?*anyopaque, bytes: usize, device_id: c_int) c_int;
+    pub extern "c" fn zeno_cuda_free(ptr: ?*anyopaque, device_id: c_int) c_int;
+    pub extern "c" fn zeno_cuda_memcpy_h2d(dst: ?*anyopaque, src: ?*const anyopaque, bytes: usize, device_id: c_int) c_int;
+    pub extern "c" fn zeno_cuda_memcpy_d2h(dst: ?*anyopaque, src: ?*const anyopaque, bytes: usize, device_id: c_int) c_int;
+    pub extern "c" fn zeno_cuda_memcpy_d2d(dst: ?*anyopaque, src: ?*const anyopaque, bytes: usize, device_id: c_int) c_int;
+    pub extern "c" fn zeno_cuda_memset(dst: ?*anyopaque, value: c_int, bytes: usize, device_id: c_int) c_int;
+    pub extern "c" fn zeno_cuda_stream_create(out_stream: *?*anyopaque, device_id: c_int) c_int;
+    pub extern "c" fn zeno_cuda_stream_destroy(stream: ?*anyopaque, device_id: c_int) c_int;
+    pub extern "c" fn zeno_cuda_stream_sync(stream: ?*anyopaque) c_int;
+
+    // Fused Elementwise Kernels ABI
+    pub extern "c" fn zeno_cuda_rms_norm(
+        x: [*]const f32,
+        weight: ?[*]const f32,
+        out: [*]f32,
+        num_rows: c_int,
+        dim: c_int,
+        eps: f32,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
+    pub extern "c" fn zeno_cuda_geglu(
+        gate: [*]const f32,
+        up: [*]const f32,
+        out: [*]f32,
+        count: usize,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
+    pub extern "c" fn zeno_cuda_rope(
+        vec: [*]f32,
+        num_tokens: c_int,
+        num_heads: c_int,
+        head_dim: c_int,
+        pos_offset: c_int,
+        theta: f32,
+        freq_factors: ?[*]const f32,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
+    pub extern "c" fn zeno_cuda_add_residual(
+        x: [*]f32,
+        residual: [*]const f32,
+        count: usize,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
+    pub extern "c" fn zeno_cuda_scale(
+        x: [*]f32,
+        scale: f32,
+        count: usize,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
 } else struct {};
 
 pub fn mapCudaErrorCode(rc: c_int) CudaError {

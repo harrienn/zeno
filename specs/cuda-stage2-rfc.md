@@ -1,9 +1,9 @@
 # RFC: Zeno CUDA Backend — Stage 2: Device Memory Management & Fused Elementwise Kernels
 
-- **Status**: Proposed / Under Review (Round 16 Revision)
+- **Status**: Proposed / Under Review (Round 17 Revision)
 - **Author**: Antigravity (Pair Programming with User)
 - **Target Release**: Zeno Phase 5 (CUDA & Multi-GPU Execution)
-- **Governing Specs**: [`AGENTS.md`](../AGENTS.md), [`specs/cuda-roadmap.md`](cuda-roadmap.md), [`specs/transformer.md`](transformer.md), [`specs/UNRESOLVED.md`](UNRESOLVED.md)
+- **Governing Specs**: [`AGENTS.md`](../AGENTS.md), [`specs/cuda-roadmap.md`](cuda-roadmap.md), [`specs/transformer.md`](transformer.md), [`specs/stage1-verification.md`](stage1-verification.md), [`specs/UNRESOLVED.md`](UNRESOLVED.md)
 - **Target Hardware**: NVIDIA GeForce RTX 3060 12GB (Ampere `sm_86`, PCIe 4.0; dual-GPU setup)
 - **Toolchain**: Zig 0.17.0 + NVIDIA `nvcc` (CUDA 13.3.73, Driver 595.99)
 
@@ -11,24 +11,24 @@
 
 ## 1. Executive Summary
 
-This RFC specifies **Stage 2** of the Zeno CUDA backend. Following the Stage 1 implementation and physical hardware verification on local RTX 3060 dual-GPU host (commits `457af85` and `ee31f5c`, R16-06), Stage 2 establishes:
+This RFC specifies **Stage 2** of the Zeno CUDA backend. Following the Stage 1 implementation and physical hardware verification on local RTX 3060 dual-GPU host (documented in [`specs/stage1-verification.md`](stage1-verification.md), commits `457af85` and `ee31f5c`, R16-06, R17-04), Stage 2 establishes:
 
 1. **Deterministic Device Memory Management in Zig** ([`src/cuda_mem.zig`](../src/cuda_mem.zig)):
    - A single-owner typed buffer abstraction `DeviceBuffer(T)` with explicit device assignment, manual move semantics via `move()`, nullable pointer discipline, safe idempotent deinitialization, and zero host heap allocations (R15-01, R16-02).
    - Generic, non-owning view abstraction `DeviceSlice(T)` (R16-01).
    - Explicitly synchronous host-device transfers (`copyFromHost`, `copyToHost`, `copyFromDevice`) by default, eliminating pinned-memory and stream-lifetime hazards from Stage 2 (R16-03).
    - Execution stream wrapper `CudaStream` for kernel scheduling, while deferring asynchronous host streaming and pinned host memory (`cudaHostAlloc`) to Stage 5 pipelining (R16-03).
-   - Complete public C ABI boundary and error mappings in `src/cuda.zig` (R15-03, R16-01).
+   - Complete public C ABI boundary and error mappings in `src/cuda.zig` and `src/cuda/zeno_cuda.h` (R15-03, R16-01, R17-01).
 
 2. **Native Ampere Elementwise Kernels in CUDA C++** ([`src/cuda/ops.cu`](../src/cuda/ops.cu)):
    - **Fused RMSNorm (`cuda_rms_norm`)**: Fast warp-level reduction (`__shfl_down_sync`) supporting learned scale weights and unweighted normalization (for both V-head norm and MoE router preprocessing), covering $d = 2816$ (residual streams) and $d \in \{256, 512\}$ (per-head Q/K/V norms).
    - **Fused GeGLU (`cuda_geglu`)**: Elementwise $\text{GELU}_{\text{tanh}}(a) \times b$ activation kernel for Gemma 4 shared dense MLP and MoE expert branches.
    - **Rotary Position Embedding (`cuda_rope`)**: High-throughput NeoX-style half-split RoPE over query and key head vectors, supporting dual frequency bases ($\theta_{\text{swa}} = 10,000.0, d = 256$ and $\theta_{\text{global}} = 1,000,000.0, d = 512$) with optional frequency scaling factors.
    - **Fused Residual Add & Scaling (`cuda_add_residual`, `cuda_scale`)**: In-place elementwise operations for decoder block residual junctions and layer output scaling.
-   - Explicit kernel preconditions, launch bounds, integer types, and aliasing rules (R15-04, R16-05).
+   - Explicit kernel preconditions, launch bounds, integer types, aliasing rules, and a minimum 32-thread block ensuring warp shuffle mask validity across all supported dimensions (R15-04, R16-05, R17-02).
 
 3. **Mechanical Parity & Acceptance Verification**:
-   - Justified mixed absolute/relative numerical tolerance policy ($|y_{\text{gpu}} - y_{\text{cpu}}| \le \text{atol} + \text{rtol} \times |y_{\text{cpu}}|$) with proposed thresholds across all production dimensions, evaluated against deterministic pseudo-random test vectors (R15-05, R16-04).
+   - A justified mixed absolute/relative numerical tolerance policy ($|y_{\text{gpu}} - y_{\text{cpu}}| \le \text{atol} + \text{rtol} \times |y_{\text{cpu}}|$) with proposed acceptance thresholds across all production dimensions, to be empirically measured against deterministic pseudo-random test vectors during Stage 2 implementation (R15-05, R16-04, R17-03).
    - Strict unit test portability skipping only on unambiguous `error.NoDevice`, preserving genuine driver initialization failures as test errors (R15-06).
    - Zero-dependency CPU build invariant preserved when `-Dcuda=false`.
 
@@ -91,7 +91,7 @@ To ensure memory safety and avoid complex pinned-memory hazards in Stage 2:
 
 ## 3. Detailed Technical Specification
 
-### 3.1 C ABI Header Additions (`src/cuda/zeno_cuda.h`, R15-03, R16-01)
+### 3.1 C ABI Header Additions (`src/cuda/zeno_cuda.h`, R15-03, R16-01, R17-01)
 
 Extends the Stage 1 C ABI with new error codes, memory management, streams, and elementwise kernel entry points:
 
@@ -214,7 +214,7 @@ int zeno_cuda_scale(
 
 ---
 
-### 3.2 Kernel Preconditions, Launch Bounds, and Aliasing Rules (R15-04, R16-05)
+### 3.2 Kernel Preconditions, Launch Bounds, and Aliasing Rules (R15-04, R16-05, R17-02)
 
 All device buffers must be row-major and contiguous float32 without padding.
 
@@ -226,12 +226,14 @@ All device buffers must be row-major and contiguous float32 without padding.
   - If `weight != NULL`, `weight` must point to at least `dim` contiguous floats.
   - If `weight == NULL`, unweighted normalization is performed. This covers both V-head normalization in SWA/Global layers and MoE router preprocessing.
 - **Aliasing**: In-place normalization (`out == x`) is explicitly supported. Partial overlapping of non-identical buffers returns `ZENO_CUDA_ERR_INVALID_PARAM`.
-- **Launch Geometry**:
+- **Launch Geometry & Warp Participation (R17-02)**:
   - Grid: `dim3(num_rows)`. Each block normalizes exactly one row.
-  - Block:
-    - If `dim <= 512`: `block_size = next_power_of_two(dim)` (e.g. 256 for $d=256$, 512 for $d=512$).
-    - If `dim > 512`: `block_size = 512` threads using a grid-stride accumulation loop.
+  - Block: `dim3(block_size)` where `block_size = max(32, min(512, next_power_of_two(dim)))`.
+  - For $dim < 32$, a full 32-thread warp is launched; threads with $tid \ge dim$ contribute $0.0f$ to the reduction sum of squares. This guarantees that all 32 lanes participate in `__shfl_down_sync(0xffffffff, ...)` without undefined shuffle behavior.
+  - For $dim \le 512$: `block_size` matches the next power of two ($256$ for $d=256$, $512$ for $d=512$).
+  - For $dim > 512$ (e.g. $dim = 2816$): `block_size = 512` threads using a grid-stride accumulation loop.
 - **Algorithm**:
+  - Grid-stride loop computes partial sum of squares: `float sum_sq = 0.0f; for (int i = tid; i < dim; i += blockDim.x) sum_sq += x[row_offset + i] * x[row_offset + i];`
   - Intra-warp reduction with `__shfl_down_sync(0xffffffff, sum_sq, offset)`.
   - Inter-warp reduction via `__shared__ float s_warp_sums[32]`.
   - Thread 0 computes `inv_rms = rsqrtf(sum_sq / dim + eps)` and broadcasts via shared memory.
@@ -278,7 +280,9 @@ All device buffers must be row-major and contiguous float32 without padding.
 
 ---
 
-### 3.3 Zig Wrapper Implementation (`src/cuda_mem.zig`, R16-01, R16-02, R16-03)
+### 3.3 Zig Wrapper Implementation (`src/cuda_mem.zig`, R16-01, R16-02, R16-03, R17-01)
+
+The implementation in `src/cuda_mem.zig` directly binds to the public `cuda.c` declarations:
 
 ```zig
 const std = @import("std");
@@ -430,7 +434,7 @@ pub fn DeviceBuffer(comptime T: type) type {
 
 ---
 
-## 4. Numerical Tolerance Policy (R15-05, R16-04)
+## 4. Numerical Tolerance Policy (R15-05, R16-04, R17-03)
 
 ### 4.1 Reduction Re-ordering and Transcendental Divergence
 1. **Parallel Sum of Squares**:
@@ -444,8 +448,8 @@ pub fn DeviceBuffer(comptime T: type) type {
 Numerical acceptance comparisons use a standard mixed absolute and relative tolerance:
 $$|y_{\text{gpu}} - y_{\text{cpu}}| \le \text{atol} + \text{rtol} \times |y_{\text{cpu}}|$$
 
-### 4.3 Proposed Acceptance Thresholds (Pending Verification Measurement, R16-04)
-Evaluated over deterministic pseudo-random test vectors generated via `std.Random.DefaultPrng.init(0x5461676532)` (`"Stage2"` in ASCII) with values uniformly distributed in $[-3.0, 3.0]$:
+### 4.3 Proposed Acceptance Thresholds (Pending Verification Measurement, R16-04, R17-03)
+To be evaluated over deterministic pseudo-random test vectors generated via `std.Random.DefaultPrng.init(0x537461676532)` (ASCII `"Stage2"`) with values uniformly distributed in $[-3.0, 3.0]$:
 
 | Operation | Parameters / Shapes | Proposed $\text{atol}$ | Proposed $\text{rtol}$ | Rationale |
 |---|---|---|---|---|
@@ -456,7 +460,7 @@ Evaluated over deterministic pseudo-random test vectors generated via `std.Rando
 | **NeoX RoPE** | $N \le 256, H \in \{8, 16\}, d \in \{256, 512\}, \theta \in \{10^4, 10^6\}$ | $1 \times 10^{-5}$ | $1 \times 10^{-4}$ | Planar rotation with hardware `cosf`/`sinf`. |
 | **Residual Add / Scale** | $N \le 4096$, scale factor $1.5$ | $1 \times 10^{-6}$ | $1 \times 10^{-6}$ | Direct IEEE-754 elementwise operations. |
 
-> **Verification Rule (R16-04)**: These thresholds are proposed targets. During Stage 2 implementation, maximum observed absolute and relative errors across 10,000 deterministic sample points generated from seed `0x5461676532` will be measured and recorded in the Stage 2 verification report before finalizing the exit gate.
+> **Verification Rule (R16-04, R17-03)**: These thresholds are proposed targets. During Stage 2 implementation, maximum observed absolute and relative errors across 10,000 deterministic sample points generated from seed `0x537461676532` will be measured and recorded in the Stage 2 verification report before finalizing the exit gate.
 
 ---
 
