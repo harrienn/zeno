@@ -1,6 +1,6 @@
 # RFC: Zeno CUDA Backend — Stage 2: Device Memory Management & Fused Elementwise Kernels
 
-- **Status**: Proposed / Under Review (Round 18 Revision)
+- **Status**: Proposed / Under Review (Round 19 Revision)
 - **Author**: Antigravity (Pair Programming with User)
 - **Target Release**: Zeno Phase 5 (CUDA & Multi-GPU Execution)
 - **Governing Specs**: [`AGENTS.md`](../AGENTS.md), [`specs/cuda-roadmap.md`](cuda-roadmap.md), [`specs/transformer.md`](transformer.md), [`specs/stage1-verification.md`](stage1-verification.md), [`specs/UNRESOLVED.md`](UNRESOLVED.md)
@@ -15,7 +15,7 @@ This RFC specifies **Stage 2** of the Zeno CUDA backend. Following the Stage 1 i
 
 1. **Deterministic Device Memory Management in Zig** ([`src/cuda_mem.zig`](../src/cuda_mem.zig)):
    - A single-owner typed buffer abstraction `DeviceBuffer(T)` constrained to non-zero POD numeric types (`f32, f16, i32, u32, u8`), with checked allocation byte bounds (16 GiB guard cap), manual move semantics via `move()`, nullable pointer discipline, safe idempotent deinitialization, and zero host heap allocations (R15-01, R16-02, R18-02).
-   - Generic, non-owning view abstraction `DeviceSlice(T)` with checked arithmetic in `subslice` returning `error.InvalidParam` on overflow or out-of-bounds in all build modes (R16-01, R18-01).
+   - Generic, non-owning view abstraction `DeviceSlice(T)` with safe nullable pointer representation (`?[*]T`), explicit empty slice constructor, and checked arithmetic in `subslice` returning `error.InvalidParam` on overflow or out-of-bounds while preserving empty representations without pointer arithmetic (R16-01, R18-01, R19-01).
    - Explicitly synchronous host-device transfers (`copyFromHost`, `copyToHost`, `copyFromDevice`) with release-mode runtime length validation returning `error.InvalidParam` on mismatch across all build modes, eliminating pinned-memory and stream-lifetime hazards from Stage 2 (R16-03, R18-01).
    - Execution stream wrapper `CudaStream` with explicit single-owner move semantics (`move()`), release-mode handle retention on failed destruction, and strict kernel scheduling scoping, while deferring asynchronous host streaming and pinned host memory (`cudaHostAlloc`) to Stage 5 pipelining (R16-03, R18-03).
    - Complete public C ABI boundary and error mappings in `src/cuda.zig` and `src/cuda/zeno_cuda.h` (R15-03, R16-01, R17-01).
@@ -65,7 +65,7 @@ In Zeno, device memory buffers must have unambiguous lifetime boundaries. Accide
 #### Ownership Discipline:
 - **Manually Enforced Single Ownership (R16-02, R18-03)**: Like standard Zig allocators and file handles, Zig does not have linear/affine types or compiler-enforced move semantics. Both `DeviceBuffer(T)` and `CudaStream` are explicitly single-owner structs governed by programmer discipline. Duplicating owning handles (e.g. assigning `var b2 = b1` and calling `deinit` on both) is a contract violation.
 - **Explicit Move Semantics (R16-02, R18-03)**: To transfer ownership across scopes or structs, callers must invoke `var b2 = b1.move()` (for buffers) or `var s2 = s1.move()` (for streams), which transfers the active handle and zeroes/nulls the source (`b1.ptr = null, b1.len = 0` or `s1.handle = null`).
-- **Non-Owning Views (R16-01, R18-01)**: Slices of a buffer are represented by `DeviceSlice(T)`. `DeviceSlice(T)` holds a non-owning raw device pointer and length, provides bounds-checked sub-slicing via `subslice(start, length)` returning `error.InvalidParam` on overflow or out-of-bounds, and does not have a `deinit()` method.
+- **Non-Owning Views & Safe Empty Slices (R16-01, R18-01, R19-01)**: Slices of a buffer are represented by `DeviceSlice(T)`. `DeviceSlice(T)` holds a nullable non-owning raw device pointer (`ptr: ?[*]T`) and length (`len: usize`). When representing an empty view (`len == 0`), `ptr` is safely represented as `null` (via `DeviceSlice(T).empty(device_id)`), completely eliminating `undefined` pointers. Sub-slicing via `subslice(start, length)` performs checked arithmetic; when `length == 0` it returns an empty slice without executing pointer arithmetic on null bases. When `length > 0`, it validates that `self.ptr` is non-null before performing offset arithmetic.
 - **Idempotent Deinitialization**: `deinit(self: *Self)` checks `if (self.ptr) |p|` (or `if (self.handle) |h|`). If destruction succeeds, the pointer/handle is immediately set to `null` (and `len = 0` for buffers). Repeated calls to `deinit()` are guaranteed safe no-ops.
 - **Failed Deallocation & Destruction Behavior (R16-02, R18-03)**: If `zeno_cuda_free` or `zeno_cuda_stream_destroy` fails, `deinit()` logs the error via `std.log.err` and asserts in debug mode. In release builds, `self.ptr` and `self.handle` are **retained** rather than zeroed, ensuring the failure does not silently drop the handle or leak the runtime resource from tracking.
 - **Zero-Length Allocations**: If `count == 0`, `DeviceBuffer(T).init(device_id, 0)` returns an empty buffer with `ptr = null` and `len = 0` without calling CUDA runtime allocation.
@@ -283,7 +283,7 @@ All device buffers must be row-major and contiguous float32 without padding.
 
 ---
 
-### 3.3 Zig Wrapper Implementation (`src/cuda_mem.zig`, R16-01, R16-02, R16-03, R17-01, R18-01, R18-02, R18-03)
+### 3.3 Zig Wrapper Implementation (`src/cuda_mem.zig`, R16-01, R16-02, R16-03, R17-01, R18-01, R18-02, R18-03, R19-01)
 
 The implementation in `src/cuda_mem.zig` directly binds to the public `cuda.c` declarations:
 
@@ -295,17 +295,31 @@ pub fn DeviceSlice(comptime T: type) type {
     return struct {
         const Self = @This();
 
-        ptr: [*]T,
+        ptr: ?[*]T,
         len: usize,
         device_id: i32,
 
+        /// Returns an empty non-owning slice for a given device with a safe null pointer (R19-01).
+        pub fn empty(device_id: i32) Self {
+            return .{
+                .ptr = null,
+                .len = 0,
+                .device_id = device_id,
+            };
+        }
+
         /// Returns a subslice [start, start + length).
         /// Performs checked addition and bounds checking in all build modes (R18-01).
+        /// Preserves the safe null empty representation without pointer arithmetic (R19-01).
         pub fn subslice(self: Self, start: usize, length: usize) cuda.CudaError!Self {
             const end = std.math.add(usize, start, length) catch return error.InvalidParam;
             if (end > self.len) return error.InvalidParam;
+            if (length == 0) {
+                return empty(self.device_id);
+            }
+            const base = self.ptr orelse return error.InvalidParam;
             return .{
-                .ptr = self.ptr + start,
+                .ptr = base + start,
                 .len = length,
                 .device_id = self.device_id,
             };
@@ -441,8 +455,9 @@ pub fn DeviceBuffer(comptime T: type) type {
         pub fn copyFromHost(self: *Self, host_slice: []const T) cuda.CudaError!void {
             if (host_slice.len != self.len) return error.InvalidParam;
             if (self.len == 0) return;
+            const dst = self.ptr orelse return error.InvalidParam;
             const bytes = std.math.mul(usize, self.len, @sizeOf(T)) catch return error.InvalidParam;
-            const rc = cuda.c.zeno_cuda_memcpy_h2d(self.ptr.?, host_slice.ptr, bytes, self.device_id);
+            const rc = cuda.c.zeno_cuda_memcpy_h2d(dst, host_slice.ptr, bytes, self.device_id);
             if (rc != 0) return cuda.mapCudaErrorCode(rc);
         }
 
@@ -451,8 +466,9 @@ pub fn DeviceBuffer(comptime T: type) type {
         pub fn copyToHost(self: *const Self, host_slice: []T) cuda.CudaError!void {
             if (host_slice.len != self.len) return error.InvalidParam;
             if (self.len == 0) return;
+            const src = self.ptr orelse return error.InvalidParam;
             const bytes = std.math.mul(usize, self.len, @sizeOf(T)) catch return error.InvalidParam;
-            const rc = cuda.c.zeno_cuda_memcpy_d2h(host_slice.ptr, self.ptr.?, bytes, self.device_id);
+            const rc = cuda.c.zeno_cuda_memcpy_d2h(host_slice.ptr, src, bytes, self.device_id);
             if (rc != 0) return cuda.mapCudaErrorCode(rc);
         }
 
@@ -462,14 +478,18 @@ pub fn DeviceBuffer(comptime T: type) type {
             if (self.device_id != src.device_id) return error.DeviceMismatch;
             if (src.len != self.len) return error.InvalidParam;
             if (self.len == 0) return;
+            const dst = self.ptr orelse return error.InvalidParam;
+            const src_ptr = src.ptr orelse return error.InvalidParam;
             const bytes = std.math.mul(usize, self.len, @sizeOf(T)) catch return error.InvalidParam;
-            const rc = cuda.c.zeno_cuda_memcpy_d2d(self.ptr.?, src.ptr, bytes, self.device_id);
+            const rc = cuda.c.zeno_cuda_memcpy_d2d(dst, src_ptr, bytes, self.device_id);
             if (rc != 0) return cuda.mapCudaErrorCode(rc);
         }
 
+        /// Returns a non-owning device slice. If the buffer is empty, returns an
+        /// explicit safe empty slice with a null pointer rather than undefined (R19-01).
         pub fn slice(self: *const Self) DeviceSlice(T) {
             return .{
-                .ptr = if (self.ptr) |p| p else undefined,
+                .ptr = self.ptr,
                 .len = self.len,
                 .device_id = self.device_id,
             };
