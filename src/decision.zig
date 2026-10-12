@@ -61,7 +61,7 @@ pub const DecisionResponse = struct {
     candidates: []const CandidateResult,
     /// Number of diffusion/forward steps executed (always 1 in v0).
     steps_executed: u32,
-    /// Number of canvas tokens populated up to and including the answer token.
+    /// Number of tokens evaluated up to and including the pinned answer token (prompt_len + 1).
     canvas_tokens_used: u32,
 };
 

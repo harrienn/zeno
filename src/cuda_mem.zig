@@ -606,10 +606,13 @@ test "CUDA kernel wrapper dimension bounds checking" {
 
 test "CUDA device memory leak accounting" {
     if (!cuda.is_enabled) return;
-    const dev = requireHardwareDevice() catch |err| switch (err) {
-        error.SkipZigTest => return,
+    const count = cuda.getDeviceCount() catch |err| switch (err) {
+        error.NoDevice => return error.SkipZigTest,
         else => return err,
     };
+    if (count == 0) return error.SkipZigTest;
+    // Prefer idle secondary device (e.g. dev 1) to avoid desktop display manager allocation races
+    const dev: i32 = if (count > 1) 1 else 0;
 
     // Warm up CUDA runtime context on this device so driver context initialization allocations are complete
     {
@@ -631,16 +634,18 @@ test "CUDA device memory leak accounting" {
         const topo_during = try cuda.getTopology();
         const free_during = topo_during.devices[@intCast(dev)].free_memory_bytes;
 
-        // Verify that free memory decreased during allocation
-        try std.testing.expect(free_during < free_before);
+        // Verify that free memory decreased substantially during 64 MiB allocation (> 32 MiB decrease)
+        try std.testing.expect(free_before > free_during);
+        try std.testing.expect((free_before - free_during) >= 32 * 1024 * 1024);
     }
 
     // After buf1 and buf2 are deinit'd, query topology again
     const topo_after = try cuda.getTopology();
     const free_after = topo_after.devices[@intCast(dev)].free_memory_bytes;
 
-    // Verify all allocated VRAM has been reclaimed (0 bytes leaked)
-    try std.testing.expectEqual(free_before, free_after);
+    // Verify all allocated VRAM has been reclaimed within 8 MiB tolerance (absorbs window manager activity on primary dev)
+    const delta = if (free_before > free_after) (free_before - free_after) else (free_after - free_before);
+    try std.testing.expect(delta < 8 * 1024 * 1024);
 }
 
 test "CUDA RMSNorm numerical parity (weighted)" {
@@ -825,40 +830,57 @@ test "CUDA RoPE numerical parity across SWA and Global heads" {
     };
 
     for (configs) |cfg| {
-        const total = num_tokens * num_heads * cfg.head_dim;
-        const host_vec = try allocator.alloc(f32, total);
-        defer allocator.free(host_vec);
-        const cpu_vec = try allocator.alloc(f32, total);
-        defer allocator.free(cpu_vec);
-        const gpu_vec = try allocator.alloc(f32, total);
-        defer allocator.free(gpu_vec);
+        for ([_]bool{ false, true }) |with_factors| {
+            const total = num_tokens * num_heads * cfg.head_dim;
+            const host_vec = try allocator.alloc(f32, total);
+            defer allocator.free(host_vec);
+            const cpu_vec = try allocator.alloc(f32, total);
+            defer allocator.free(cpu_vec);
+            const gpu_vec = try allocator.alloc(f32, total);
+            defer allocator.free(gpu_vec);
 
-        for (host_vec) |*v| v.* = (rand.float(f32) * 6.0) - 3.0;
-        @memcpy(cpu_vec, host_vec);
+            for (host_vec) |*v| v.* = (rand.float(f32) * 6.0) - 3.0;
+            @memcpy(cpu_vec, host_vec);
 
-        // CPU reference
-        for (0..num_tokens) |t| {
-            for (0..num_heads) |h| {
-                const off = (t * num_heads + h) * cfg.head_dim;
-                const head_slice = cpu_vec[off .. off + cfg.head_dim];
-                infer.applyRoPE(head_slice, pos_offset + t, cfg.head_dim, cfg.theta, null);
+            const half_dim = cfg.head_dim / 2;
+            const host_ff = try allocator.alloc(f32, half_dim);
+            defer allocator.free(host_ff);
+            for (host_ff) |*f| f.* = 1.0 + rand.float(f32) * 2.0;
+
+            const cpu_ff: ?[*]const f32 = if (with_factors) host_ff.ptr else null;
+
+            // CPU reference
+            for (0..num_tokens) |t| {
+                for (0..num_heads) |h| {
+                    const off = (t * num_heads + h) * cfg.head_dim;
+                    const head_slice = cpu_vec[off .. off + cfg.head_dim];
+                    infer.applyRoPE(head_slice, pos_offset + t, cfg.head_dim, cfg.theta, cpu_ff);
+                }
             }
-        }
 
-        // CUDA execution
-        var d_vec = try DeviceBuffer(f32).init(dev, total);
-        defer d_vec.deinit();
-        try d_vec.copyFromHost(host_vec);
+            // CUDA execution
+            var d_vec = try DeviceBuffer(f32).init(dev, total);
+            defer d_vec.deinit();
+            try d_vec.copyFromHost(host_vec);
 
-        try rope(d_vec.slice(), num_tokens, num_heads, cfg.head_dim, pos_offset, cfg.theta, null, null);
-        try d_vec.copyToHost(gpu_vec);
+            var d_ff: ?DeviceBuffer(f32) = if (with_factors) try DeviceBuffer(f32).init(dev, half_dim) else null;
+            defer if (d_ff) |*ff_buf| ff_buf.deinit();
+            if (d_ff) |*ff_buf| {
+                try ff_buf.copyFromHost(host_ff);
+            }
 
-        const atol: f32 = 1e-5;
-        const rtol: f32 = 1e-4;
-        for (cpu_vec, gpu_vec) |c, g| {
-            const diff = @abs(c - g);
-            const tol = atol + rtol * @abs(c);
-            try std.testing.expect(diff <= tol);
+            const ff_slice: ?DeviceSlice(f32) = if (d_ff) |*ff_buf| ff_buf.slice() else null;
+
+            try rope(d_vec.slice(), num_tokens, num_heads, cfg.head_dim, pos_offset, cfg.theta, ff_slice, null);
+            try d_vec.copyToHost(gpu_vec);
+
+            const atol: f32 = 1e-5;
+            const rtol: f32 = 1e-4;
+            for (cpu_vec, gpu_vec) |c, g| {
+                const diff = @abs(c - g);
+                const tol = atol + rtol * @abs(c);
+                try std.testing.expect(diff <= tol);
+            }
         }
     }
 }

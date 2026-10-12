@@ -9,7 +9,8 @@ MODEL_PATH = "models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf"
 MODEL_SHA256 = "24523b6c833c9ce9f5f34f9b333ab1517d73d6f1e76a103645353114c8028bc5"
 REF_REPO = "https://github.com/ggml-org/llama.cpp"
 REF_COMMIT = "3dac51dc80b1400929266453c6ced6748ccf6862"
-LLAMA_EVAL = "/hdd/Projects/llama.cpp/build/bin/llama-diffusion-gemma-eval"
+LLAMA_CPP_DIR = os.getenv("LLAMA_CPP_DIR", "/hdd/Projects/llama.cpp")
+LLAMA_EVAL = os.getenv("LLAMA_EVAL_BIN", os.path.join(LLAMA_CPP_DIR, "build/bin/llama-diffusion-gemma-eval"))
 ZENO_BIN = "./zig-out/bin/zeno"
 VOCAB_SIZE = 262_144
 

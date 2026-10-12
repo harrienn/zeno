@@ -5,7 +5,8 @@ set -euo pipefail
 # Verifies all golden fixtures in specs/fixtures/*.json against llama.cpp oracle harness.
 
 MODEL_PATH="${1:-models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf}"
-LLAMA_EVAL="/hdd/Projects/llama.cpp/build/bin/llama-diffusion-gemma-eval"
+LLAMA_CPP_DIR="${LLAMA_CPP_DIR:-/hdd/Projects/llama.cpp}"
+LLAMA_EVAL="${LLAMA_EVAL_BIN:-${LLAMA_CPP_DIR}/build/bin/llama-diffusion-gemma-eval}"
 ZENO_BIN="./zig-out/bin/zeno"
 
 echo "================================================================="

@@ -958,6 +958,35 @@ pub const InferenceWorkspace = struct {
     }
 };
 
+pub var dump_layers: bool = false;
+pub var dump_layers_path: ?[]const u8 = null;
+
+fn printRowStats(name: []const u8, row: []const f32, row_idx: usize, fd_opt: ?std.posix.fd_t) void {
+    var sum_sq: f64 = 0;
+    var sum: f64 = 0;
+    var vmin: f32 = row[0];
+    var vmax: f32 = row[0];
+    for (row) |v| {
+        sum_sq += @as(f64, v) * @as(f64, v);
+        sum += v;
+        if (v < vmin) vmin = v;
+        if (v > vmax) vmax = v;
+    }
+    const l2 = @sqrt(sum_sq);
+    const mean = sum / @as(f64, @floatFromInt(row.len));
+    std.debug.print("[ZENO_DBG] {s:<15} (row {d}): L2={d:10.4} min={d:9.4} max={d:9.4} mean={d:9.4}\n", .{
+        name, row_idx, l2, vmin, vmax, mean,
+    });
+    if (fd_opt) |fd| {
+        var name_buf: [32]u8 = @splat(0);
+        const copy_len = @min(name.len, 31);
+        @memcpy(name_buf[0..copy_len], name[0..copy_len]);
+        _ = std.os.linux.write(fd, &name_buf, 32);
+        const bytes = std.mem.sliceAsBytes(row);
+        _ = std.os.linux.write(fd, bytes.ptr, bytes.len);
+    }
+}
+
 /// Executes a single-step structured read over a seeded canvas using a pre-allocated workspace.
 /// Embeds prompt and canvas across dual regions, evaluates all 30 transformer layers via the
 /// persistent worker pool, and extracts candidate logits at the canvas answer position.
@@ -997,6 +1026,21 @@ pub fn executeStructuredRead(
         quant.dequantizeRowQ6_K(blocks, row);
         for (row) |*val| val.* *= emb_scale;
         ops.unweightedRmsNorm(row, 1e-6, row);
+    }
+
+    const answer_idx = P + canvas.answer_pos;
+
+    var dump_fd: ?std.posix.fd_t = null;
+    if (dump_layers_path) |path| {
+        dump_fd = std.posix.openat(std.posix.AT.FDCWD, path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, 0o644) catch null;
+    }
+    defer if (dump_fd) |fd| {
+        _ = std.os.linux.close(fd);
+    };
+
+    const dump_layers_active = dump_layers or (dump_fd != null);
+    if (dump_layers_active) {
+        printRowStats("inp_region", emb_buffer[answer_idx * ModelConfig.embedding_dim .. (answer_idx + 1) * ModelConfig.embedding_dim], answer_idx, dump_fd);
     }
 
     const q_buf = ws.q_buf[0 .. N * max_q_dim];
@@ -1043,6 +1087,12 @@ pub fn executeStructuredRead(
             ws.pool.dispatch(.attn_ffn);
         }
 
+        if (dump_layers_active) {
+            var name_buf: [32]u8 = undefined;
+            const name = std.fmt.bufPrint(&name_buf, "l_out-{d}", .{layer_idx}) catch "l_out";
+            printRowStats(name, next_emb[answer_idx * ModelConfig.embedding_dim .. (answer_idx + 1) * ModelConfig.embedding_dim], answer_idx, dump_fd);
+        }
+
         // Swap buffers for next layer
         const temp = current_emb;
         current_emb = next_emb;
@@ -1050,13 +1100,16 @@ pub fn executeStructuredRead(
     }
 
     // 3. Extract hidden state at pinned answer position in canvas (P + canvas.answer_pos)
-    const answer_idx = P + canvas.answer_pos;
     const answer_row = current_emb[answer_idx * ModelConfig.embedding_dim .. (answer_idx + 1) * ModelConfig.embedding_dim];
 
     // Final output RMSNorm into pre-allocated ws.norm_hidden
     const out_norm_slice = model.gguf_file.getTensorSlice(model.output_norm);
     const out_norm_weights = @as([*]const f32, @ptrCast(@alignCast(out_norm_slice.ptr)))[0..ModelConfig.embedding_dim];
     ops.rmsNorm(answer_row, out_norm_weights, 1e-6, ws.norm_hidden);
+
+    if (dump_layers_active) {
+        printRowStats("result_norm", ws.norm_hidden, answer_idx, dump_fd);
+    }
 
     // 4. Project candidate logits directly from output embedding table
     readCandidateLogits(model, ws.norm_hidden, candidate_token_ids, out_raw_logits, out_softcapped_logits);

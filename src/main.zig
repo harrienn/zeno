@@ -16,6 +16,13 @@ pub fn main(init: std.process.Init) !void {
         zeno.version.patch,
     });
 
+    if (init.environ_map.get("ZENO_DUMP_LAYERS") != null) {
+        zeno.infer.dump_layers = true;
+    }
+    if (init.environ_map.get("ZENO_DUMP_LAYERS_BIN")) |path| {
+        zeno.infer.dump_layers_path = path;
+    }
+
     const args = try init.minimal.args.toSlice(arena);
     if (args.len > 1 and std.mem.eql(u8, args[1], "cuda-info")) {
         const res = printCudaInfo(stdout_writer);

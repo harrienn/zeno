@@ -6,7 +6,7 @@ This document records the resolved canvas layout for the configured 256-token wi
 
 In structured-reads mode, a seeded canvas contains prompt tokens and answer positions whose logits are read. In [vLLM PR #57250](https://github.com/vllm-project/vllm/pull/57250), pinning holds a selected position at its seeded token value across denoising steps. Pinning is an update rule; it does not by itself mean that the seed token must be `MASK` (`4`).
 
-**Resolved canvas behavior:** the Phase 3 read seeds the answer position with `MASK` (4), places `TURN_CLOSE` (106) immediately after it, then fills later canvas positions with `PAD` (0). The canvas width is 256; the evaluated prefix is rounded up to a 16-token multiple. See U-01 through U-03 in [`UNRESOLVED.md`](UNRESOLVED.md). The implementation must preserve this exact layout.
+**Resolved canvas behavior:** the Phase 3 read seeds the answer position with `MASK` (4), places `TURN_CLOSE` (106) immediately after it, then fills later canvas positions with `PAD` (0). The full configured canvas length is 256 (`ModelConfig.canvas_length`). The option to evaluate a shortened prefix rounded up to a 16-token multiple is an open latency optimization tracked under U-03. See U-01 through U-03 in [`UNRESOLVED.md`](UNRESOLVED.md). The implementation preserves the 256-token canvas layout.
 
 ---
 
@@ -14,7 +14,7 @@ In structured-reads mode, a seeded canvas contains prompt tokens and answer posi
 
 The canvas is a fixed-width array of token identifiers:
 
-* **Default Canvas Length ($L$)**: `256` tokens (matching `diffusion.canvas_length` in [`gguf-mapping.md`](gguf-mapping.md)). The Phase 3 evaluated prefix is rounded up to a 16-token multiple to include the answer slot, capped at 256 (U-03).
+* **Default Canvas Length ($L$)**: `256` tokens (matching `diffusion.canvas_length` in [`gguf-mapping.md`](gguf-mapping.md)). In v0, all 256 tokens are evaluated ($N = P + 256$). Shortening the evaluated canvas prefix to a 16-token multiple remains a prospective latency lever (U-03).
 * **Token Identifier Type**: 32-bit unsigned integer (`u32`).
 * **Special Token IDs**:
   - `BOS` (Beginning of Sequence): `2`

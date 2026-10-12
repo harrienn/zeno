@@ -6,7 +6,8 @@ import sys
 import numpy as np
 
 MODEL_PATH = "models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf"
-LLAMA_EVAL = "/hdd/Projects/llama.cpp/build/bin/llama-diffusion-gemma-eval"
+LLAMA_CPP_DIR = os.getenv("LLAMA_CPP_DIR", "/hdd/Projects/llama.cpp")
+LLAMA_EVAL = os.getenv("LLAMA_EVAL_BIN", os.path.join(LLAMA_CPP_DIR, "build/bin/llama-diffusion-gemma-eval"))
 ZENO_BIN = "./zig-out/bin/zeno"
 VOCAB_SIZE = 262_144
 

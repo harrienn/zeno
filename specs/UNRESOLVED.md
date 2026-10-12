@@ -162,4 +162,4 @@ These values govern fixture regression checks and parity assertions under policy
 | `normalized_entropy` | Absolute difference | $\le 0.05$ | Normalized Shannon entropy $H / \ln(|C|)$. |
 | `uncertain` | Exact boolean match | `exact` | Discrete threshold condition $H_{\text{norm}} \ge \text{threshold}$. |
 
-The fixture validator (`src/fixture.zig`) asserts every field in this table during regression validation. Passing it validates numerical parity within the documented arithmetic error budget.
+The fixture validator (`src/fixture.zig`) asserts exact discrete decision match against the reference oracle, and verifies numerical regression within the tolerance table against `local_engine_baseline`. Numerical parity against the pinned oracle (`expected`) is evaluated by `tools/verify_oracle_parity.py` and gates U-13 and U-22 remain open until reference divergence is fully reconciled.
