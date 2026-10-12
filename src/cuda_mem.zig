@@ -9,6 +9,7 @@ const std = @import("std");
 const cuda = @import("cuda.zig");
 const ops = @import("ops.zig");
 const infer = @import("infer.zig");
+const quant = @import("quant.zig");
 
 /// Non-owning view of contiguous device memory on a specific CUDA device.
 pub fn DeviceSlice(comptime T: type) type {
@@ -411,6 +412,214 @@ pub fn scale(
         scale_val,
         x.len,
         x.device_id,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
+/// Matrix-vector multiplication for Q8_0 quantized weights: out = W * x
+/// w: DeviceSlice(u8) representing row-major BlockQ8_0 blocks
+/// x: DeviceSlice(f32) of length batch_size * in_dim
+/// out: DeviceSlice(f32) of length batch_size * out_dim
+pub fn gemvQ8_0(
+    w: DeviceSlice(u8),
+    x: DeviceSlice(f32),
+    out: DeviceSlice(f32),
+    out_dim: usize,
+    in_dim: usize,
+    batch_size: usize,
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (out_dim == 0 or in_dim == 0 or batch_size == 0) return error.InvalidParam;
+    if (in_dim % quant.QK8_0 != 0) return error.InvalidParam;
+    if (out_dim > std.math.maxInt(c_int) or in_dim > std.math.maxInt(c_int) or batch_size > std.math.maxInt(c_int)) {
+        return error.InvalidParam;
+    }
+
+    const blocks_per_row = in_dim / quant.QK8_0;
+    const bytes_per_row = blocks_per_row * @sizeOf(quant.BlockQ8_0);
+    const expected_w_bytes = std.math.mul(usize, out_dim, bytes_per_row) catch return error.InvalidParam;
+    const expected_x_len = std.math.mul(usize, batch_size, in_dim) catch return error.InvalidParam;
+    const expected_out_len = std.math.mul(usize, batch_size, out_dim) catch return error.InvalidParam;
+
+    if (w.len != expected_w_bytes or x.len != expected_x_len or out.len != expected_out_len) {
+        return error.InvalidParam;
+    }
+    if (w.device_id != x.device_id or w.device_id != out.device_id) return error.DeviceMismatch;
+    if (stream) |s| {
+        if (s.device_id != w.device_id) return error.DeviceMismatch;
+    }
+
+    const w_ptr = w.ptr orelse return error.InvalidParam;
+    const x_ptr = x.ptr orelse return error.InvalidParam;
+    const out_ptr = out.ptr orelse return error.InvalidParam;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_gemv_q8_0(
+        w_ptr,
+        x_ptr,
+        out_ptr,
+        @intCast(out_dim),
+        @intCast(in_dim),
+        @intCast(batch_size),
+        w.device_id,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
+/// Matrix-vector multiplication for Q4_K quantized weights: out = W * x
+/// w: DeviceSlice(u8) representing row-major BlockQ4_K blocks
+/// x: DeviceSlice(f32) of length batch_size * in_dim
+/// out: DeviceSlice(f32) of length batch_size * out_dim
+pub fn gemvQ4_K(
+    w: DeviceSlice(u8),
+    x: DeviceSlice(f32),
+    out: DeviceSlice(f32),
+    out_dim: usize,
+    in_dim: usize,
+    batch_size: usize,
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (out_dim == 0 or in_dim == 0 or batch_size == 0) return error.InvalidParam;
+    if (in_dim % quant.QK_K != 0) return error.InvalidParam;
+    if (out_dim > std.math.maxInt(c_int) or in_dim > std.math.maxInt(c_int) or batch_size > std.math.maxInt(c_int)) {
+        return error.InvalidParam;
+    }
+
+    const blocks_per_row = in_dim / quant.QK_K;
+    const bytes_per_row = blocks_per_row * @sizeOf(quant.BlockQ4_K);
+    const expected_w_bytes = std.math.mul(usize, out_dim, bytes_per_row) catch return error.InvalidParam;
+    const expected_x_len = std.math.mul(usize, batch_size, in_dim) catch return error.InvalidParam;
+    const expected_out_len = std.math.mul(usize, batch_size, out_dim) catch return error.InvalidParam;
+
+    if (w.len != expected_w_bytes or x.len != expected_x_len or out.len != expected_out_len) {
+        return error.InvalidParam;
+    }
+    if (w.device_id != x.device_id or w.device_id != out.device_id) return error.DeviceMismatch;
+    if (stream) |s| {
+        if (s.device_id != w.device_id) return error.DeviceMismatch;
+    }
+
+    const w_ptr = w.ptr orelse return error.InvalidParam;
+    const x_ptr = x.ptr orelse return error.InvalidParam;
+    const out_ptr = out.ptr orelse return error.InvalidParam;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_gemv_q4k(
+        w_ptr,
+        x_ptr,
+        out_ptr,
+        @intCast(out_dim),
+        @intCast(in_dim),
+        @intCast(batch_size),
+        w.device_id,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
+/// Matrix-vector multiplication for Q6_K quantized weights: out = W * x
+/// w: DeviceSlice(u8) representing row-major BlockQ6_K blocks
+/// x: DeviceSlice(f32) of length batch_size * in_dim
+/// out: DeviceSlice(f32) of length batch_size * out_dim
+pub fn gemvQ6_K(
+    w: DeviceSlice(u8),
+    x: DeviceSlice(f32),
+    out: DeviceSlice(f32),
+    out_dim: usize,
+    in_dim: usize,
+    batch_size: usize,
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (out_dim == 0 or in_dim == 0 or batch_size == 0) return error.InvalidParam;
+    if (in_dim % quant.QK_K != 0) return error.InvalidParam;
+    if (out_dim > std.math.maxInt(c_int) or in_dim > std.math.maxInt(c_int) or batch_size > std.math.maxInt(c_int)) {
+        return error.InvalidParam;
+    }
+
+    const blocks_per_row = in_dim / quant.QK_K;
+    const bytes_per_row = blocks_per_row * @sizeOf(quant.BlockQ6_K);
+    const expected_w_bytes = std.math.mul(usize, out_dim, bytes_per_row) catch return error.InvalidParam;
+    const expected_x_len = std.math.mul(usize, batch_size, in_dim) catch return error.InvalidParam;
+    const expected_out_len = std.math.mul(usize, batch_size, out_dim) catch return error.InvalidParam;
+
+    if (w.len != expected_w_bytes or x.len != expected_x_len or out.len != expected_out_len) {
+        return error.InvalidParam;
+    }
+    if (w.device_id != x.device_id or w.device_id != out.device_id) return error.DeviceMismatch;
+    if (stream) |s| {
+        if (s.device_id != w.device_id) return error.DeviceMismatch;
+    }
+
+    const w_ptr = w.ptr orelse return error.InvalidParam;
+    const x_ptr = x.ptr orelse return error.InvalidParam;
+    const out_ptr = out.ptr orelse return error.InvalidParam;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_gemv_q6k(
+        w_ptr,
+        x_ptr,
+        out_ptr,
+        @intCast(out_dim),
+        @intCast(in_dim),
+        @intCast(batch_size),
+        w.device_id,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
+/// Matrix-vector multiplication for Q5_0 quantized weights: out = W * x
+/// w: DeviceSlice(u8) representing row-major BlockQ5_0 blocks
+/// x: DeviceSlice(f32) of length batch_size * in_dim
+/// out: DeviceSlice(f32) of length batch_size * out_dim
+pub fn gemvQ5_0(
+    w: DeviceSlice(u8),
+    x: DeviceSlice(f32),
+    out: DeviceSlice(f32),
+    out_dim: usize,
+    in_dim: usize,
+    batch_size: usize,
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (out_dim == 0 or in_dim == 0 or batch_size == 0) return error.InvalidParam;
+    if (in_dim % quant.QK5_0 != 0) return error.InvalidParam;
+    if (out_dim > std.math.maxInt(c_int) or in_dim > std.math.maxInt(c_int) or batch_size > std.math.maxInt(c_int)) {
+        return error.InvalidParam;
+    }
+
+    const blocks_per_row = in_dim / quant.QK5_0;
+    const bytes_per_row = blocks_per_row * @sizeOf(quant.BlockQ5_0);
+    const expected_w_bytes = std.math.mul(usize, out_dim, bytes_per_row) catch return error.InvalidParam;
+    const expected_x_len = std.math.mul(usize, batch_size, in_dim) catch return error.InvalidParam;
+    const expected_out_len = std.math.mul(usize, batch_size, out_dim) catch return error.InvalidParam;
+
+    if (w.len != expected_w_bytes or x.len != expected_x_len or out.len != expected_out_len) {
+        return error.InvalidParam;
+    }
+    if (w.device_id != x.device_id or w.device_id != out.device_id) return error.DeviceMismatch;
+    if (stream) |s| {
+        if (s.device_id != w.device_id) return error.DeviceMismatch;
+    }
+
+    const w_ptr = w.ptr orelse return error.InvalidParam;
+    const x_ptr = x.ptr orelse return error.InvalidParam;
+    const out_ptr = out.ptr orelse return error.InvalidParam;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_gemv_q5_0(
+        w_ptr,
+        x_ptr,
+        out_ptr,
+        @intCast(out_dim),
+        @intCast(in_dim),
+        @intCast(batch_size),
+        w.device_id,
         s_handle,
     );
     if (rc != 0) return cuda.mapCudaErrorCode(rc);
@@ -1172,4 +1381,343 @@ test "Stage 2 Numerical Parity 10000 points empirical measurement" {
         }
         std.debug.print("[parity] Residual Add & Scale: max_abs = {e:.4}, max_rel = {e:.4}\n", .{ max_abs, max_rel });
     }
+}
+
+test "CUDA gemvQ8_0 numerical parity with CPU reference" {
+    if (!cuda.is_enabled) return;
+    const dev = requireHardwareDevice() catch |err| switch (err) {
+        error.SkipZigTest => return,
+        else => return err,
+    };
+
+    const allocator = std.testing.allocator;
+    var prng = std.Random.DefaultPrng.init(0x513830);
+    const rand = prng.random();
+
+    const out_dim: usize = 32;
+    const in_dim: usize = 256;
+    const blocks_per_row = in_dim / quant.QK8_0; // 8
+    const total_blocks = out_dim * blocks_per_row;
+
+    const host_w = try allocator.alloc(quant.BlockQ8_0, total_blocks);
+    defer allocator.free(host_w);
+    for (host_w) |*blk| {
+        blk.d = @floatCast((rand.float(f32) * 0.4) + 0.1);
+        for (&blk.qs) |*q| {
+            q.* = rand.intRangeAtMost(i8, -120, 120);
+        }
+    }
+
+    const host_x = try allocator.alloc(f32, in_dim);
+    defer allocator.free(host_x);
+    for (host_x) |*x| {
+        x.* = (rand.float(f32) * 4.0) - 2.0;
+    }
+
+    const cpu_out = try allocator.alloc(f32, out_dim);
+    defer allocator.free(cpu_out);
+    infer.gemvQ8_0(host_w.ptr, host_x, cpu_out, out_dim, in_dim);
+
+    const raw_w_bytes = std.mem.sliceAsBytes(host_w);
+    var d_w = try DeviceBuffer(u8).init(dev, raw_w_bytes.len);
+    defer d_w.deinit();
+    try d_w.copyFromHost(raw_w_bytes);
+
+    var d_x = try DeviceBuffer(f32).init(dev, in_dim);
+    defer d_x.deinit();
+    try d_x.copyFromHost(host_x);
+
+    var d_out = try DeviceBuffer(f32).init(dev, out_dim);
+    defer d_out.deinit();
+
+    try gemvQ8_0(d_w.slice(), d_x.slice(), d_out.slice(), out_dim, in_dim, 1, null);
+
+    const gpu_out = try allocator.alloc(f32, out_dim);
+    defer allocator.free(gpu_out);
+    try d_out.copyToHost(gpu_out);
+
+    var max_diff: f32 = 0.0;
+    for (cpu_out, gpu_out) |c, g| {
+        const diff = @abs(c - g);
+        if (diff > max_diff) max_diff = diff;
+        try std.testing.expect(diff <= 1e-3 + 1e-4 * @abs(c));
+    }
+    std.debug.print("\n[parity] gemvQ8_0 (32x256): max_diff = {e:.4}\n", .{max_diff});
+}
+
+test "CUDA gemvQ4_K numerical parity with CPU reference" {
+    if (!cuda.is_enabled) return;
+    const dev = requireHardwareDevice() catch |err| switch (err) {
+        error.SkipZigTest => return,
+        else => return err,
+    };
+
+    const allocator = std.testing.allocator;
+    var prng = std.Random.DefaultPrng.init(0x51344B);
+    const rand = prng.random();
+
+    const out_dim: usize = 16;
+    const in_dim: usize = 512;
+    const blocks_per_row = in_dim / quant.QK_K; // 2
+    const total_blocks = out_dim * blocks_per_row;
+
+    const host_w = try allocator.alloc(quant.BlockQ4_K, total_blocks);
+    defer allocator.free(host_w);
+    for (host_w) |*blk| {
+        blk.d = @floatCast((rand.float(f32) * 0.3) + 0.1);
+        blk.dmin = @floatCast((rand.float(f32) * 0.15) + 0.05);
+        for (&blk.scales) |*sc| sc.* = rand.int(u8);
+        for (&blk.qs) |*q| q.* = rand.int(u8);
+    }
+
+    const host_x = try allocator.alloc(f32, in_dim);
+    defer allocator.free(host_x);
+    for (host_x) |*x| {
+        x.* = (rand.float(f32) * 4.0) - 2.0;
+    }
+
+    const cpu_out = try allocator.alloc(f32, out_dim);
+    defer allocator.free(cpu_out);
+    infer.gemvQ4_K(host_w.ptr, host_x, cpu_out, out_dim, in_dim);
+
+    const raw_w_bytes = std.mem.sliceAsBytes(host_w);
+    var d_w = try DeviceBuffer(u8).init(dev, raw_w_bytes.len);
+    defer d_w.deinit();
+    try d_w.copyFromHost(raw_w_bytes);
+
+    var d_x = try DeviceBuffer(f32).init(dev, in_dim);
+    defer d_x.deinit();
+    try d_x.copyFromHost(host_x);
+
+    var d_out = try DeviceBuffer(f32).init(dev, out_dim);
+    defer d_out.deinit();
+
+    try gemvQ4_K(d_w.slice(), d_x.slice(), d_out.slice(), out_dim, in_dim, 1, null);
+
+    const gpu_out = try allocator.alloc(f32, out_dim);
+    defer allocator.free(gpu_out);
+    try d_out.copyToHost(gpu_out);
+
+    var max_diff: f32 = 0.0;
+    for (cpu_out, gpu_out) |c, g| {
+        const diff = @abs(c - g);
+        if (diff > max_diff) max_diff = diff;
+        try std.testing.expect(diff <= 1e-3 + 1e-4 * @abs(c));
+    }
+    std.debug.print("[parity] gemvQ4_K (16x512): max_diff = {e:.4}\n", .{max_diff});
+}
+
+test "CUDA gemvQ6_K numerical parity with CPU reference" {
+    if (!cuda.is_enabled) return;
+    const dev = requireHardwareDevice() catch |err| switch (err) {
+        error.SkipZigTest => return,
+        else => return err,
+    };
+
+    const allocator = std.testing.allocator;
+    var prng = std.Random.DefaultPrng.init(0x51364B);
+    const rand = prng.random();
+
+    const out_dim: usize = 16;
+    const in_dim: usize = 512;
+    const blocks_per_row = in_dim / quant.QK_K; // 2
+    const total_blocks = out_dim * blocks_per_row;
+
+    const host_w = try allocator.alloc(quant.BlockQ6_K, total_blocks);
+    defer allocator.free(host_w);
+    for (host_w) |*blk| {
+        blk.d = @floatCast((rand.float(f32) * 0.25) + 0.1);
+        for (&blk.scales) |*sc| sc.* = rand.intRangeAtMost(i8, -16, 16);
+        for (&blk.ql) |*q| q.* = rand.int(u8);
+        for (&blk.qh) |*q| q.* = rand.int(u8);
+    }
+
+    const host_x = try allocator.alloc(f32, in_dim);
+    defer allocator.free(host_x);
+    for (host_x) |*x| {
+        x.* = (rand.float(f32) * 4.0) - 2.0;
+    }
+
+    const cpu_out = try allocator.alloc(f32, out_dim);
+    defer allocator.free(cpu_out);
+    infer.gemvQ6_K(host_w.ptr, host_x, cpu_out, out_dim, in_dim);
+
+    const raw_w_bytes = std.mem.sliceAsBytes(host_w);
+    var d_w = try DeviceBuffer(u8).init(dev, raw_w_bytes.len);
+    defer d_w.deinit();
+    try d_w.copyFromHost(raw_w_bytes);
+
+    var d_x = try DeviceBuffer(f32).init(dev, in_dim);
+    defer d_x.deinit();
+    try d_x.copyFromHost(host_x);
+
+    var d_out = try DeviceBuffer(f32).init(dev, out_dim);
+    defer d_out.deinit();
+
+    try gemvQ6_K(d_w.slice(), d_x.slice(), d_out.slice(), out_dim, in_dim, 1, null);
+
+    const gpu_out = try allocator.alloc(f32, out_dim);
+    defer allocator.free(gpu_out);
+    try d_out.copyToHost(gpu_out);
+
+    var max_diff: f32 = 0.0;
+    for (cpu_out, gpu_out) |c, g| {
+        const diff = @abs(c - g);
+        if (diff > max_diff) max_diff = diff;
+        try std.testing.expect(diff <= 1e-3 + 1e-4 * @abs(c));
+    }
+    std.debug.print("[parity] gemvQ6_K (16x512): max_diff = {e:.4}\n", .{max_diff});
+}
+
+test "CUDA gemvQ5_0 numerical parity with CPU reference" {
+    if (!cuda.is_enabled) return;
+    const dev = requireHardwareDevice() catch |err| switch (err) {
+        error.SkipZigTest => return,
+        else => return err,
+    };
+
+    const allocator = std.testing.allocator;
+    var prng = std.Random.DefaultPrng.init(0x513530);
+    const rand = prng.random();
+
+    const out_dim: usize = 32;
+    const in_dim: usize = 256;
+    const blocks_per_row = in_dim / quant.QK5_0; // 8
+    const total_blocks = out_dim * blocks_per_row;
+
+    const host_w = try allocator.alloc(quant.BlockQ5_0, total_blocks);
+    defer allocator.free(host_w);
+    for (host_w) |*blk| {
+        blk.d = @floatCast((rand.float(f32) * 0.3) + 0.1);
+        for (&blk.qh) |*q| q.* = rand.int(u8);
+        for (&blk.qs) |*q| q.* = rand.int(u8);
+    }
+
+    const host_x = try allocator.alloc(f32, in_dim);
+    defer allocator.free(host_x);
+    for (host_x) |*x| {
+        x.* = (rand.float(f32) * 4.0) - 2.0;
+    }
+
+    const cpu_out = try allocator.alloc(f32, out_dim);
+    defer allocator.free(cpu_out);
+    infer.gemvQ5_0(host_w.ptr, host_x, cpu_out, out_dim, in_dim);
+
+    const raw_w_bytes = std.mem.sliceAsBytes(host_w);
+    var d_w = try DeviceBuffer(u8).init(dev, raw_w_bytes.len);
+    defer d_w.deinit();
+    try d_w.copyFromHost(raw_w_bytes);
+
+    var d_x = try DeviceBuffer(f32).init(dev, in_dim);
+    defer d_x.deinit();
+    try d_x.copyFromHost(host_x);
+
+    var d_out = try DeviceBuffer(f32).init(dev, out_dim);
+    defer d_out.deinit();
+
+    try gemvQ5_0(d_w.slice(), d_x.slice(), d_out.slice(), out_dim, in_dim, 1, null);
+
+    const gpu_out = try allocator.alloc(f32, out_dim);
+    defer allocator.free(gpu_out);
+    try d_out.copyToHost(gpu_out);
+
+    var max_diff: f32 = 0.0;
+    for (cpu_out, gpu_out) |c, g| {
+        const diff = @abs(c - g);
+        if (diff > max_diff) max_diff = diff;
+        try std.testing.expect(diff <= 1e-3 + 1e-4 * @abs(c));
+    }
+    std.debug.print("[parity] gemvQ5_0 (32x256): max_diff = {e:.4}\n", .{max_diff});
+}
+
+test "CUDA GEMV batched execution parity" {
+    if (!cuda.is_enabled) return;
+    const dev = requireHardwareDevice() catch |err| switch (err) {
+        error.SkipZigTest => return,
+        else => return err,
+    };
+
+    const allocator = std.testing.allocator;
+    var prng = std.Random.DefaultPrng.init(0x424154);
+    const rand = prng.random();
+
+    const out_dim: usize = 16;
+    const in_dim: usize = 128;
+    const batch_size: usize = 3;
+    const blocks_per_row = in_dim / quant.QK8_0; // 4
+    const total_blocks = out_dim * blocks_per_row;
+
+    const host_w = try allocator.alloc(quant.BlockQ8_0, total_blocks);
+    defer allocator.free(host_w);
+    for (host_w) |*blk| {
+        blk.d = @floatCast((rand.float(f32) * 0.3) + 0.1);
+        for (&blk.qs) |*q| q.* = rand.intRangeAtMost(i8, -100, 100);
+    }
+
+    const host_x = try allocator.alloc(f32, batch_size * in_dim);
+    defer allocator.free(host_x);
+    for (host_x) |*x| {
+        x.* = (rand.float(f32) * 3.0) - 1.5;
+    }
+
+    const raw_w_bytes = std.mem.sliceAsBytes(host_w);
+    var d_w = try DeviceBuffer(u8).init(dev, raw_w_bytes.len);
+    defer d_w.deinit();
+    try d_w.copyFromHost(raw_w_bytes);
+
+    var d_x = try DeviceBuffer(f32).init(dev, host_x.len);
+    defer d_x.deinit();
+    try d_x.copyFromHost(host_x);
+
+    var d_out = try DeviceBuffer(f32).init(dev, batch_size * out_dim);
+    defer d_out.deinit();
+
+    // Batched call
+    try gemvQ8_0(d_w.slice(), d_x.slice(), d_out.slice(), out_dim, in_dim, batch_size, null);
+
+    const gpu_batched_out = try allocator.alloc(f32, batch_size * out_dim);
+    defer allocator.free(gpu_batched_out);
+    try d_out.copyToHost(gpu_batched_out);
+
+    // Verify each batch against single-vector CPU GEMV
+    for (0..batch_size) |b| {
+        const x_sub = host_x[b * in_dim .. (b + 1) * in_dim];
+        var single_cpu_out: [16]f32 = undefined;
+        infer.gemvQ8_0(host_w.ptr, x_sub, &single_cpu_out, out_dim, in_dim);
+
+        const gpu_sub = gpu_batched_out[b * out_dim .. (b + 1) * out_dim];
+        for (single_cpu_out, gpu_sub) |c, g| {
+            const diff = @abs(c - g);
+            try std.testing.expect(diff <= 1e-3 + 1e-4 * @abs(c));
+        }
+    }
+}
+
+test "CUDA GEMV dimension validation and error conditions" {
+    if (!cuda.is_enabled) return;
+    const dev = requireHardwareDevice() catch |err| switch (err) {
+        error.SkipZigTest => return,
+        else => return err,
+    };
+
+    var d_w = try DeviceBuffer(u8).init(dev, 256 * 34);
+    defer d_w.deinit();
+    var d_x = try DeviceBuffer(f32).init(dev, 256);
+    defer d_x.deinit();
+    var d_out = try DeviceBuffer(f32).init(dev, 32);
+    defer d_out.deinit();
+
+    // Q4_K requires in_dim % 256 == 0; 128 should error InvalidParam
+    try std.testing.expectError(error.InvalidParam, gemvQ4_K(d_w.slice(), d_x.slice(), d_out.slice(), 32, 128, 1, null));
+
+    // Q8_0 requires in_dim % 32 == 0; 30 should error InvalidParam
+    try std.testing.expectError(error.InvalidParam, gemvQ8_0(d_w.slice(), d_x.slice(), d_out.slice(), 32, 30, 1, null));
+
+    // Zero dimensions error
+    try std.testing.expectError(error.InvalidParam, gemvQ8_0(d_w.slice(), d_x.slice(), d_out.slice(), 0, 32, 1, null));
+    try std.testing.expectError(error.InvalidParam, gemvQ8_0(d_w.slice(), d_x.slice(), d_out.slice(), 32, 0, 1, null));
+    try std.testing.expectError(error.InvalidParam, gemvQ8_0(d_w.slice(), d_x.slice(), d_out.slice(), 32, 32, 0, null));
+
+    // Size mismatch (d_x.len is 256, but in_dim 32 * batch 1 expects len 32)
+    try std.testing.expectError(error.InvalidParam, gemvQ8_0(d_w.slice(), d_x.slice(), d_out.slice(), 32, 32, 1, null));
 }

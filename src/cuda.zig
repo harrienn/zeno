@@ -141,6 +141,48 @@ pub const c = if (is_enabled) struct {
         device_id: c_int,
         stream: ?*anyopaque,
     ) c_int;
+
+    // Stage 3 Quantized GEMV ABI
+    pub extern "c" fn zeno_cuda_gemv_q8_0(
+        W: *const anyopaque,
+        x: [*]const f32,
+        out: [*]f32,
+        out_dim: c_int,
+        in_dim: c_int,
+        batch_size: c_int,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
+    pub extern "c" fn zeno_cuda_gemv_q4k(
+        W: *const anyopaque,
+        x: [*]const f32,
+        out: [*]f32,
+        out_dim: c_int,
+        in_dim: c_int,
+        batch_size: c_int,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
+    pub extern "c" fn zeno_cuda_gemv_q6k(
+        W: *const anyopaque,
+        x: [*]const f32,
+        out: [*]f32,
+        out_dim: c_int,
+        in_dim: c_int,
+        batch_size: c_int,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
+    pub extern "c" fn zeno_cuda_gemv_q5_0(
+        W: *const anyopaque,
+        x: [*]const f32,
+        out: [*]f32,
+        out_dim: c_int,
+        in_dim: c_int,
+        batch_size: c_int,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
 } else struct {};
 
 pub fn mapCudaErrorCode(rc: c_int) CudaError {

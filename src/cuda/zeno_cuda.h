@@ -111,6 +111,48 @@ int zeno_cuda_scale(
     void *stream
 );
 
+// Stage 3 Quantized Matrix-Vector Multiplication (GEMV) Kernels
+int zeno_cuda_gemv_q8_0(
+    const void *W,
+    const float *x,
+    float *out,
+    int out_dim,
+    int in_dim,
+    int batch_size,
+    int device_id,
+    void *stream
+);
+int zeno_cuda_gemv_q4k(
+    const void *W,
+    const float *x,
+    float *out,
+    int out_dim,
+    int in_dim,
+    int batch_size,
+    int device_id,
+    void *stream
+);
+int zeno_cuda_gemv_q6k(
+    const void *W,
+    const float *x,
+    float *out,
+    int out_dim,
+    int in_dim,
+    int batch_size,
+    int device_id,
+    void *stream
+);
+int zeno_cuda_gemv_q5_0(
+    const void *W,
+    const float *x,
+    float *out,
+    int out_dim,
+    int in_dim,
+    int batch_size,
+    int device_id,
+    void *stream
+);
+
 #ifdef __cplusplus
 }
 #endif
