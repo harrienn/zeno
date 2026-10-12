@@ -125,11 +125,13 @@ pub const DecisionEngine = struct {
         const softcapped_logits = try request_allocator.alloc(f32, cand_count);
         defer request_allocator.free(softcapped_logits);
 
-        try infer.executeStructuredRead(
+        const canvas_len = req.canvas_length orelse root.ModelConfig.canvas_length;
+        try infer.executeStructuredReadSlice(
             self.workspace,
             self.model,
             prompt_tokens,
-            canvas,
+            canvas.tokens[0..canvas_len],
+            canvas.answer_pos,
             candidate_tokens,
             raw_logits,
             softcapped_logits,

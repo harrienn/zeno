@@ -987,20 +987,22 @@ fn printRowStats(name: []const u8, row: []const f32, row_idx: usize, fd_opt: ?st
     }
 }
 
-/// Executes a single-step structured read over a seeded canvas using a pre-allocated workspace.
+/// Executes a single-step structured read over a slice of canvas tokens using a pre-allocated workspace.
 /// Embeds prompt and canvas across dual regions, evaluates all 30 transformer layers via the
 /// persistent worker pool, and extracts candidate logits at the canvas answer position.
-pub fn executeStructuredRead(
+pub fn executeStructuredReadSlice(
     ws: *InferenceWorkspace,
     model: DiffusionGemmaModel,
     prompt_tokens: []const u32,
-    canvas: Canvas,
+    canvas_tokens: []const u32,
+    answer_pos: usize,
     candidate_token_ids: []const u32,
     out_raw_logits: []f32,
     out_softcapped_logits: []f32,
 ) !void {
+    std.debug.assert(answer_pos < canvas_tokens.len);
     const P = prompt_tokens.len;
-    const C = ModelConfig.canvas_length;
+    const C = canvas_tokens.len;
     const N = P + C;
 
     try ws.ensureCapacity(N);
@@ -1020,7 +1022,7 @@ pub fn executeStructuredRead(
         quant.dequantizeRowQ6_K(blocks, row);
         for (row) |*val| val.* *= emb_scale;
     }
-    for (canvas.tokens, 0..) |tok, i| {
+    for (canvas_tokens, 0..) |tok, i| {
         const blocks = model.getEmbeddingBlocks(tok);
         const row = emb_buffer[(P + i) * ModelConfig.embedding_dim .. (P + i + 1) * ModelConfig.embedding_dim];
         quant.dequantizeRowQ6_K(blocks, row);
@@ -1028,7 +1030,7 @@ pub fn executeStructuredRead(
         ops.unweightedRmsNorm(row, 1e-6, row);
     }
 
-    const answer_idx = P + canvas.answer_pos;
+    const answer_idx = P + answer_pos;
 
     var dump_fd: ?std.posix.fd_t = null;
     if (dump_layers_path) |path| {
@@ -1099,7 +1101,7 @@ pub fn executeStructuredRead(
         next_emb = temp;
     }
 
-    // 3. Extract hidden state at pinned answer position in canvas (P + canvas.answer_pos)
+    // 3. Extract hidden state at pinned answer position in canvas (P + answer_pos)
     const answer_row = current_emb[answer_idx * ModelConfig.embedding_dim .. (answer_idx + 1) * ModelConfig.embedding_dim];
 
     // Final output RMSNorm into pre-allocated ws.norm_hidden
@@ -1113,6 +1115,28 @@ pub fn executeStructuredRead(
 
     // 4. Project candidate logits directly from output embedding table
     readCandidateLogits(model, ws.norm_hidden, candidate_token_ids, out_raw_logits, out_softcapped_logits);
+}
+
+/// Executes a single-step structured read over a full seeded canvas using a pre-allocated workspace.
+pub fn executeStructuredRead(
+    ws: *InferenceWorkspace,
+    model: DiffusionGemmaModel,
+    prompt_tokens: []const u32,
+    canvas: Canvas,
+    candidate_token_ids: []const u32,
+    out_raw_logits: []f32,
+    out_softcapped_logits: []f32,
+) !void {
+    return executeStructuredReadSlice(
+        ws,
+        model,
+        prompt_tokens,
+        &canvas.tokens,
+        canvas.answer_pos,
+        candidate_token_ids,
+        out_raw_logits,
+        out_softcapped_logits,
+    );
 }
 
 test "topKExperts: selection and softmax renormalization" {

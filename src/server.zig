@@ -33,6 +33,7 @@ pub const WireOptions = struct {
     step_cap: ?u32 = null,
     temperature: ?f32 = null,
     entropy_threshold: ?f32 = null,
+    canvas_length: ?usize = null,
 };
 
 /// Full wire JSON request body for POST /v1/systemone.
@@ -460,6 +461,7 @@ pub const Server = struct {
             .step_cap = if (wire_req.options) |o| o.step_cap orelse 1 else 1,
             .temperature = if (wire_req.options) |o| o.temperature orelse 1.0 else 1.0,
             .entropy_threshold = if (wire_req.options) |o| o.entropy_threshold else null,
+            .canvas_length = if (wire_req.options) |o| o.canvas_length else null,
         };
 
         // Execute decision engine
@@ -473,6 +475,7 @@ pub const Server = struct {
                 error.UnsupportedStepCap => self.sendError(client_fd, 400, "unsupported_step_cap", "step_cap must be 1 in single-step decision v0"),
                 error.InvalidTemperature => self.sendError(client_fd, 400, "invalid_temperature", "Temperature must be a finite positive number"),
                 error.InvalidEntropyThreshold => self.sendError(client_fd, 400, "invalid_entropy_threshold", "Entropy threshold must be between 0.0 and 1.0"),
+                error.InvalidCanvasLength => self.sendError(client_fd, 400, "invalid_canvas_length", "Canvas length must be a multiple of 16 between 16 and 256"),
                 error.TokenNotFound => self.sendError(client_fd, 400, "token_not_found", "A candidate token string does not exist in model vocabulary"),
                 error.MultiTokenCandidateNotAllowed => self.sendError(client_fd, 400, "multi_token_candidate", "Candidate token string resolves to multiple tokens; single-token code required"),
                 error.CanvasOverflow => self.sendError(client_fd, 400, "canvas_overflow", "Prompt exceeds configured canvas length"),

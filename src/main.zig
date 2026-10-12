@@ -97,7 +97,7 @@ pub fn main(init: std.process.Init) !void {
         return;
     } else if (args.len > 1 and std.mem.eql(u8, args[1], "decide")) {
         if (args.len < 4) {
-            try stdout_writer.print("Usage: zeno decide <path/to/model.gguf> <query> [cand1] [cand2] ...\n", .{});
+            try stdout_writer.print("Usage: zeno decide <path/to/model.gguf> <query> [--canvas <N>] [cand1] [cand2] ...\n", .{});
             try stdout_writer.flush();
             return;
         }
@@ -105,7 +105,16 @@ pub fn main(init: std.process.Init) !void {
         const model_path = args[2];
         const query = args[3];
 
-        const candidate_specs = try parseCandidateSpecs(arena, if (args.len > 4) args[4..] else &.{});
+        var canvas_override: ?usize = null;
+        var cand_start: usize = 4;
+        if (args.len > 4 and std.mem.eql(u8, args[4], "--canvas")) {
+            if (args.len > 5) {
+                canvas_override = std.fmt.parseInt(usize, args[5], 10) catch null;
+                cand_start = 6;
+            }
+        }
+
+        const candidate_specs = try parseCandidateSpecs(arena, if (args.len > cand_start) args[cand_start..] else &.{});
 
         try stdout_writer.print("Initializing decision engine with model: {s}...\n", .{model_path});
         try stdout_writer.flush();
@@ -124,6 +133,7 @@ pub fn main(init: std.process.Init) !void {
             .step_cap = 1,
             .temperature = 1.0,
             .entropy_threshold = 0.5,
+            .canvas_length = canvas_override,
         };
 
         const resp = engine.decide(arena, req) catch |err| {
@@ -306,12 +316,26 @@ pub fn main(init: std.process.Init) !void {
         return;
     } else if (args.len > 1 and std.mem.eql(u8, args[1], "decide-fixture")) {
         if (args.len < 4) {
-            try stdout_writer.print("Usage: zeno decide-fixture <model.gguf> <fixture.json> [out.json]\n", .{});
+            try stdout_writer.print("Usage: zeno decide-fixture <model.gguf> <fixture.json> [--canvas <N>] [out.json]\n", .{});
             try stdout_writer.flush();
             return;
         }
         const model_path = args[2];
         const fixture_path = args[3];
+
+        var canvas_override: ?usize = null;
+        var out_json_path: ?[]const u8 = null;
+        var arg_i: usize = 4;
+        while (arg_i < args.len) : (arg_i += 1) {
+            if (std.mem.eql(u8, args[arg_i], "--canvas")) {
+                if (arg_i + 1 < args.len) {
+                    arg_i += 1;
+                    canvas_override = std.fmt.parseInt(usize, args[arg_i], 10) catch null;
+                }
+            } else {
+                out_json_path = args[arg_i];
+            }
+        }
 
         const parsed = try zeno.fixture.loadFixture(arena, fixture_path);
         defer parsed.deinit();
@@ -331,6 +355,7 @@ pub fn main(init: std.process.Init) !void {
             .step_cap = 1,
             .temperature = 1.0,
             .entropy_threshold = fix.entropy_threshold,
+            .canvas_length = canvas_override,
         };
 
         const resp = try engine.decide(arena, req);
@@ -353,8 +378,121 @@ pub fn main(init: std.process.Init) !void {
         }
         try stdout_writer.flush();
 
-        if (args.len > 4) {
-            try writeDecisionResponseJson(arena, args[4], resp);
+        if (out_json_path) |p| {
+            try writeDecisionResponseJson(arena, p, resp);
+        }
+        return;
+    } else if (args.len > 1 and std.mem.eql(u8, args[1], "benchmark-canvas")) {
+        if (args.len < 3) {
+            try stdout_writer.print("Usage: zeno benchmark-canvas <model.gguf> [fixture.json]\n", .{});
+            try stdout_writer.flush();
+            return;
+        }
+        const model_path = args[2];
+        const specific_fixture: ?[]const u8 = if (args.len > 3) args[3] else null;
+
+        const all_fixtures = [_][]const u8{
+            "specs/fixtures/system_health_boolean.json",
+            "specs/fixtures/incident_severity_multiclass.json",
+            "specs/fixtures/satisfaction_score_5class.json",
+            "specs/fixtures/maintenance_priority_uncertain.json",
+            "specs/fixtures/boundary_256_incident_triage.json",
+        };
+
+        const target_fixtures: []const []const u8 = if (specific_fixture) |f|
+            try arena.dupe([]const u8, &.{f})
+        else
+            &all_fixtures;
+
+        try stdout_writer.print("========================================================================================\n", .{});
+        try stdout_writer.print("Zeno Shortened Canvas Prefix Benchmark (CPU)\n", .{});
+        try stdout_writer.print("Model: {s}\n", .{model_path});
+        try stdout_writer.print("Evaluating canvas widths C in {{16, 32, 64, 128, 256}}\n", .{});
+        try stdout_writer.print("========================================================================================\n\n", .{});
+        try stdout_writer.flush();
+
+        var engine = try zeno.DecisionEngine.init(arena, model_path);
+        defer engine.deinit();
+
+        const canvas_widths = [_]usize{ 16, 32, 64, 128, 256 };
+
+        for (target_fixtures) |fixture_path| {
+            try stdout_writer.print("--- Fixture: {s} ---\n", .{fixture_path});
+            const parsed = try zeno.fixture.loadFixture(arena, fixture_path);
+            defer parsed.deinit();
+            const fix = parsed.value;
+
+            const candidate_specs = try candidateSpecsFromFixture(arena, fix);
+            const schema_t = try parseSchemaType(fix.schema_type);
+
+            // 1. Evaluate baseline C=256 first
+            const baseline_req = zeno.DecisionRequest{
+                .query = fix.query,
+                .context = fix.context,
+                .schema_type = schema_t,
+                .candidates = candidate_specs,
+                .step_cap = 1,
+                .temperature = 1.0,
+                .entropy_threshold = fix.entropy_threshold,
+                .canvas_length = 256,
+            };
+
+            const t_base_start = getMonotonicMs();
+            const baseline_resp = try engine.decide(arena, baseline_req);
+            const t_base_end = getMonotonicMs();
+            const baseline_ms: f64 = t_base_end - t_base_start;
+
+            try stdout_writer.print("Baseline (C=256): Decision='{s}' Prob={d:.4} Latency={d:.2}ms\n\n", .{
+                baseline_resp.decision,
+                baseline_resp.decision_probability,
+                baseline_ms,
+            });
+
+            try stdout_writer.print("| Canvas C | Decision | Agreement | Prob    | dProb  | dLogit(raw) | Latency (ms) | Speedup |\n", .{});
+            try stdout_writer.print("|:---------|:---------|:----------|:--------|:-------|:------------|:-------------|:--------|\n", .{});
+
+            for (canvas_widths) |c_len| {
+                const req = zeno.DecisionRequest{
+                    .query = fix.query,
+                    .context = fix.context,
+                    .schema_type = schema_t,
+                    .candidates = candidate_specs,
+                    .step_cap = 1,
+                    .temperature = 1.0,
+                    .entropy_threshold = fix.entropy_threshold,
+                    .canvas_length = c_len,
+                };
+
+                const t_start = getMonotonicMs();
+                const resp = try engine.decide(arena, req);
+                const t_end = getMonotonicMs();
+                const latency_ms: f64 = t_end - t_start;
+                const speedup = baseline_ms / latency_ms;
+
+                const agreement = std.mem.eql(u8, resp.decision, baseline_resp.decision);
+                var max_prob_diff: f32 = 0.0;
+                var max_logit_diff: f32 = 0.0;
+                for (resp.candidates, baseline_resp.candidates) |cand, bcand| {
+                    const pdiff = @abs(cand.probability - bcand.probability);
+                    if (pdiff > max_prob_diff) max_prob_diff = pdiff;
+                    const ldiff = @abs(cand.raw_logit - bcand.raw_logit);
+                    if (ldiff > max_logit_diff) max_logit_diff = ldiff;
+                }
+
+                try stdout_writer.print("| {d:>8} | {s:<8} | {s:<9} | {d:.4} | {d:.4} | {d:11.4} | {d:12.2} | {d:6.2}x |\n", .{
+                    c_len,
+                    resp.decision,
+                    if (agreement) "YES" else "NO",
+                    resp.decision_probability,
+                    max_prob_diff,
+                    max_logit_diff,
+                    latency_ms,
+                    speedup,
+                });
+                try stdout_writer.flush();
+            }
+            try stdout_writer.print("\n", .{});
+            try stdout_writer.flush();
         }
         return;
     } else if (args.len > 1) {
@@ -415,7 +553,9 @@ pub fn main(init: std.process.Init) !void {
         });
         try stdout_writer.print("\nUsage:\n", .{});
         try stdout_writer.print("  zeno [info] <path/to/model.gguf>\n", .{});
-        try stdout_writer.print("  zeno decide <path/to/model.gguf> \"<query>\" [cand1] [cand2] ...\n", .{});
+        try stdout_writer.print("  zeno decide <path/to/model.gguf> \"<query>\" [--canvas <N>] [cand1] [cand2] ...\n", .{});
+        try stdout_writer.print("  zeno decide-fixture <path/to/model.gguf> <fixture.json> [--canvas <N>] [out.json]\n", .{});
+        try stdout_writer.print("  zeno benchmark-canvas <path/to/model.gguf> [fixture.json]\n", .{});
         try stdout_writer.print("  zeno serve <path/to/model.gguf> [--host <ip>] [--port <port>]\n", .{});
         try stdout_writer.print("  zeno cuda-info\n", .{});
     }
@@ -538,6 +678,12 @@ fn makeCanvasTokens(seed_token: u32) [256]i32 {
     canvas[1] = @intCast(zeno.SpecialTokens.turn_close);
     @memset(canvas[2..], @intCast(zeno.SpecialTokens.pad));
     return canvas;
+}
+
+fn getMonotonicMs() f64 {
+    var ts: std.os.linux.timespec = undefined;
+    _ = std.os.linux.clock_gettime(.MONOTONIC, &ts);
+    return @as(f64, @floatFromInt(ts.sec)) * 1000.0 + @as(f64, @floatFromInt(ts.nsec)) / 1_000_000.0;
 }
 
 fn writeTokensToFile(path: []const u8, tokens: []const i32) !void {

@@ -43,6 +43,8 @@ pub const DecisionRequest = struct {
     temperature: f32 = 1.0,
     /// Optional threshold on normalized entropy in [0, 1] for flagging uncertainty.
     entropy_threshold: ?f32 = null,
+    /// Optional canvas length override (default: 256). Must be in [16, 256] and multiple of 16.
+    canvas_length: ?usize = null,
 };
 
 /// Decision response payload.
@@ -74,6 +76,7 @@ pub const ValidationError = error{
     UnsupportedStepCap,
     InvalidTemperature,
     InvalidEntropyThreshold,
+    InvalidCanvasLength,
     EmptyQuery,
 };
 
@@ -97,6 +100,11 @@ pub fn validateRequest(req: DecisionRequest) ValidationError!void {
     if (req.entropy_threshold) |th| {
         if (!std.math.isFinite(th) or th < 0.0 or th > 1.0) {
             return error.InvalidEntropyThreshold;
+        }
+    }
+    if (req.canvas_length) |cl| {
+        if (cl < 16 or cl > 256 or cl % 16 != 0) {
+            return error.InvalidCanvasLength;
         }
     }
 
@@ -180,4 +188,32 @@ test "validateRequest: reject invalid temperature" {
         .temperature = -0.5,
     };
     try std.testing.expectError(error.InvalidTemperature, validateRequest(req));
+}
+
+test "validateRequest: canvas_length validation" {
+    const candidates = [_]CandidateSpec{
+        .{ .token = "A", .label = "Option A" },
+        .{ .token = "B", .label = "Option B" },
+    };
+    // Valid lengths
+    for ([_]usize{ 16, 32, 64, 128, 256 }) |cl| {
+        const req = DecisionRequest{
+            .query = "Test query",
+            .schema_type = .choice,
+            .candidates = &candidates,
+            .canvas_length = cl,
+        };
+        try validateRequest(req);
+    }
+
+    // Invalid lengths
+    for ([_]usize{ 0, 15, 17, 257, 512 }) |bad_cl| {
+        const req = DecisionRequest{
+            .query = "Test query",
+            .schema_type = .choice,
+            .candidates = &candidates,
+            .canvas_length = bad_cl,
+        };
+        try std.testing.expectError(error.InvalidCanvasLength, validateRequest(req));
+    }
 }
