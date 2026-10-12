@@ -93,14 +93,35 @@ pub fn build(b: *std.Build) void {
         });
         const cuda_obj = nvcc_cmd.addOutputFileArg("zeno_cuda.o");
 
+        const nvcc_ops_cmd = b.addSystemCommand(&.{
+            nvcc_path,
+            "-c",
+            "-O3",
+            "-Xcompiler",
+            "-fPIC",
+            arch_flag,
+            "-Isrc/cuda",
+            "src/cuda/ops.cu",
+            "-o",
+        });
+        const ops_obj = nvcc_ops_cmd.addOutputFileArg("ops.o");
+
         zeno_mod.addObjectFile(cuda_obj);
+        zeno_mod.addObjectFile(ops_obj);
         zeno_mod.addLibraryPath(.{ .cwd_relative = cuda_lib_dir });
         zeno_mod.linkSystemLibrary("cudart", .{});
+        zeno_mod.linkSystemLibrary("stdc++", .{});
         zeno_mod.link_libc = true;
 
+        exe.root_module.addLibraryPath(.{ .cwd_relative = cuda_lib_dir });
+        exe.root_module.linkSystemLibrary("cudart", .{});
+        exe.root_module.linkSystemLibrary("stdc++", .{});
+
         model_tests.root_module.addObjectFile(cuda_obj);
+        model_tests.root_module.addObjectFile(ops_obj);
         model_tests.root_module.addLibraryPath(.{ .cwd_relative = cuda_lib_dir });
         model_tests.root_module.linkSystemLibrary("cudart", .{});
+        model_tests.root_module.linkSystemLibrary("stdc++", .{});
         model_tests.root_module.link_libc = true;
     }
 

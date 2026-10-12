@@ -1,0 +1,1043 @@
+//! Zeno — CUDA Backend Device Memory Management & Fused Elementwise Kernels (Stage 2).
+//!
+//! Provides type-safe abstractions (DeviceBuffer, DeviceSlice, CudaStream) and
+//! typed kernel launch interfaces over the native CUDA C ABI runtime layer.
+//! All host allocations are 0-byte (pure handle ownership); device operations are
+//! explicitly checked for bounds, alignments, single-ownership, and device affinity.
+
+const std = @import("std");
+const cuda = @import("cuda.zig");
+const ops = @import("ops.zig");
+const infer = @import("infer.zig");
+
+/// Non-owning view of contiguous device memory on a specific CUDA device.
+pub fn DeviceSlice(comptime T: type) type {
+    comptime {
+        const valid = switch (T) {
+            f32, f16, i32, u32, u8 => true,
+            else => false,
+        };
+        if (!valid or @sizeOf(T) == 0) {
+            @compileError("DeviceSlice only supports non-zero-sized POD numeric types (f32, f16, i32, u32, u8)");
+        }
+    }
+
+    return struct {
+        const Self = @This();
+
+        ptr: ?[*]T,
+        len: usize,
+        device_id: i32,
+
+        /// Returns an empty non-owning slice for a given device with a safe null pointer (R19-01).
+        pub fn empty(device_id: i32) Self {
+            return .{
+                .ptr = null,
+                .len = 0,
+                .device_id = device_id,
+            };
+        }
+
+        /// Returns a subslice [start, start + length).
+        /// Performs checked addition and bounds checking in all build modes (R18-01).
+        /// Preserves the safe null empty representation without pointer arithmetic (R19-01).
+        pub fn subslice(self: Self, start: usize, length: usize) cuda.CudaError!Self {
+            const end = std.math.add(usize, start, length) catch return error.InvalidParam;
+            if (end > self.len) return error.InvalidParam;
+            if (length == 0) {
+                return empty(self.device_id);
+            }
+            const base = self.ptr orelse return error.InvalidParam;
+            return .{
+                .ptr = base + start,
+                .len = length,
+                .device_id = self.device_id,
+            };
+        }
+    };
+}
+
+/// Explicit single-owner CUDA execution stream wrapper for kernel ordering.
+pub const CudaStream = struct {
+    handle: ?*anyopaque,
+    device_id: i32,
+
+    pub fn init(device_id: i32) cuda.CudaError!CudaStream {
+        if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+        var raw_stream: ?*anyopaque = null;
+        const rc = cuda.c.zeno_cuda_stream_create(&raw_stream, device_id);
+        if (rc != 0) return cuda.mapCudaErrorCode(rc);
+        return .{
+            .handle = raw_stream,
+            .device_id = device_id,
+        };
+    }
+
+    /// Explicitly transfers ownership to the caller, leaving source stream empty (R18-03).
+    pub fn move(self: *CudaStream) CudaStream {
+        const moved = CudaStream{
+            .handle = self.handle,
+            .device_id = self.device_id,
+        };
+        self.handle = null;
+        return moved;
+    }
+
+    /// Idempotent stream destruction. If stream destruction fails, logs error
+    /// and retains handle in release mode so the resource failure is not masked (R18-03).
+    pub fn deinit(self: *CudaStream) void {
+        if (self.handle) |h| {
+            const rc = cuda.c.zeno_cuda_stream_destroy(h, self.device_id);
+            if (rc != 0) {
+                std.log.err("zeno_cuda_stream_destroy failed for device {d} with rc={d}", .{ self.device_id, rc });
+                std.debug.assert(rc == 0);
+                return;
+            }
+            self.handle = null;
+        }
+    }
+
+    pub fn synchronize(self: *const CudaStream) cuda.CudaError!void {
+        if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+        if (self.handle) |h| {
+            const rc = cuda.c.zeno_cuda_stream_sync(h);
+            if (rc != 0) return cuda.mapCudaErrorCode(rc);
+        }
+    }
+};
+
+/// Typed owning device buffer with explicit device assignment and single ownership.
+pub fn DeviceBuffer(comptime T: type) type {
+    comptime {
+        const valid = switch (T) {
+            f32, f16, i32, u32, u8 => true,
+            else => false,
+        };
+        if (!valid or @sizeOf(T) == 0) {
+            @compileError("DeviceBuffer only supports non-zero-sized POD numeric types (f32, f16, i32, u32, u8)");
+        }
+    }
+
+    return struct {
+        const Self = @This();
+
+        /// Guard cap preventing integer overflow and unserviceable device requests (16 GiB)
+        pub const MAX_ALLOC_BYTES: usize = 16 * 1024 * 1024 * 1024;
+
+        ptr: ?[*]T,
+        len: usize,
+        device_id: i32,
+
+        pub fn init(device_id: i32, count: usize) cuda.CudaError!Self {
+            if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+            if (count == 0) {
+                return .{
+                    .ptr = null,
+                    .len = 0,
+                    .device_id = device_id,
+                };
+            }
+
+            // Checked multiplication prevents overflow before issuing CUDA allocation (R18-02)
+            const bytes = std.math.mul(usize, count, @sizeOf(T)) catch return error.InvalidParam;
+            if (bytes > MAX_ALLOC_BYTES) return error.InvalidParam;
+
+            var raw_ptr: ?*anyopaque = null;
+            const rc = cuda.c.zeno_cuda_malloc(&raw_ptr, bytes, device_id);
+            if (rc != 0) return cuda.mapCudaErrorCode(rc);
+
+            return .{
+                .ptr = @ptrCast(@alignCast(raw_ptr.?)),
+                .len = count,
+                .device_id = device_id,
+            };
+        }
+
+        /// Explicitly transfers ownership to the caller, leaving source buffer empty (R16-02).
+        pub fn move(self: *Self) Self {
+            const moved = Self{
+                .ptr = self.ptr,
+                .len = self.len,
+                .device_id = self.device_id,
+            };
+            self.ptr = null;
+            self.len = 0;
+            return moved;
+        }
+
+        /// Idempotent device buffer deallocation. If free fails, logs error
+        /// and retains pointer in release mode to preserve trackable state (R16-02).
+        pub fn deinit(self: *Self) void {
+            if (self.ptr) |p| {
+                const rc = cuda.c.zeno_cuda_free(p, self.device_id);
+                if (rc != 0) {
+                    std.log.err("zeno_cuda_free failed for device {d} with rc={d}", .{ self.device_id, rc });
+                    std.debug.assert(rc == 0);
+                    return;
+                }
+                self.ptr = null;
+                self.len = 0;
+            }
+        }
+
+        /// Synchronous copy from host slice to device buffer.
+        /// Validates slice lengths at runtime in all build modes (R18-01).
+        pub fn copyFromHost(self: *Self, host_slice: []const T) cuda.CudaError!void {
+            if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+            if (host_slice.len != self.len) return error.InvalidParam;
+            if (self.len == 0) return;
+            const dst = self.ptr orelse return error.InvalidParam;
+            const bytes = std.math.mul(usize, self.len, @sizeOf(T)) catch return error.InvalidParam;
+            const rc = cuda.c.zeno_cuda_memcpy_h2d(dst, host_slice.ptr, bytes, self.device_id);
+            if (rc != 0) return cuda.mapCudaErrorCode(rc);
+        }
+
+        /// Synchronous copy from device buffer to host slice.
+        /// Validates slice lengths at runtime in all build modes (R18-01).
+        pub fn copyToHost(self: *const Self, host_slice: []T) cuda.CudaError!void {
+            if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+            if (host_slice.len != self.len) return error.InvalidParam;
+            if (self.len == 0) return;
+            const src = self.ptr orelse return error.InvalidParam;
+            const bytes = std.math.mul(usize, self.len, @sizeOf(T)) catch return error.InvalidParam;
+            const rc = cuda.c.zeno_cuda_memcpy_d2h(host_slice.ptr, src, bytes, self.device_id);
+            if (rc != 0) return cuda.mapCudaErrorCode(rc);
+        }
+
+        /// Synchronous copy from device slice to device buffer.
+        /// Validates device ID matching and slice lengths at runtime in all build modes (R18-01).
+        pub fn copyFromDevice(self: *Self, src: DeviceSlice(T)) cuda.CudaError!void {
+            if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+            if (self.device_id != src.device_id) return error.DeviceMismatch;
+            if (src.len != self.len) return error.InvalidParam;
+            if (self.len == 0) return;
+            const dst = self.ptr orelse return error.InvalidParam;
+            const src_ptr = src.ptr orelse return error.InvalidParam;
+            const bytes = std.math.mul(usize, self.len, @sizeOf(T)) catch return error.InvalidParam;
+            const rc = cuda.c.zeno_cuda_memcpy_d2d(dst, src_ptr, bytes, self.device_id);
+            if (rc != 0) return cuda.mapCudaErrorCode(rc);
+        }
+
+        /// Returns a non-owning device slice. If the buffer is empty, returns an
+        /// explicit safe empty slice with a null pointer rather than undefined (R19-01).
+        pub fn slice(self: *const Self) DeviceSlice(T) {
+            return .{
+                .ptr = self.ptr,
+                .len = self.len,
+                .device_id = self.device_id,
+            };
+        }
+    };
+}
+
+// ---------------------------------------------------------------------------
+// Typed Kernel Dispatch Functions
+// ---------------------------------------------------------------------------
+
+/// Computes Root Mean Square Layer Normalization:
+/// out[row, i] = (x[row, i] / sqrt(mean_i(x[row, i]^2) + eps)) * (weight ? weight[i] : 1.0)
+pub fn rmsNorm(
+    x: DeviceSlice(f32),
+    weight: ?DeviceSlice(f32),
+    out: DeviceSlice(f32),
+    num_rows: usize,
+    dim: usize,
+    eps: f32,
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    const total = std.math.mul(usize, num_rows, dim) catch return error.InvalidParam;
+    if (x.len != total or out.len != total) return error.InvalidParam;
+    if (x.device_id != out.device_id) return error.DeviceMismatch;
+    if (weight) |w| {
+        if (w.len != dim) return error.InvalidParam;
+        if (w.device_id != x.device_id) return error.DeviceMismatch;
+    }
+    if (stream) |s| {
+        if (s.device_id != x.device_id) return error.DeviceMismatch;
+    }
+    if (num_rows == 0) return;
+
+    const x_ptr = x.ptr orelse return error.InvalidParam;
+    const out_ptr = out.ptr orelse return error.InvalidParam;
+    const w_ptr = if (weight) |w| (w.ptr orelse return error.InvalidParam) else null;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_rms_norm(
+        x_ptr,
+        w_ptr,
+        out_ptr,
+        @intCast(num_rows),
+        @intCast(dim),
+        eps,
+        x.device_id,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
+/// Computes GeGLU activation branch:
+/// out[i] = gelu_tanh(gate[i]) * up[i]
+pub fn geglu(
+    gate: DeviceSlice(f32),
+    up: DeviceSlice(f32),
+    out: DeviceSlice(f32),
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (gate.len != up.len or gate.len != out.len) return error.InvalidParam;
+    if (gate.device_id != up.device_id or gate.device_id != out.device_id) return error.DeviceMismatch;
+    if (stream) |s| {
+        if (s.device_id != gate.device_id) return error.DeviceMismatch;
+    }
+    if (gate.len == 0) return;
+
+    const g_ptr = gate.ptr orelse return error.InvalidParam;
+    const u_ptr = up.ptr orelse return error.InvalidParam;
+    const o_ptr = out.ptr orelse return error.InvalidParam;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_geglu(
+        g_ptr,
+        u_ptr,
+        o_ptr,
+        gate.len,
+        gate.device_id,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
+/// Applies NeoX-style (half-split) Rotary Position Embeddings in-place:
+/// Rotates coordinate pairs (vec[i], vec[i + head_dim / 2]) using base theta.
+pub fn rope(
+    vec: DeviceSlice(f32),
+    num_tokens: usize,
+    num_heads: usize,
+    head_dim: usize,
+    pos_offset: usize,
+    theta: f32,
+    freq_factors: ?DeviceSlice(f32),
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    const total_heads = std.math.mul(usize, num_tokens, num_heads) catch return error.InvalidParam;
+    const total_elems = std.math.mul(usize, total_heads, head_dim) catch return error.InvalidParam;
+    if (vec.len != total_elems) return error.InvalidParam;
+    if (freq_factors) |ff| {
+        if (ff.len < head_dim / 2) return error.InvalidParam;
+        if (ff.device_id != vec.device_id) return error.DeviceMismatch;
+    }
+    if (stream) |s| {
+        if (s.device_id != vec.device_id) return error.DeviceMismatch;
+    }
+    if (num_tokens == 0) return;
+
+    const v_ptr = vec.ptr orelse return error.InvalidParam;
+    const ff_ptr = if (freq_factors) |ff| (ff.ptr orelse return error.InvalidParam) else null;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_rope(
+        v_ptr,
+        @intCast(num_tokens),
+        @intCast(num_heads),
+        @intCast(head_dim),
+        @intCast(pos_offset),
+        theta,
+        ff_ptr,
+        vec.device_id,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
+/// In-place residual addition: x[i] += residual[i]
+pub fn addResidual(
+    x: DeviceSlice(f32),
+    residual: DeviceSlice(f32),
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (x.len != residual.len) return error.InvalidParam;
+    if (x.device_id != residual.device_id) return error.DeviceMismatch;
+    if (stream) |s| {
+        if (s.device_id != x.device_id) return error.DeviceMismatch;
+    }
+    if (x.len == 0) return;
+
+    const x_ptr = x.ptr orelse return error.InvalidParam;
+    const r_ptr = residual.ptr orelse return error.InvalidParam;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_add_residual(
+        x_ptr,
+        r_ptr,
+        x.len,
+        x.device_id,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
+/// In-place vector scaling: x[i] *= scale_val
+pub fn scale(
+    x: DeviceSlice(f32),
+    scale_val: f32,
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (stream) |s| {
+        if (s.device_id != x.device_id) return error.DeviceMismatch;
+    }
+    if (x.len == 0) return;
+
+    const x_ptr = x.ptr orelse return error.InvalidParam;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_scale(
+        x_ptr,
+        scale_val,
+        x.len,
+        x.device_id,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
+// ---------------------------------------------------------------------------
+// Unit Tests & Numerical Parity Verification
+// ---------------------------------------------------------------------------
+
+fn requireHardwareDevice() !i32 {
+    if (!cuda.is_enabled) return error.SkipZigTest;
+    const count = cuda.getDeviceCount() catch |err| switch (err) {
+        error.NoDevice => return error.SkipZigTest,
+        else => return err,
+    };
+    if (count == 0) return error.SkipZigTest;
+    return 0; // Test on device 0
+}
+
+test "DeviceSlice and subslice checked arithmetic" {
+    const dev: i32 = 0;
+    const empty_slice = DeviceSlice(f32).empty(dev);
+    try std.testing.expectEqual(@as(?[*]f32, null), empty_slice.ptr);
+    try std.testing.expectEqual(@as(usize, 0), empty_slice.len);
+    try std.testing.expectEqual(dev, empty_slice.device_id);
+
+    // subslice(0, 0) on empty slice returns empty slice without error
+    const sub_empty = try empty_slice.subslice(0, 0);
+    try std.testing.expectEqual(@as(?[*]f32, null), sub_empty.ptr);
+    try std.testing.expectEqual(@as(usize, 0), sub_empty.len);
+
+    // subslice with start > 0 or len > 0 on empty slice returns InvalidParam
+    try std.testing.expectError(error.InvalidParam, empty_slice.subslice(1, 0));
+    try std.testing.expectError(error.InvalidParam, empty_slice.subslice(0, 1));
+
+    // subslice arithmetic overflow check
+    try std.testing.expectError(error.InvalidParam, empty_slice.subslice(std.math.maxInt(usize), 1));
+}
+
+test "DeviceBuffer empty initialization and move" {
+    if (!cuda.is_enabled) return;
+    const dev = requireHardwareDevice() catch |err| switch (err) {
+        error.SkipZigTest => return,
+        else => return err,
+    };
+
+    var buf = try DeviceBuffer(f32).init(dev, 0);
+    defer buf.deinit();
+
+    try std.testing.expectEqual(@as(?[*]f32, null), buf.ptr);
+    try std.testing.expectEqual(@as(usize, 0), buf.len);
+    try std.testing.expectEqual(dev, buf.device_id);
+
+    const s = buf.slice();
+    try std.testing.expectEqual(@as(?[*]f32, null), s.ptr);
+    try std.testing.expectEqual(@as(usize, 0), s.len);
+
+    var moved = buf.move();
+    defer moved.deinit();
+    try std.testing.expectEqual(@as(?[*]f32, null), buf.ptr);
+    try std.testing.expectEqual(@as(usize, 0), buf.len);
+    try std.testing.expectEqual(@as(usize, 0), moved.len);
+
+    // Repeated deinit is safe no-op
+    buf.deinit();
+    moved.deinit();
+}
+
+test "DeviceBuffer allocation, H2D and D2H transfer" {
+    if (!cuda.is_enabled) return;
+    const dev = requireHardwareDevice() catch |err| switch (err) {
+        error.SkipZigTest => return,
+        else => return err,
+    };
+
+    const count: usize = 1024;
+    var host_src: [1024]f32 = undefined;
+    for (&host_src, 0..) |*val, i| {
+        val.* = @as(f32, @floatFromInt(i)) * 1.5;
+    }
+
+    var dev_buf = try DeviceBuffer(f32).init(dev, count);
+    defer dev_buf.deinit();
+
+    try std.testing.expect(dev_buf.ptr != null);
+    try std.testing.expectEqual(count, dev_buf.len);
+
+    // Transfer H2D
+    try dev_buf.copyFromHost(&host_src);
+
+    // Transfer D2H
+    var host_dst: [1024]f32 = undefined;
+    @memset(&host_dst, 0.0);
+    try dev_buf.copyToHost(&host_dst);
+
+    for (host_src, host_dst) |expected, actual| {
+        try std.testing.expectEqual(expected, actual);
+    }
+
+    // Length mismatch returns InvalidParam in all build modes
+    var small_host: [512]f32 = undefined;
+    try std.testing.expectError(error.InvalidParam, dev_buf.copyFromHost(&small_host));
+    try std.testing.expectError(error.InvalidParam, dev_buf.copyToHost(&small_host));
+}
+
+test "DeviceBuffer D2D transfer and device matching" {
+    if (!cuda.is_enabled) return;
+    const dev = requireHardwareDevice() catch |err| switch (err) {
+        error.SkipZigTest => return,
+        else => return err,
+    };
+
+    const count: usize = 256;
+    var b1 = try DeviceBuffer(f32).init(dev, count);
+    defer b1.deinit();
+    var b2 = try DeviceBuffer(f32).init(dev, count);
+    defer b2.deinit();
+
+    var host_data: [256]f32 = undefined;
+    for (&host_data, 0..) |*v, i| {
+        v.* = @floatFromInt(i + 1);
+    }
+    try b1.copyFromHost(&host_data);
+
+    // Copy D2D
+    try b2.copyFromDevice(b1.slice());
+
+    var host_result: [256]f32 = undefined;
+    try b2.copyToHost(&host_result);
+
+    for (host_data, host_result) |expected, actual| {
+        try std.testing.expectEqual(expected, actual);
+    }
+
+    // Cross-device mismatch check
+    const fake_slice = DeviceSlice(f32){
+        .ptr = b1.ptr,
+        .len = count,
+        .device_id = dev + 99,
+    };
+    try std.testing.expectError(error.DeviceMismatch, b2.copyFromDevice(fake_slice));
+}
+
+test "CudaStream lifecycle, move, and sync" {
+    if (!cuda.is_enabled) return;
+    const dev = requireHardwareDevice() catch |err| switch (err) {
+        error.SkipZigTest => return,
+        else => return err,
+    };
+
+    var stream = try CudaStream.init(dev);
+    defer stream.deinit();
+    try std.testing.expect(stream.handle != null);
+
+    try stream.synchronize();
+
+    var moved = stream.move();
+    defer moved.deinit();
+    try std.testing.expectEqual(@as(?*anyopaque, null), stream.handle);
+    try std.testing.expect(moved.handle != null);
+
+    try moved.synchronize();
+}
+
+test "CUDA RMSNorm numerical parity (weighted)" {
+    if (!cuda.is_enabled) return;
+    const dev = requireHardwareDevice() catch |err| switch (err) {
+        error.SkipZigTest => return,
+        else => return err,
+    };
+
+    const allocator = std.testing.allocator;
+    var prng = std.Random.DefaultPrng.init(0x537461676532);
+    const rand = prng.random();
+
+    const dims = [_]usize{ 256, 512, 2816 };
+    const eps: f32 = 1e-6;
+
+    for (dims) |d| {
+        const num_rows: usize = 4;
+        const total = num_rows * d;
+
+        const host_x = try allocator.alloc(f32, total);
+        defer allocator.free(host_x);
+        const host_w = try allocator.alloc(f32, d);
+        defer allocator.free(host_w);
+        const cpu_out = try allocator.alloc(f32, total);
+        defer allocator.free(cpu_out);
+        const gpu_out = try allocator.alloc(f32, total);
+        defer allocator.free(gpu_out);
+
+        for (host_x) |*v| v.* = (rand.float(f32) * 6.0) - 3.0;
+        for (host_w) |*v| v.* = (rand.float(f32) * 1.9) + 0.1;
+
+        // CPU reference
+        for (0..num_rows) |r| {
+            const rx = host_x[r * d .. (r + 1) * d];
+            const ro = cpu_out[r * d .. (r + 1) * d];
+            ops.rmsNorm(rx, host_w, eps, ro);
+        }
+
+        // CUDA execution
+        var d_x = try DeviceBuffer(f32).init(dev, total);
+        defer d_x.deinit();
+        var d_w = try DeviceBuffer(f32).init(dev, d);
+        defer d_w.deinit();
+        var d_out = try DeviceBuffer(f32).init(dev, total);
+        defer d_out.deinit();
+
+        try d_x.copyFromHost(host_x);
+        try d_w.copyFromHost(host_w);
+
+        try rmsNorm(d_x.slice(), d_w.slice(), d_out.slice(), num_rows, d, eps, null);
+        try d_out.copyToHost(gpu_out);
+
+        // Tolerance check: atol = 1e-4, rtol = 1e-4
+        const atol: f32 = 1e-4;
+        const rtol: f32 = 1e-4;
+        var max_diff: f32 = 0.0;
+        for (cpu_out, gpu_out) |c, g| {
+            const diff = @abs(c - g);
+            if (diff > max_diff) max_diff = diff;
+            const tol = atol + rtol * @abs(c);
+            try std.testing.expect(diff <= tol);
+        }
+    }
+}
+
+test "CUDA RMSNorm numerical parity (unweighted) and in-place" {
+    if (!cuda.is_enabled) return;
+    const dev = requireHardwareDevice() catch |err| switch (err) {
+        error.SkipZigTest => return,
+        else => return err,
+    };
+
+    const allocator = std.testing.allocator;
+    var prng = std.Random.DefaultPrng.init(0x537461676532);
+    const rand = prng.random();
+
+    const d: usize = 2816;
+    const num_rows: usize = 2;
+    const total = num_rows * d;
+    const eps: f32 = 1e-6;
+
+    const host_x = try allocator.alloc(f32, total);
+    defer allocator.free(host_x);
+    const cpu_out = try allocator.alloc(f32, total);
+    defer allocator.free(cpu_out);
+    const gpu_out = try allocator.alloc(f32, total);
+    defer allocator.free(gpu_out);
+
+    for (host_x) |*v| v.* = (rand.float(f32) * 6.0) - 3.0;
+
+    for (0..num_rows) |r| {
+        const rx = host_x[r * d .. (r + 1) * d];
+        const ro = cpu_out[r * d .. (r + 1) * d];
+        ops.unweightedRmsNorm(rx, eps, ro);
+    }
+
+    // CUDA in-place execution (out == x, weight == null)
+    var d_x = try DeviceBuffer(f32).init(dev, total);
+    defer d_x.deinit();
+    try d_x.copyFromHost(host_x);
+
+    try rmsNorm(d_x.slice(), null, d_x.slice(), num_rows, d, eps, null);
+    try d_x.copyToHost(gpu_out);
+
+    const atol: f32 = 1e-4;
+    const rtol: f32 = 1e-4;
+    for (cpu_out, gpu_out) |c, g| {
+        const diff = @abs(c - g);
+        const tol = atol + rtol * @abs(c);
+        try std.testing.expect(diff <= tol);
+    }
+}
+
+test "CUDA GeGLU numerical parity and in-place" {
+    if (!cuda.is_enabled) return;
+    const dev = requireHardwareDevice() catch |err| switch (err) {
+        error.SkipZigTest => return,
+        else => return err,
+    };
+
+    const allocator = std.testing.allocator;
+    var prng = std.Random.DefaultPrng.init(0x537461676532);
+    const rand = prng.random();
+
+    const count: usize = 4096;
+    const host_gate = try allocator.alloc(f32, count);
+    defer allocator.free(host_gate);
+    const host_up = try allocator.alloc(f32, count);
+    defer allocator.free(host_up);
+    const cpu_out = try allocator.alloc(f32, count);
+    defer allocator.free(cpu_out);
+    const gpu_out = try allocator.alloc(f32, count);
+    defer allocator.free(gpu_out);
+
+    for (host_gate) |*v| v.* = (rand.float(f32) * 6.0) - 3.0;
+    for (host_up) |*v| v.* = (rand.float(f32) * 6.0) - 3.0;
+
+    ops.geglu(host_gate, host_up, cpu_out);
+
+    // In-place on gate (out == gate)
+    var d_gate = try DeviceBuffer(f32).init(dev, count);
+    defer d_gate.deinit();
+    var d_up = try DeviceBuffer(f32).init(dev, count);
+    defer d_up.deinit();
+
+    try d_gate.copyFromHost(host_gate);
+    try d_up.copyFromHost(host_up);
+
+    try geglu(d_gate.slice(), d_up.slice(), d_gate.slice(), null);
+    try d_gate.copyToHost(gpu_out);
+
+    // Tolerance: atol = 1e-5, rtol = 1e-4
+    const atol: f32 = 1e-5;
+    const rtol: f32 = 1e-4;
+    for (cpu_out, gpu_out) |c, g| {
+        const diff = @abs(c - g);
+        const tol = atol + rtol * @abs(c);
+        try std.testing.expect(diff <= tol);
+    }
+}
+
+test "CUDA RoPE numerical parity across SWA and Global heads" {
+    if (!cuda.is_enabled) return;
+    const dev = requireHardwareDevice() catch |err| switch (err) {
+        error.SkipZigTest => return,
+        else => return err,
+    };
+
+    const allocator = std.testing.allocator;
+    var prng = std.Random.DefaultPrng.init(0x537461676532);
+    const rand = prng.random();
+
+    const num_tokens: usize = 4;
+    const num_heads: usize = 8;
+    const pos_offset: usize = 16;
+
+    // Test SWA head_dim = 256, theta = 10000.0 and Global head_dim = 512, theta = 1000000.0
+    const configs = [_]struct { head_dim: usize, theta: f32 }{
+        .{ .head_dim = 256, .theta = 10000.0 },
+        .{ .head_dim = 512, .theta = 1000000.0 },
+    };
+
+    for (configs) |cfg| {
+        const total = num_tokens * num_heads * cfg.head_dim;
+        const host_vec = try allocator.alloc(f32, total);
+        defer allocator.free(host_vec);
+        const cpu_vec = try allocator.alloc(f32, total);
+        defer allocator.free(cpu_vec);
+        const gpu_vec = try allocator.alloc(f32, total);
+        defer allocator.free(gpu_vec);
+
+        for (host_vec) |*v| v.* = (rand.float(f32) * 6.0) - 3.0;
+        @memcpy(cpu_vec, host_vec);
+
+        // CPU reference
+        for (0..num_tokens) |t| {
+            for (0..num_heads) |h| {
+                const off = (t * num_heads + h) * cfg.head_dim;
+                const head_slice = cpu_vec[off .. off + cfg.head_dim];
+                infer.applyRoPE(head_slice, pos_offset + t, cfg.head_dim, cfg.theta, null);
+            }
+        }
+
+        // CUDA execution
+        var d_vec = try DeviceBuffer(f32).init(dev, total);
+        defer d_vec.deinit();
+        try d_vec.copyFromHost(host_vec);
+
+        try rope(d_vec.slice(), num_tokens, num_heads, cfg.head_dim, pos_offset, cfg.theta, null, null);
+        try d_vec.copyToHost(gpu_vec);
+
+        const atol: f32 = 1e-5;
+        const rtol: f32 = 1e-4;
+        for (cpu_vec, gpu_vec) |c, g| {
+            const diff = @abs(c - g);
+            const tol = atol + rtol * @abs(c);
+            try std.testing.expect(diff <= tol);
+        }
+    }
+}
+
+test "CUDA Residual Add and Scale numerical parity" {
+    if (!cuda.is_enabled) return;
+    const dev = requireHardwareDevice() catch |err| switch (err) {
+        error.SkipZigTest => return,
+        else => return err,
+    };
+
+    const allocator = std.testing.allocator;
+    var prng = std.Random.DefaultPrng.init(0x537461676532);
+    const rand = prng.random();
+
+    const count: usize = 2048;
+    const host_x = try allocator.alloc(f32, count);
+    defer allocator.free(host_x);
+    const host_res = try allocator.alloc(f32, count);
+    defer allocator.free(host_res);
+    const cpu_x = try allocator.alloc(f32, count);
+    defer allocator.free(cpu_x);
+    const gpu_x = try allocator.alloc(f32, count);
+    defer allocator.free(gpu_x);
+
+    for (host_x) |*v| v.* = (rand.float(f32) * 6.0) - 3.0;
+    for (host_res) |*v| v.* = (rand.float(f32) * 6.0) - 3.0;
+    @memcpy(cpu_x, host_x);
+
+    // CPU operations: Add residual, then scale
+    const scale_val: f32 = 1.5;
+    for (cpu_x, host_res) |*x_val, res_val| {
+        x_val.* += res_val;
+        x_val.* *= scale_val;
+    }
+
+    // CUDA operations
+    var d_x = try DeviceBuffer(f32).init(dev, count);
+    defer d_x.deinit();
+    var d_res = try DeviceBuffer(f32).init(dev, count);
+    defer d_res.deinit();
+
+    try d_x.copyFromHost(host_x);
+    try d_res.copyFromHost(host_res);
+
+    try addResidual(d_x.slice(), d_res.slice(), null);
+    try scale(d_x.slice(), scale_val, null);
+
+    try d_x.copyToHost(gpu_x);
+
+    const atol: f32 = 1e-6;
+    const rtol: f32 = 1e-6;
+    for (cpu_x, gpu_x) |c, g| {
+        const diff = @abs(c - g);
+        const tol = atol + rtol * @abs(c);
+        try std.testing.expect(diff <= tol);
+    }
+}
+
+test "Stage 2 Numerical Parity 10000 points empirical measurement" {
+    if (!cuda.is_enabled) return;
+    const dev = requireHardwareDevice() catch |err| switch (err) {
+        error.SkipZigTest => return,
+        else => return err,
+    };
+
+    const allocator = std.testing.allocator;
+    var prng = std.Random.DefaultPrng.init(0x537461676532);
+    const rand = prng.random();
+
+    // 1. RMSNorm (Weighted): 4 rows x 2816 = 11,264 points (> 10,000 points)
+    {
+        const num_rows: usize = 4;
+        const d: usize = 2816;
+        const total = num_rows * d;
+        const eps: f32 = 1e-6;
+
+        const host_x = try allocator.alloc(f32, total);
+        defer allocator.free(host_x);
+        const host_w = try allocator.alloc(f32, d);
+        defer allocator.free(host_w);
+        const cpu_out = try allocator.alloc(f32, total);
+        defer allocator.free(cpu_out);
+        const gpu_out = try allocator.alloc(f32, total);
+        defer allocator.free(gpu_out);
+
+        for (host_x) |*v| v.* = (rand.float(f32) * 6.0) - 3.0;
+        for (host_w) |*v| v.* = (rand.float(f32) * 1.9) + 0.1;
+
+        for (0..num_rows) |r| {
+            ops.rmsNorm(host_x[r * d .. (r + 1) * d], host_w, eps, cpu_out[r * d .. (r + 1) * d]);
+        }
+
+        var d_x = try DeviceBuffer(f32).init(dev, total);
+        defer d_x.deinit();
+        var d_w = try DeviceBuffer(f32).init(dev, d);
+        defer d_w.deinit();
+        var d_out = try DeviceBuffer(f32).init(dev, total);
+        defer d_out.deinit();
+
+        try d_x.copyFromHost(host_x);
+        try d_w.copyFromHost(host_w);
+        try rmsNorm(d_x.slice(), d_w.slice(), d_out.slice(), num_rows, d, eps, null);
+        try d_out.copyToHost(gpu_out);
+
+        for (cpu_out, gpu_out) |c, g| {
+            const diff = @abs(c - g);
+            try std.testing.expect(diff <= 1e-4 + 1e-4 * @abs(c));
+        }
+    }
+
+    // 2. RMSNorm (Unweighted): 4 rows x 2816 = 11,264 points
+    {
+        const num_rows: usize = 4;
+        const d: usize = 2816;
+        const total = num_rows * d;
+        const eps: f32 = 1e-6;
+
+        const host_x = try allocator.alloc(f32, total);
+        defer allocator.free(host_x);
+        const cpu_out = try allocator.alloc(f32, total);
+        defer allocator.free(cpu_out);
+        const gpu_out = try allocator.alloc(f32, total);
+        defer allocator.free(gpu_out);
+
+        for (host_x) |*v| v.* = (rand.float(f32) * 6.0) - 3.0;
+
+        for (0..num_rows) |r| {
+            ops.unweightedRmsNorm(host_x[r * d .. (r + 1) * d], eps, cpu_out[r * d .. (r + 1) * d]);
+        }
+
+        var d_x = try DeviceBuffer(f32).init(dev, total);
+        defer d_x.deinit();
+        var d_out = try DeviceBuffer(f32).init(dev, total);
+        defer d_out.deinit();
+
+        try d_x.copyFromHost(host_x);
+        try rmsNorm(d_x.slice(), null, d_out.slice(), num_rows, d, eps, null);
+        try d_out.copyToHost(gpu_out);
+
+        for (cpu_out, gpu_out) |c, g| {
+            const diff = @abs(c - g);
+            try std.testing.expect(diff <= 1e-4 + 1e-4 * @abs(c));
+        }
+    }
+
+    // 3. GeGLU: 10,000 points
+    {
+        const count: usize = 10000;
+        const host_gate = try allocator.alloc(f32, count);
+        defer allocator.free(host_gate);
+        const host_up = try allocator.alloc(f32, count);
+        defer allocator.free(host_up);
+        const cpu_out = try allocator.alloc(f32, count);
+        defer allocator.free(cpu_out);
+        const gpu_out = try allocator.alloc(f32, count);
+        defer allocator.free(gpu_out);
+
+        for (host_gate) |*v| v.* = (rand.float(f32) * 6.0) - 3.0;
+        for (host_up) |*v| v.* = (rand.float(f32) * 6.0) - 3.0;
+
+        ops.geglu(host_gate, host_up, cpu_out);
+
+        var d_gate = try DeviceBuffer(f32).init(dev, count);
+        defer d_gate.deinit();
+        var d_up = try DeviceBuffer(f32).init(dev, count);
+        defer d_up.deinit();
+        var d_out = try DeviceBuffer(f32).init(dev, count);
+        defer d_out.deinit();
+
+        try d_gate.copyFromHost(host_gate);
+        try d_up.copyFromHost(host_up);
+
+        try geglu(d_gate.slice(), d_up.slice(), d_out.slice(), null);
+        try d_out.copyToHost(gpu_out);
+
+        for (cpu_out, gpu_out) |c, g| {
+            const diff = @abs(c - g);
+            try std.testing.expect(diff <= 1e-5 + 1e-4 * @abs(c));
+        }
+    }
+
+    // 4. RoPE: 4 tokens x 8 heads x 512 dim = 16,384 points (> 10,000 points)
+    {
+        const num_tokens: usize = 4;
+        const num_heads: usize = 8;
+        const head_dim: usize = 512;
+        const total = num_tokens * num_heads * head_dim;
+        const pos_offset: usize = 32;
+        const theta: f32 = 1000000.0;
+
+        const host_vec = try allocator.alloc(f32, total);
+        defer allocator.free(host_vec);
+        const cpu_vec = try allocator.alloc(f32, total);
+        defer allocator.free(cpu_vec);
+        const gpu_vec = try allocator.alloc(f32, total);
+        defer allocator.free(gpu_vec);
+
+        for (host_vec) |*v| v.* = (rand.float(f32) * 6.0) - 3.0;
+        @memcpy(cpu_vec, host_vec);
+
+        for (0..num_tokens) |t| {
+            for (0..num_heads) |h| {
+                const off = (t * num_heads + h) * head_dim;
+                infer.applyRoPE(cpu_vec[off .. off + head_dim], pos_offset + t, head_dim, theta, null);
+            }
+        }
+
+        var d_vec = try DeviceBuffer(f32).init(dev, total);
+        defer d_vec.deinit();
+        try d_vec.copyFromHost(host_vec);
+
+        try rope(d_vec.slice(), num_tokens, num_heads, head_dim, pos_offset, theta, null, null);
+        try d_vec.copyToHost(gpu_vec);
+
+        for (cpu_vec, gpu_vec) |c, g| {
+            const diff = @abs(c - g);
+            try std.testing.expect(diff <= 1e-5 + 1e-4 * @abs(c));
+        }
+    }
+
+    // 5. Residual Add & Scale: 10,000 points
+    {
+        const count: usize = 10000;
+        const host_x = try allocator.alloc(f32, count);
+        defer allocator.free(host_x);
+        const host_res = try allocator.alloc(f32, count);
+        defer allocator.free(host_res);
+        const cpu_x = try allocator.alloc(f32, count);
+        defer allocator.free(cpu_x);
+        const gpu_x = try allocator.alloc(f32, count);
+        defer allocator.free(gpu_x);
+
+        for (host_x) |*v| v.* = (rand.float(f32) * 6.0) - 3.0;
+        for (host_res) |*v| v.* = (rand.float(f32) * 6.0) - 3.0;
+        @memcpy(cpu_x, host_x);
+
+        const scale_val: f32 = 1.5;
+        for (cpu_x, host_res) |*x_val, res_val| {
+            x_val.* += res_val;
+            x_val.* *= scale_val;
+        }
+
+        var d_x = try DeviceBuffer(f32).init(dev, count);
+        defer d_x.deinit();
+        var d_res = try DeviceBuffer(f32).init(dev, count);
+        defer d_res.deinit();
+
+        try d_x.copyFromHost(host_x);
+        try d_res.copyFromHost(host_res);
+
+        try addResidual(d_x.slice(), d_res.slice(), null);
+        try scale(d_x.slice(), scale_val, null);
+
+        try d_x.copyToHost(gpu_x);
+
+        for (cpu_x, gpu_x) |c, g| {
+            const diff = @abs(c - g);
+            try std.testing.expect(diff <= 1e-6 + 1e-6 * @abs(c));
+        }
+    }
+}

@@ -106,6 +106,12 @@ const char *zeno_cuda_get_error_string(int error_code) {
         case ZENO_CUDA_ERR_MEM_INFO_FAILED: return "Failed to query CUDA device memory information";
         case ZENO_CUDA_ERR_PEER_QUERY_FAILED: return "Failed to query peer-to-peer access capability";
         case ZENO_CUDA_ERR_RESTORE_DEVICE_FAILED: return "Failed to restore original active CUDA device";
+        case ZENO_CUDA_ERR_OUT_OF_MEMORY: return "CUDA out of memory";
+        case ZENO_CUDA_ERR_COPY_FAILED: return "CUDA memory copy failed";
+        case ZENO_CUDA_ERR_STREAM_FAILED: return "CUDA stream operation failed";
+        case ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED: return "CUDA kernel launch failed";
+        case ZENO_CUDA_ERR_INVALID_DEVICE: return "Invalid CUDA device ID";
+        case ZENO_CUDA_ERR_DEVICE_MISMATCH: return "CUDA device mismatch";
         default: return "Unknown CUDA error";
     }
 }

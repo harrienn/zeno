@@ -16,6 +16,7 @@ pub const engine = @import("engine.zig");
 pub const fixture = @import("fixture.zig");
 pub const server = @import("server.zig");
 pub const cuda = @import("cuda.zig");
+pub const cuda_mem = @import("cuda_mem.zig");
 pub const build_options = @import("build_options");
 
 /// Returns true if heavy 26B full-model forward pass tests are enabled.
@@ -40,6 +41,9 @@ pub const InferenceWorkspace = infer.InferenceWorkspace;
 pub const LayerPool = infer.LayerPool;
 pub const GoldenFixture = fixture.GoldenFixture;
 pub const Server = server.Server;
+pub const DeviceBuffer = cuda_mem.DeviceBuffer;
+pub const DeviceSlice = cuda_mem.DeviceSlice;
+pub const CudaStream = cuda_mem.CudaStream;
 
 /// Semantic version of the Zeno runtime.
 pub const version = std.SemanticVersion{
@@ -97,6 +101,7 @@ test {
     _ = fixture;
     _ = server;
     _ = cuda;
+    _ = cuda_mem;
 }
 
 test "model configuration invariants" {
