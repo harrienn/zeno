@@ -60,7 +60,7 @@ int zeno_cuda_malloc(void **out_ptr, size_t bytes, int device_id);
 int zeno_cuda_free(void *ptr, int device_id);
 int zeno_cuda_memcpy_h2d(void *dst, const void *src, size_t bytes, int device_id);
 int zeno_cuda_memcpy_d2h(void *dst, const void *src, size_t bytes, int device_id);
-int zeno_cuda_memcpy_d2d(void *dst, const void *src, size_t bytes, int device_id);
+int zeno_cuda_memcpy_d2d(void *dst, const void *src, size_t bytes, int device_id, void *stream);
 int zeno_cuda_memset(void *dst, int value, size_t bytes, int device_id);
 int zeno_cuda_stream_create(void **out_stream, int device_id);
 int zeno_cuda_stream_destroy(void *stream, int device_id);
@@ -152,6 +152,16 @@ int zeno_cuda_gemv_q5_0(
     int device_id,
     void *stream
 );
+int zeno_cuda_gemv_f32(
+    const float *W,
+    const float *x,
+    float *out,
+    int out_dim,
+    int in_dim,
+    int batch_size,
+    int device_id,
+    void *stream
+);
 
 // Stage 4 Unified Attention & MoE Execution ABI
 int zeno_cuda_attention(
@@ -199,6 +209,28 @@ int zeno_cuda_accumulate_scaled(
     size_t count,
     int device_id,
     void *stream
+);
+
+// Stage 5 Execution Pipeline Helpers
+int zeno_cuda_layer_output(
+    float *out,
+    const float *x_mid,
+    const float *post_ffn,
+    int prompt_len,
+    int num_tokens,
+    int dim,
+    float enc_scale,
+    float layer_scale,
+    int device_id,
+    void *stream
+);
+
+int zeno_cuda_memcpy_peer(
+    void *dst,
+    int dst_device_id,
+    const void *src,
+    int src_device_id,
+    size_t bytes
 );
 
 #ifdef __cplusplus

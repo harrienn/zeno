@@ -60,8 +60,11 @@ pub fn build(b: *std.Build) void {
     });
     model_test_mod.addImport("build_options", model_options.createModule());
 
+    const test_filter = b.option([]const u8, "test-filter", "Filter tests to run");
+
     const model_tests = b.addTest(.{
         .root_module = model_test_mod,
+        .filters = if (test_filter) |f| &.{f} else &.{},
     });
     const run_model_tests = b.addRunArtifact(model_tests);
 
@@ -183,6 +186,7 @@ pub fn build(b: *std.Build) void {
     // Test step: `zig build test`
     const test_step = b.step("test", "Run unit tests (pass -Dtest-model=true for full 26B model evaluation)");
     test_step.dependOn(&run_mod_tests.step);
+    run_exe_tests.step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
 
     const test_model_step = b.step("test-model", "Run full-model forward pass tests on local GGUF");

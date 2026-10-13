@@ -463,7 +463,7 @@ pub const WorkerScratch = struct {
     }
 };
 
-const LayerContext = struct {
+pub const LayerContext = struct {
     model: DiffusionGemmaModel,
     layer_idx: usize,
     prompt_len: usize,
@@ -480,7 +480,7 @@ const LayerContext = struct {
     attn_out_buf: []f32,
 };
 
-fn runQKVWorker(ctx: *const LayerContext, t_start: usize, t_end: usize) void {
+pub fn runQKVWorker(ctx: *const LayerContext, t_start: usize, t_end: usize) void {
     const layer = ctx.model.layers[ctx.layer_idx];
     const is_global = layer.is_global;
     const q_dim = layer.q_weight.dimensions[1];
@@ -530,7 +530,7 @@ fn runQKVWorker(ctx: *const LayerContext, t_start: usize, t_end: usize) void {
     }
 }
 
-fn runAttnWorker(ctx: *const LayerContext, scratch: *WorkerScratch, t_start: usize, t_end: usize) void {
+pub fn runAttnWorker(ctx: *const LayerContext, scratch: *WorkerScratch, t_start: usize, t_end: usize) void {
     const layer = ctx.model.layers[ctx.layer_idx];
     const q_dim = layer.q_weight.dimensions[1];
     const k_dim = layer.k_weight.dimensions[1];
@@ -582,7 +582,7 @@ fn runAttnWorker(ctx: *const LayerContext, scratch: *WorkerScratch, t_start: usi
     }
 }
 
-fn runFFNWorker(ctx: *const LayerContext, scratch: *WorkerScratch, t_start: usize, t_end: usize) void {
+pub fn runFFNWorker(ctx: *const LayerContext, scratch: *WorkerScratch, t_start: usize, t_end: usize) void {
     const layer = ctx.model.layers[ctx.layer_idx];
     const root_size: f32 = 1.0 / @sqrt(@as(f32, @floatFromInt(ModelConfig.embedding_dim)));
 
@@ -961,7 +961,7 @@ pub const InferenceWorkspace = struct {
 pub var dump_layers: bool = false;
 pub var dump_layers_path: ?[]const u8 = null;
 
-fn printRowStats(name: []const u8, row: []const f32, row_idx: usize, fd_opt: ?std.posix.fd_t) void {
+pub fn printRowStats(name: []const u8, row: []const f32, row_idx: usize, fd_opt: ?std.posix.fd_t) void {
     var sum_sq: f64 = 0;
     var sum: f64 = 0;
     var vmin: f32 = row[0];

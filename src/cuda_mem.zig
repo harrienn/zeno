@@ -55,6 +55,42 @@ pub fn DeviceSlice(comptime T: type) type {
                 .device_id = self.device_id,
             };
         }
+
+        /// Synchronous copy from host slice to device slice.
+        pub fn copyFromHost(self: Self, host_slice: []const T) cuda.CudaError!void {
+            if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+            if (host_slice.len != self.len) return error.InvalidParam;
+            if (self.len == 0) return;
+            const dst = self.ptr orelse return error.InvalidParam;
+            const bytes = std.math.mul(usize, self.len, @sizeOf(T)) catch return error.InvalidParam;
+            const rc = cuda.c.zeno_cuda_memcpy_h2d(dst, host_slice.ptr, bytes, self.device_id);
+            if (rc != 0) return cuda.mapCudaErrorCode(rc);
+        }
+
+        /// Synchronous copy from device slice to host slice.
+        pub fn copyToHost(self: Self, host_slice: []T) cuda.CudaError!void {
+            if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+            if (host_slice.len != self.len) return error.InvalidParam;
+            if (self.len == 0) return;
+            const src = self.ptr orelse return error.InvalidParam;
+            const bytes = std.math.mul(usize, self.len, @sizeOf(T)) catch return error.InvalidParam;
+            const rc = cuda.c.zeno_cuda_memcpy_d2h(host_slice.ptr, src, bytes, self.device_id);
+            if (rc != 0) return cuda.mapCudaErrorCode(rc);
+        }
+
+        /// Synchronous or stream-ordered copy from device slice to device slice.
+        pub fn copyFromDevice(self: Self, src: DeviceSlice(T), stream: ?*const CudaStream) cuda.CudaError!void {
+            if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+            if (self.device_id != src.device_id) return error.DeviceMismatch;
+            if (src.len != self.len) return error.InvalidParam;
+            if (self.len == 0) return;
+            const dst = self.ptr orelse return error.InvalidParam;
+            const src_ptr = src.ptr orelse return error.InvalidParam;
+            const bytes = std.math.mul(usize, self.len, @sizeOf(T)) catch return error.InvalidParam;
+            const s_handle = if (stream) |s| s.handle else null;
+            const rc = cuda.c.zeno_cuda_memcpy_d2d(dst, src_ptr, bytes, self.device_id, s_handle);
+            if (rc != 0) return cuda.mapCudaErrorCode(rc);
+        }
     };
 }
 
@@ -87,6 +123,7 @@ pub const CudaStream = struct {
     /// Idempotent stream destruction. If stream destruction fails, logs error
     /// and retains handle in release mode so the resource failure is not masked (R18-03).
     pub fn deinit(self: *CudaStream) void {
+        if (!cuda.is_enabled) return;
         if (self.handle) |h| {
             const rc = cuda.c.zeno_cuda_stream_destroy(h, self.device_id);
             if (rc != 0) {
@@ -167,6 +204,7 @@ pub fn DeviceBuffer(comptime T: type) type {
         /// Idempotent device buffer deallocation. If free fails, logs error
         /// and retains pointer in release mode to preserve trackable state (R16-02).
         pub fn deinit(self: *Self) void {
+            if (!cuda.is_enabled) return;
             if (self.ptr) |p| {
                 const rc = cuda.c.zeno_cuda_free(p, self.device_id);
                 if (rc != 0) {
@@ -213,7 +251,19 @@ pub fn DeviceBuffer(comptime T: type) type {
             const dst = self.ptr orelse return error.InvalidParam;
             const src_ptr = src.ptr orelse return error.InvalidParam;
             const bytes = std.math.mul(usize, self.len, @sizeOf(T)) catch return error.InvalidParam;
-            const rc = cuda.c.zeno_cuda_memcpy_d2d(dst, src_ptr, bytes, self.device_id);
+            const rc = cuda.c.zeno_cuda_memcpy_d2d(dst, src_ptr, bytes, self.device_id, null);
+            if (rc != 0) return cuda.mapCudaErrorCode(rc);
+        }
+
+        /// Copies from peer device memory slice using P2P transfer if supported.
+        pub fn copyFromPeer(self: *Self, src: DeviceSlice(T)) cuda.CudaError!void {
+            if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+            if (src.len != self.len) return error.InvalidParam;
+            if (self.len == 0) return;
+            const dst = self.ptr orelse return error.InvalidParam;
+            const src_ptr = src.ptr orelse return error.InvalidParam;
+            const bytes = std.math.mul(usize, self.len, @sizeOf(T)) catch return error.InvalidParam;
+            const rc = cuda.c.zeno_cuda_memcpy_peer(dst, self.device_id, src_ptr, src.device_id, bytes);
             if (rc != 0) return cuda.mapCudaErrorCode(rc);
         }
 
@@ -625,6 +675,55 @@ pub fn gemvQ5_0(
     if (rc != 0) return cuda.mapCudaErrorCode(rc);
 }
 
+/// Matrix-vector multiplication for F32 weights: out = W * x
+/// w: DeviceSlice(f32) of length out_dim * in_dim (row-major)
+/// x: DeviceSlice(f32) of length batch_size * in_dim
+/// out: DeviceSlice(f32) of length batch_size * out_dim
+pub fn gemvF32(
+    w: DeviceSlice(f32),
+    x: DeviceSlice(f32),
+    out: DeviceSlice(f32),
+    out_dim: usize,
+    in_dim: usize,
+    batch_size: usize,
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (out_dim == 0 or in_dim == 0 or batch_size == 0) return error.InvalidParam;
+    if (out_dim > std.math.maxInt(c_int) or in_dim > std.math.maxInt(c_int) or batch_size > 65535) {
+        return error.InvalidParam;
+    }
+
+    const expected_w_len = std.math.mul(usize, out_dim, in_dim) catch return error.InvalidParam;
+    const expected_x_len = std.math.mul(usize, batch_size, in_dim) catch return error.InvalidParam;
+    const expected_out_len = std.math.mul(usize, batch_size, out_dim) catch return error.InvalidParam;
+
+    if (w.len != expected_w_len or x.len != expected_x_len or out.len != expected_out_len) {
+        return error.InvalidParam;
+    }
+    if (w.device_id != x.device_id or w.device_id != out.device_id) return error.DeviceMismatch;
+    if (stream) |s| {
+        if (s.device_id != w.device_id) return error.DeviceMismatch;
+    }
+
+    const w_ptr = w.ptr orelse return error.InvalidParam;
+    const x_ptr = x.ptr orelse return error.InvalidParam;
+    const out_ptr = out.ptr orelse return error.InvalidParam;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_gemv_f32(
+        w_ptr,
+        x_ptr,
+        out_ptr,
+        @intCast(out_dim),
+        @intCast(in_dim),
+        @intCast(batch_size),
+        w.device_id,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
 // ---------------------------------------------------------------------------
 // Stage 4 Unified Attention & MoE Expert Execution Wrappers
 // ---------------------------------------------------------------------------
@@ -804,6 +903,48 @@ pub fn accumulateScaled(
         scale_factor,
         accum.len,
         accum.device_id,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
+/// Dual-region transformer layer output scaling: out[t, d] = (x_mid[t, d] + post_ffn[t, d]) * (t < prompt_len ? enc_scale : layer_scale)
+pub fn layerOutput(
+    out: DeviceSlice(f32),
+    x_mid: DeviceSlice(f32),
+    post_ffn: DeviceSlice(f32),
+    prompt_len: usize,
+    num_tokens: usize,
+    dim: usize,
+    enc_scale: f32,
+    layer_scale: f32,
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (out.device_id != x_mid.device_id or out.device_id != post_ffn.device_id) return error.DeviceMismatch;
+    if (stream) |s| {
+        if (s.device_id != out.device_id) return error.DeviceMismatch;
+    }
+    const expected_len = std.math.mul(usize, num_tokens, dim) catch return error.InvalidParam;
+    if (out.len != expected_len or x_mid.len != expected_len or post_ffn.len != expected_len) return error.InvalidParam;
+    if (prompt_len > num_tokens) return error.InvalidParam;
+    if (expected_len == 0) return;
+
+    const out_ptr = out.ptr orelse return error.InvalidParam;
+    const x_mid_ptr = x_mid.ptr orelse return error.InvalidParam;
+    const post_ffn_ptr = post_ffn.ptr orelse return error.InvalidParam;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_layer_output(
+        out_ptr,
+        x_mid_ptr,
+        post_ffn_ptr,
+        @intCast(prompt_len),
+        @intCast(num_tokens),
+        @intCast(dim),
+        enc_scale,
+        layer_scale,
+        out.device_id,
         s_handle,
     );
     if (rc != 0) return cuda.mapCudaErrorCode(rc);
@@ -2290,3 +2431,55 @@ test "CUDA MoE router prep and vector accumulation parity" {
     }
     std.debug.print("[parity] Accumulate Scaled: max_diff = {e:.4}\n", .{max_acc_diff});
 }
+
+test "CUDA layerOutput dual-region scaling parity" {
+    const dev = try requireHardwareDevice();
+    const allocator = std.testing.allocator;
+
+    const num_tokens: usize = 8;
+    const prompt_len: usize = 3;
+    const dim: usize = 2816;
+    const total_len = num_tokens * dim;
+    const enc_scale: f32 = 0.75;
+    const layer_scale: f32 = 1.25;
+
+    const host_xmid = try allocator.alloc(f32, total_len);
+    defer allocator.free(host_xmid);
+    const host_postffn = try allocator.alloc(f32, total_len);
+    defer allocator.free(host_postffn);
+    const cpu_out = try allocator.alloc(f32, total_len);
+    defer allocator.free(cpu_out);
+
+    for (0..total_len) |i| {
+        host_xmid[i] = @as(f32, @floatFromInt(i % 100)) * 0.01;
+        host_postffn[i] = @as(f32, @floatFromInt((i + 37) % 100)) * 0.01;
+        const t = i / dim;
+        const s = if (t < prompt_len) enc_scale else layer_scale;
+        cpu_out[i] = (host_xmid[i] + host_postffn[i]) * s;
+    }
+
+    var d_out = try DeviceBuffer(f32).init(dev, total_len);
+    defer d_out.deinit();
+    var d_xmid = try DeviceBuffer(f32).init(dev, total_len);
+    defer d_xmid.deinit();
+    var d_postffn = try DeviceBuffer(f32).init(dev, total_len);
+    defer d_postffn.deinit();
+
+    try d_xmid.copyFromHost(host_xmid);
+    try d_postffn.copyFromHost(host_postffn);
+
+    try layerOutput(d_out.slice(), d_xmid.slice(), d_postffn.slice(), prompt_len, num_tokens, dim, enc_scale, layer_scale, null);
+
+    const gpu_out = try allocator.alloc(f32, total_len);
+    defer allocator.free(gpu_out);
+    try d_out.copyToHost(gpu_out);
+
+    var max_diff: f32 = 0.0;
+    for (cpu_out, gpu_out) |c, g| {
+        const diff = @abs(c - g);
+        if (diff > max_diff) max_diff = diff;
+        try std.testing.expect(diff <= 1e-6);
+    }
+    std.debug.print("[parity] Layer Output: max_diff = {e:.4}\n", .{max_diff});
+}
+

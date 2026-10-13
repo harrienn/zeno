@@ -323,6 +323,46 @@ __global__ void gemv_q5_0_kernel(
     }
 }
 
+__global__ void gemv_f32_kernel(
+    const float *W,
+    const float *x,
+    float *out,
+    int out_dim,
+    int in_dim
+) {
+    int warp_id = threadIdx.x >> 5;
+    int lane_id = threadIdx.x & 31;
+    int row = blockIdx.x * 8 + warp_id;
+    int batch_idx = blockIdx.y;
+
+    if (row >= out_dim) return;
+
+    const float *batch_x = x + (size_t)batch_idx * in_dim;
+    float *batch_out = out + (size_t)batch_idx * out_dim;
+    const float *row_w = W + (size_t)row * in_dim;
+
+    float thread_sum = 0.0f;
+    if ((in_dim % 4 == 0) && (((uintptr_t)row_w & 0xF) == 0) && (((uintptr_t)batch_x & 0xF) == 0)) {
+        const float4 *row_w4 = (const float4 *)row_w;
+        const float4 *batch_x4 = (const float4 *)batch_x;
+        int in_dim4 = in_dim / 4;
+        for (int i = lane_id; i < in_dim4; i += 32) {
+            float4 w4 = row_w4[i];
+            float4 x4 = batch_x4[i];
+            thread_sum += w4.x * x4.x + w4.y * x4.y + w4.z * x4.z + w4.w * x4.w;
+        }
+    } else {
+        for (int col = lane_id; col < in_dim; col += 32) {
+            thread_sum += row_w[col] * batch_x[col];
+        }
+    }
+
+    float row_sum = warp_reduce_sum(thread_sum);
+    if (lane_id == 0) {
+        batch_out[row] = row_sum;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // C ABI Host Functions
 // ---------------------------------------------------------------------------
@@ -502,6 +542,48 @@ int zeno_cuda_gemv_q5_0(
         out_dim,
         in_dim,
         blocks_per_row
+    );
+
+    cudaError_t err = cudaGetLastError();
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED : ZENO_CUDA_SUCCESS;
+    return restore_cuda_device(orig, op_rc);
+}
+
+int zeno_cuda_gemv_f32(
+    const float *W,
+    const float *x,
+    float *out,
+    int out_dim,
+    int in_dim,
+    int batch_size,
+    int device_id,
+    void *stream
+) {
+    if (!W || !x || !out) return ZENO_CUDA_ERR_INVALID_PARAM;
+    if (out_dim <= 0 || in_dim <= 0 || batch_size <= 0 || batch_size > 65535) return ZENO_CUDA_ERR_INVALID_PARAM;
+
+    size_t w_bytes = (size_t)out_dim * (size_t)in_dim * sizeof(float);
+    size_t x_bytes = (size_t)batch_size * (size_t)in_dim * sizeof(float);
+    size_t out_bytes = (size_t)batch_size * (size_t)out_dim * sizeof(float);
+
+    if (ranges_overlap(x, x_bytes, out, out_bytes)) return ZENO_CUDA_ERR_INVALID_PARAM;
+    if (ranges_overlap(W, w_bytes, out, out_bytes)) return ZENO_CUDA_ERR_INVALID_PARAM;
+
+    int orig = 0;
+    int rc = set_cuda_device(device_id, &orig);
+    if (rc != ZENO_CUDA_SUCCESS) return rc;
+
+    const int block_size = 256;
+    unsigned int grid_x = (unsigned int)((out_dim + 7) / 8);
+    dim3 grid(grid_x, (unsigned int)batch_size);
+    cudaStream_t custream = (cudaStream_t)stream;
+
+    gemv_f32_kernel<<<grid, block_size, 0, custream>>>(
+        W,
+        x,
+        out,
+        out_dim,
+        in_dim
     );
 
     cudaError_t err = cudaGetLastError();

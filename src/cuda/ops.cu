@@ -198,6 +198,25 @@ __global__ void scale_kernel(
     }
 }
 
+__global__ void layer_output_kernel(
+    float *out,
+    const float *x_mid,
+    const float *post_ffn,
+    int prompt_len,
+    int num_tokens,
+    int dim,
+    float enc_scale,
+    float layer_scale
+) {
+    size_t idx = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
+    size_t total = (size_t)num_tokens * dim;
+    if (idx < total) {
+        int token_idx = (int)(idx / dim);
+        float s = (token_idx < prompt_len) ? enc_scale : layer_scale;
+        out[idx] = (x_mid[idx] + post_ffn[idx]) * s;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // C ABI Implementations
 // ---------------------------------------------------------------------------
@@ -262,7 +281,7 @@ int zeno_cuda_memcpy_d2h(void *dst, const void *src, size_t bytes, int device_id
     return restore_cuda_device(orig, op_rc);
 }
 
-int zeno_cuda_memcpy_d2d(void *dst, const void *src, size_t bytes, int device_id) {
+int zeno_cuda_memcpy_d2d(void *dst, const void *src, size_t bytes, int device_id, void *stream) {
     if (bytes == 0) return ZENO_CUDA_SUCCESS;
     if (!dst || !src) return ZENO_CUDA_ERR_INVALID_PARAM;
 
@@ -270,7 +289,8 @@ int zeno_cuda_memcpy_d2d(void *dst, const void *src, size_t bytes, int device_id
     int rc = set_cuda_device(device_id, &orig);
     if (rc != ZENO_CUDA_SUCCESS) return rc;
 
-    cudaError_t err = cudaMemcpy(dst, src, bytes, cudaMemcpyDeviceToDevice);
+    cudaStream_t custream = (cudaStream_t)stream;
+    cudaError_t err = cudaMemcpyAsync(dst, src, bytes, cudaMemcpyDeviceToDevice, custream);
     int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_COPY_FAILED : ZENO_CUDA_SUCCESS;
 
     return restore_cuda_device(orig, op_rc);
@@ -500,6 +520,66 @@ int zeno_cuda_scale(
     int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED : ZENO_CUDA_SUCCESS;
 
     return restore_cuda_device(orig, op_rc);
+}
+
+int zeno_cuda_layer_output(
+    float *out,
+    const float *x_mid,
+    const float *post_ffn,
+    int prompt_len,
+    int num_tokens,
+    int dim,
+    float enc_scale,
+    float layer_scale,
+    int device_id,
+    void *stream
+) {
+    if (!out || !x_mid || !post_ffn) return ZENO_CUDA_ERR_INVALID_PARAM;
+    if (num_tokens <= 0 || dim <= 0) return ZENO_CUDA_ERR_INVALID_PARAM;
+    if (prompt_len < 0 || prompt_len > num_tokens) return ZENO_CUDA_ERR_INVALID_PARAM;
+
+    size_t count = (size_t)num_tokens * dim;
+    if (count > (((size_t)1 << 31) - 1)) return ZENO_CUDA_ERR_INVALID_PARAM;
+
+    size_t bytes = count * sizeof(float);
+    if (partial_overlap(out, bytes, x_mid, bytes) || partial_overlap(out, bytes, post_ffn, bytes)) {
+        return ZENO_CUDA_ERR_INVALID_PARAM;
+    }
+
+    int orig = 0;
+    int rc = set_cuda_device(device_id, &orig);
+    if (rc != ZENO_CUDA_SUCCESS) return rc;
+
+    const int block_size = 256;
+    unsigned int num_blocks = (unsigned int)((count + block_size - 1) / block_size);
+    cudaStream_t custream = (cudaStream_t)stream;
+
+    layer_output_kernel<<<num_blocks, block_size, 0, custream>>>(
+        out, x_mid, post_ffn, prompt_len, num_tokens, dim, enc_scale, layer_scale
+    );
+    cudaError_t err = cudaGetLastError();
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED : ZENO_CUDA_SUCCESS;
+
+    return restore_cuda_device(orig, op_rc);
+}
+
+int zeno_cuda_memcpy_peer(
+    void *dst,
+    int dst_device_id,
+    const void *src,
+    int src_device_id,
+    size_t bytes
+) {
+    if (bytes == 0) return ZENO_CUDA_SUCCESS;
+    if (!dst || !src) return ZENO_CUDA_ERR_INVALID_PARAM;
+    if (dst_device_id < 0 || src_device_id < 0) return ZENO_CUDA_ERR_INVALID_DEVICE;
+
+    if (dst_device_id == src_device_id) {
+        return zeno_cuda_memcpy_d2d(dst, src, bytes, dst_device_id, NULL);
+    }
+
+    cudaError_t err = cudaMemcpyPeer(dst, dst_device_id, src, src_device_id, bytes);
+    return (err != cudaSuccess) ? ZENO_CUDA_ERR_COPY_FAILED : ZENO_CUDA_SUCCESS;
 }
 
 } // extern "C"

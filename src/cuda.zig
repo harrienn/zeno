@@ -91,7 +91,7 @@ pub const c = if (is_enabled) struct {
     pub extern "c" fn zeno_cuda_free(ptr: ?*anyopaque, device_id: c_int) c_int;
     pub extern "c" fn zeno_cuda_memcpy_h2d(dst: ?*anyopaque, src: ?*const anyopaque, bytes: usize, device_id: c_int) c_int;
     pub extern "c" fn zeno_cuda_memcpy_d2h(dst: ?*anyopaque, src: ?*const anyopaque, bytes: usize, device_id: c_int) c_int;
-    pub extern "c" fn zeno_cuda_memcpy_d2d(dst: ?*anyopaque, src: ?*const anyopaque, bytes: usize, device_id: c_int) c_int;
+    pub extern "c" fn zeno_cuda_memcpy_d2d(dst: ?*anyopaque, src: ?*const anyopaque, bytes: usize, device_id: c_int, stream: ?*anyopaque) c_int;
     pub extern "c" fn zeno_cuda_memset(dst: ?*anyopaque, value: c_int, bytes: usize, device_id: c_int) c_int;
     pub extern "c" fn zeno_cuda_stream_create(out_stream: *?*anyopaque, device_id: c_int) c_int;
     pub extern "c" fn zeno_cuda_stream_destroy(stream: ?*anyopaque, device_id: c_int) c_int;
@@ -183,6 +183,16 @@ pub const c = if (is_enabled) struct {
         device_id: c_int,
         stream: ?*anyopaque,
     ) c_int;
+    pub extern "c" fn zeno_cuda_gemv_f32(
+        W: [*]const f32,
+        x: [*]const f32,
+        out: [*]f32,
+        out_dim: c_int,
+        in_dim: c_int,
+        batch_size: c_int,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
 
     // Stage 4 Unified Attention & MoE Execution ABI
     pub extern "c" fn zeno_cuda_attention(
@@ -230,6 +240,27 @@ pub const c = if (is_enabled) struct {
         count: usize,
         device_id: c_int,
         stream: ?*anyopaque,
+    ) c_int;
+
+    pub extern "c" fn zeno_cuda_layer_output(
+        out: [*]f32,
+        x_mid: [*]const f32,
+        post_ffn: [*]const f32,
+        prompt_len: c_int,
+        num_tokens: c_int,
+        dim: c_int,
+        enc_scale: f32,
+        layer_scale: f32,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
+
+    pub extern "c" fn zeno_cuda_memcpy_peer(
+        dst: ?*anyopaque,
+        dst_device_id: c_int,
+        src: ?*const anyopaque,
+        src_device_id: c_int,
+        bytes: usize,
     ) c_int;
 } else struct {};
 
