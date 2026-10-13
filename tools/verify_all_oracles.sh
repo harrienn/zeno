@@ -4,7 +4,17 @@ set -euo pipefail
 # Zeno — Automated End-to-End Reference Oracle Verification Suite
 # Verifies all golden fixtures in specs/fixtures/*.json against llama.cpp oracle harness.
 
-MODEL_PATH="${1:-models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf}"
+USE_CUDA=0
+EXTRA_ARGS=()
+for arg in "$@"; do
+    if [ "$arg" = "--cuda" ]; then
+        USE_CUDA=1
+    else
+        EXTRA_ARGS+=("$arg")
+    fi
+done
+
+MODEL_PATH="${EXTRA_ARGS[0]:-models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf}"
 LLAMA_CPP_DIR="${LLAMA_CPP_DIR:-/hdd/Projects/llama.cpp}"
 LLAMA_EVAL="${LLAMA_EVAL_BIN:-${LLAMA_CPP_DIR}/build/bin/llama-diffusion-gemma-eval}"
 ZENO_BIN="./zig-out/bin/zeno"
@@ -14,7 +24,7 @@ echo " Zeno <-> llama.cpp Reference Oracle Verification Suite"
 echo "================================================================="
 echo "Model:       ${MODEL_PATH}"
 echo "Oracle:      ${LLAMA_EVAL}"
-echo "Engine:      ${ZENO_BIN}"
+echo "Engine:      ${ZENO_BIN} (Backend: $([ "${USE_CUDA}" -eq 1 ] && echo "CUDA" || echo "CPU"))"
 echo
 
 if [ ! -f "${MODEL_PATH}" ]; then
@@ -73,9 +83,14 @@ for FIXTURE in "${FIXTURES[@]}"; do
     echo "Running llama-diffusion-gemma-eval (CUDA offloaded NGL=99)..."
     NGL=99 "${LLAMA_EVAL}" "${MODEL_PATH}" "${P_FILE}" "${C_FILE}" "${OUT_GPU}" > /dev/null 2>&1
 
-    # 3. Execute Zeno CPU forward pass on the exact same fixture
-    echo "Running Zeno CPU DecisionEngine..."
-    "${ZENO_BIN}" decide-fixture "${MODEL_PATH}" "${FIXTURE}" "${OUT_ZENO_JSON}" > /dev/null 2>&1
+    # 3. Execute Zeno forward pass on the exact same fixture
+    if [ "${USE_CUDA}" -eq 1 ]; then
+        echo "Running Zeno CUDA DecisionEngine..."
+        "${ZENO_BIN}" decide-fixture "${MODEL_PATH}" "${FIXTURE}" --cuda "${OUT_ZENO_JSON}" > /dev/null 2>&1
+    else
+        echo "Running Zeno CPU DecisionEngine..."
+        "${ZENO_BIN}" decide-fixture "${MODEL_PATH}" "${FIXTURE}" "${OUT_ZENO_JSON}" > /dev/null 2>&1
+    fi
 
     # 4. Verify exact oracle reproduction, top-5 vocab tokens, and Zeno vs Oracle comparison
     python3 tools/verify_oracle_parity.py "${OUT_GPU}" "${FIXTURE}" "${OUT_ZENO_JSON}" "${@:2}"

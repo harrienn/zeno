@@ -1,46 +1,9 @@
 #include "zeno_cuda.h"
+#include "quant_types.cuh"
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
 #include <stdint.h>
 #include <stddef.h>
-
-#pragma pack(push, 1)
-
-// Q8_0: 34 bytes (32 weights per block)
-struct BlockQ8_0 {
-    half d;
-    int8_t qs[32];
-};
-
-// Q4_K: 144 bytes (256 weights per super-block)
-struct BlockQ4_K {
-    half d;
-    half dmin;
-    uint8_t scales[12];
-    uint8_t qs[128];
-};
-
-// Q6_K: 210 bytes (256 weights per super-block)
-struct BlockQ6_K {
-    uint8_t ql[128];
-    uint8_t qh[64];
-    int8_t scales[16];
-    half d;
-};
-
-// Q5_0: 22 bytes (32 weights per block)
-struct BlockQ5_0 {
-    half d;
-    uint8_t qh[4];
-    uint8_t qs[16];
-};
-
-#pragma pack(pop)
-
-static_assert(sizeof(BlockQ8_0) == 34, "BlockQ8_0 size mismatch (expected 34)");
-static_assert(sizeof(BlockQ4_K) == 144, "BlockQ4_K size mismatch (expected 144)");
-static_assert(sizeof(BlockQ6_K) == 210, "BlockQ6_K size mismatch (expected 210)");
-static_assert(sizeof(BlockQ5_0) == 22, "BlockQ5_0 size mismatch (expected 22)");
 
 static inline int set_cuda_device(int device_id, int *orig_device) {
     if (device_id < 0) return ZENO_CUDA_ERR_INVALID_DEVICE;
@@ -81,24 +44,6 @@ static inline bool ranges_overlap(const void *p1, size_t n1, const void *p2, siz
     uintptr_t s2 = (uintptr_t)p2;
     uintptr_t e2 = s2 + n2;
     return (s1 < e2 && s2 < e1);
-}
-
-__device__ inline float warp_reduce_sum(float val) {
-    #pragma unroll
-    for (int offset = 16; offset > 0; offset >>= 1) {
-        val += __shfl_down_sync(0xffffffff, val, offset);
-    }
-    return val;
-}
-
-__device__ inline void get_scale_min_k4(int j, const uint8_t *q, uint8_t *sc, uint8_t *m) {
-    if (j < 4) {
-        *sc = q[j] & 63;
-        *m  = q[j + 4] & 63;
-    } else {
-        *sc = (q[j + 4] & 0x0F) | ((q[j - 4] >> 6) << 4);
-        *m  = (q[j + 4] >> 4)   | ((q[j - 0] >> 6) << 4);
-    }
 }
 
 // ---------------------------------------------------------------------------

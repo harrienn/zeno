@@ -413,6 +413,8 @@ pub const CudaDeviceWorkspace = struct {
     max_seq_len: usize,
 
     // Hidden activations (double-buffered)
+    emb_buf_0: DeviceBuffer(f32),
+    emb_buf_1: DeviceBuffer(f32),
     current_emb: DeviceBuffer(f32),
     next_emb: DeviceBuffer(f32),
     norm_x: DeviceBuffer(f32),
@@ -448,10 +450,6 @@ pub const CudaDeviceWorkspace = struct {
 
     // Final answer norm hidden output
     norm_hidden: DeviceBuffer(f32),
-
-    // Host staging buffers for expert routing and transfer
-    host_top_indices: []i32,
-    host_top_weights: []f32,
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator, device_id: i32, max_seq_len: usize) !CudaDeviceWorkspace {
@@ -462,10 +460,10 @@ pub const CudaDeviceWorkspace = struct {
         }
 
         const emb_size = max_seq_len * ModelConfig.embedding_dim;
-        var current_emb = try DeviceBuffer(f32).init(device_id, emb_size);
-        errdefer current_emb.deinit();
-        var next_emb = try DeviceBuffer(f32).init(device_id, emb_size);
-        errdefer next_emb.deinit();
+        var emb_buf_0 = try DeviceBuffer(f32).init(device_id, emb_size);
+        errdefer emb_buf_0.deinit();
+        var emb_buf_1 = try DeviceBuffer(f32).init(device_id, emb_size);
+        errdefer emb_buf_1.deinit();
         var norm_x = try DeviceBuffer(f32).init(device_id, emb_size);
         errdefer norm_x.deinit();
 
@@ -503,11 +501,11 @@ pub const CudaDeviceWorkspace = struct {
         errdefer top_weights.deinit();
         var moe_in = try DeviceBuffer(f32).init(device_id, emb_size);
         errdefer moe_in.deinit();
-        var exp_gate_up_buf = try DeviceBuffer(f32).init(device_id, 1408);
+        var exp_gate_up_buf = try DeviceBuffer(f32).init(device_id, max_seq_len * 8 * 1408);
         errdefer exp_gate_up_buf.deinit();
-        var exp_act_buf = try DeviceBuffer(f32).init(device_id, 704);
+        var exp_act_buf = try DeviceBuffer(f32).init(device_id, max_seq_len * 8 * 704);
         errdefer exp_act_buf.deinit();
-        var exp_down_buf = try DeviceBuffer(f32).init(device_id, ModelConfig.embedding_dim);
+        var exp_down_buf = try DeviceBuffer(f32).init(device_id, max_seq_len * 8 * ModelConfig.embedding_dim);
         errdefer exp_down_buf.deinit();
         var moe_accum = try DeviceBuffer(f32).init(device_id, emb_size);
         errdefer moe_accum.deinit();
@@ -520,17 +518,14 @@ pub const CudaDeviceWorkspace = struct {
         var norm_hidden = try DeviceBuffer(f32).init(device_id, ModelConfig.embedding_dim);
         errdefer norm_hidden.deinit();
 
-        const host_top_indices = try allocator.alloc(i32, max_seq_len * 8);
-        errdefer allocator.free(host_top_indices);
-        const host_top_weights = try allocator.alloc(f32, max_seq_len * 8);
-        errdefer allocator.free(host_top_weights);
-
         return CudaDeviceWorkspace{
             .device_id = device_id,
             .stream = stream,
             .max_seq_len = max_seq_len,
-            .current_emb = current_emb,
-            .next_emb = next_emb,
+            .emb_buf_0 = emb_buf_0,
+            .emb_buf_1 = emb_buf_1,
+            .current_emb = emb_buf_0,
+            .next_emb = emb_buf_1,
             .norm_x = norm_x,
             .q_buf = q_buf,
             .k_buf = k_buf,
@@ -556,15 +551,11 @@ pub const CudaDeviceWorkspace = struct {
             .ffn_comb = ffn_comb,
             .post_ffn = post_ffn,
             .norm_hidden = norm_hidden,
-            .host_top_indices = host_top_indices,
-            .host_top_weights = host_top_weights,
             .allocator = allocator,
         };
     }
 
     pub fn deinit(self: *CudaDeviceWorkspace) void {
-        self.allocator.free(self.host_top_weights);
-        self.allocator.free(self.host_top_indices);
         self.norm_hidden.deinit();
         self.post_ffn.deinit();
         self.ffn_comb.deinit();
@@ -590,8 +581,8 @@ pub const CudaDeviceWorkspace = struct {
         self.k_buf.deinit();
         self.q_buf.deinit();
         self.norm_x.deinit();
-        self.next_emb.deinit();
-        self.current_emb.deinit();
+        self.emb_buf_1.deinit();
+        self.emb_buf_0.deinit();
         self.stream.deinit();
     }
 
@@ -599,6 +590,38 @@ pub const CudaDeviceWorkspace = struct {
         const tmp = self.current_emb;
         self.current_emb = self.next_emb;
         self.next_emb = tmp;
+    }
+
+    pub fn resetBufferPointers(self: *CudaDeviceWorkspace) void {
+        self.current_emb = self.emb_buf_0;
+        self.next_emb = self.emb_buf_1;
+        _ = self.emb_buf_0.setZero() catch {};
+        _ = self.emb_buf_1.setZero() catch {};
+        _ = self.norm_x.setZero() catch {};
+        _ = self.q_buf.setZero() catch {};
+        _ = self.k_buf.setZero() catch {};
+        _ = self.v_buf.setZero() catch {};
+        _ = self.head_out.setZero() catch {};
+        _ = self.attn_out.setZero() catch {};
+        _ = self.dense_in.setZero() catch {};
+        _ = self.gate_buf.setZero() catch {};
+        _ = self.up_buf.setZero() catch {};
+        _ = self.geglu_buf.setZero() catch {};
+        _ = self.dense_out.setZero() catch {};
+        _ = self.h1.setZero() catch {};
+        _ = self.r_in.setZero() catch {};
+        _ = self.router_logits.setZero() catch {};
+        _ = self.top_indices.setZero() catch {};
+        _ = self.top_weights.setZero() catch {};
+        _ = self.moe_in.setZero() catch {};
+        _ = self.exp_gate_up_buf.setZero() catch {};
+        _ = self.exp_act_buf.setZero() catch {};
+        _ = self.exp_down_buf.setZero() catch {};
+        _ = self.moe_accum.setZero() catch {};
+        _ = self.h2.setZero() catch {};
+        _ = self.ffn_comb.setZero() catch {};
+        _ = self.post_ffn.setZero() catch {};
+        _ = self.norm_hidden.setZero() catch {};
     }
 };
 
@@ -608,6 +631,7 @@ pub const CudaWorkspace = struct {
     topology: ExecutionTopology,
     dev0: CudaDeviceWorkspace,
     dev1: ?CudaDeviceWorkspace,
+    boundary_event: ?cuda_mem.CudaEvent,
     host_staging_buf: []f32,
     host_norm_hidden: []f32,
 
@@ -624,6 +648,12 @@ pub const CudaWorkspace = struct {
         }
         errdefer if (dev1) |*d1| d1.deinit();
 
+        var boundary_event: ?cuda_mem.CudaEvent = null;
+        if (topology == .dual_gpu_split) {
+            boundary_event = try cuda_mem.CudaEvent.init(devices[0]);
+        }
+        errdefer if (boundary_event) |*ev| ev.deinit();
+
         const host_staging = try allocator.alloc(f32, max_seq_len * ModelConfig.embedding_dim);
         errdefer allocator.free(host_staging);
 
@@ -634,6 +664,7 @@ pub const CudaWorkspace = struct {
         ws_ptr.topology = topology;
         ws_ptr.dev0 = dev0;
         ws_ptr.dev1 = dev1;
+        ws_ptr.boundary_event = boundary_event;
         ws_ptr.host_staging_buf = host_staging;
         ws_ptr.host_norm_hidden = host_norm;
 
@@ -643,6 +674,7 @@ pub const CudaWorkspace = struct {
     pub fn deinit(self: *CudaWorkspace) void {
         self.allocator.free(self.host_norm_hidden);
         self.allocator.free(self.host_staging_buf);
+        if (self.boundary_event) |*ev| ev.deinit();
         if (self.dev1) |*d1| d1.deinit();
         self.dev0.deinit();
         self.allocator.destroy(self);
@@ -758,45 +790,45 @@ pub fn runLayerCuda(
     const moe_in_slice = try ws.moe_in.slice().subslice(0, emb_elements);
     try cuda_mem.rmsNorm(x_mid, layer.pre_ffw_norm_2.slice(), moe_in_slice, num_tokens, ModelConfig.embedding_dim, 1e-6, stream);
 
-    // Copy top_indices and top_weights to host
-    try ws.stream.synchronize();
-    const host_top_indices = ws.host_top_indices[0 .. num_tokens * 8];
-    const host_top_weights = ws.host_top_weights[0 .. num_tokens * 8];
-    try top_idx_slice.copyToHost(host_top_indices);
-    try top_w_slice.copyToHost(host_top_weights);
+    // 9. Evaluate active MoE experts entirely on device (R22-01: zero host round-trips, batched launches)
+    const num_instances = num_tokens * 8;
+    const exp_gu_slice = try ws.exp_gate_up_buf.slice().subslice(0, num_instances * 1408);
+    try cuda_mem.moeGemvGateUpBatched(
+        layer.expert_gate_up.slice(),
+        moe_in_slice,
+        top_idx_slice,
+        exp_gu_slice,
+        num_tokens,
+        ModelConfig.embedding_dim,
+        1408,
+        stream,
+    );
 
-    // 9. Evaluate active MoE experts
+    const exp_act_slice = try ws.exp_act_buf.slice().subslice(0, num_instances * 704);
+    try cuda_mem.moeGegluBatched(exp_gu_slice, exp_act_slice, num_instances, 704, stream);
+
+    const exp_down_slice = try ws.exp_down_buf.slice().subslice(0, num_instances * ModelConfig.embedding_dim);
+    try cuda_mem.moeGemvDownBatched(
+        layer.expert_down.slice(),
+        layer.expert_down_type,
+        exp_act_slice,
+        top_idx_slice,
+        exp_down_slice,
+        num_tokens,
+        704,
+        ModelConfig.embedding_dim,
+        stream,
+    );
+
     const moe_accum_slice = try ws.moe_accum.slice().subslice(0, emb_elements);
-    const rc_zero = cuda.c.zeno_cuda_memset(moe_accum_slice.ptr, 0, emb_elements * @sizeOf(f32), ws.device_id);
-    if (rc_zero != 0) return cuda.mapCudaErrorCode(rc_zero);
-
-    const expert_gate_up_bytes: usize = 1408 * (ModelConfig.embedding_dim / quant.QK_K) * @sizeOf(quant.BlockQ4_K); // 2,230,272 bytes
-    const expert_down_blocks_per_row: usize = 704 / (if (layer.expert_down_type == 6) @as(usize, quant.QK5_0) else @as(usize, quant.QK8_0));
-    const expert_down_block_size: usize = if (layer.expert_down_type == 6) @sizeOf(quant.BlockQ5_0) else @sizeOf(quant.BlockQ8_0);
-    const expert_down_bytes: usize = ModelConfig.embedding_dim * expert_down_blocks_per_row * expert_down_block_size;
-
-    for (0..num_tokens) |t| {
-        const token_in = try moe_in_slice.subslice(t * ModelConfig.embedding_dim, ModelConfig.embedding_dim);
-        const token_accum = try moe_accum_slice.subslice(t * ModelConfig.embedding_dim, ModelConfig.embedding_dim);
-
-        for (0..8) |e| {
-            const exp_id: usize = @intCast(host_top_indices[t * 8 + e]);
-            const exp_w = host_top_weights[t * 8 + e];
-            if (exp_w == 0.0) continue;
-
-            const exp_gu_slice = try layer.expert_gate_up.slice().subslice(exp_id * expert_gate_up_bytes, expert_gate_up_bytes);
-            try gemvTensorCuda(layer.expert_gate_up_type, exp_gu_slice, token_in, ws.exp_gate_up_buf.slice(), 1408, ModelConfig.embedding_dim, 1, stream);
-
-            const gu_part1 = try ws.exp_gate_up_buf.slice().subslice(0, 704);
-            const gu_part2 = try ws.exp_gate_up_buf.slice().subslice(704, 704);
-            try cuda_mem.geglu(gu_part1, gu_part2, ws.exp_act_buf.slice(), stream);
-
-            const exp_down_slice = try layer.expert_down.slice().subslice(exp_id * expert_down_bytes, expert_down_bytes);
-            try gemvTensorCuda(layer.expert_down_type, exp_down_slice, ws.exp_act_buf.slice(), ws.exp_down_buf.slice(), ModelConfig.embedding_dim, 704, 1, stream);
-
-            try cuda_mem.accumulateScaled(token_accum, ws.exp_down_buf.slice(), exp_w, stream);
-        }
-    }
+    try cuda_mem.moeAccumulateScaledBatched(
+        moe_accum_slice,
+        exp_down_slice,
+        top_w_slice,
+        num_tokens,
+        ModelConfig.embedding_dim,
+        stream,
+    );
 
     // 10. MoE post norm
     const h2_slice = try ws.h2.slice().subslice(0, emb_elements);
@@ -829,37 +861,52 @@ pub fn runLayerCuda(
 }
 
 /// Transfers intermediate hidden state across GPU devices at partition boundary.
+/// Transfers intermediate hidden state across GPU devices at partition boundary with async P2P & event coordination (R22-02).
 pub fn transferHiddenState(
     src_slice: DeviceSlice(f32),
     dst_slice: DeviceSlice(f32),
+    src_stream: *const CudaStream,
+    dst_stream: *const CudaStream,
+    boundary_event: ?*const cuda_mem.CudaEvent,
     staging_buf: []f32,
 ) !void {
     if (src_slice.len != dst_slice.len) return error.InvalidParam;
     if (src_slice.len == 0) return;
 
     if (src_slice.device_id == dst_slice.device_id) {
-        try dst_slice.copyFromDevice(src_slice, null);
+        try dst_slice.copyFromDevice(src_slice, src_stream);
         return;
     }
 
-    // Try direct P2P copy first
-    const rc = cuda.c.zeno_cuda_memcpy_peer(
+    // Try direct P2P copy first if supported
+    const rc = cuda.c.zeno_cuda_memcpy_peer_async(
         dst_slice.ptr,
         dst_slice.device_id,
         src_slice.ptr,
         src_slice.device_id,
         src_slice.len * @sizeOf(f32),
+        src_stream.handle,
     );
-    if (rc == 0) return;
+    if (rc == 0) {
+        if (boundary_event) |ev| {
+            try ev.record(src_stream);
+            try dst_stream.waitEvent(ev);
+        }
+        try src_stream.synchronize();
+        try dst_stream.synchronize();
+        return;
+    }
 
     // Fallback to host-staged transfer
     if (staging_buf.len < src_slice.len) return error.InvalidParam;
     const stage = staging_buf[0..src_slice.len];
+    try src_stream.synchronize();
     const rc_d2h = cuda.c.zeno_cuda_memcpy_d2h(stage.ptr, src_slice.ptr, stage.len * @sizeOf(f32), src_slice.device_id);
     if (rc_d2h != 0) return cuda.mapCudaErrorCode(rc_d2h);
 
     const rc_h2d = cuda.c.zeno_cuda_memcpy_h2d(dst_slice.ptr, stage.ptr, stage.len * @sizeOf(f32), dst_slice.device_id);
     if (rc_h2d != 0) return cuda.mapCudaErrorCode(rc_h2d);
+    try dst_stream.synchronize();
 }
 
 /// Executes a complete single-step structured read forward pass across all 30 layers using CUDA acceleration.
@@ -880,7 +927,8 @@ pub fn executeStructuredReadCuda(
     const P = prompt_tokens.len;
     const C = canvas_tokens.len;
     const N = P + C;
-    if (N > ws.dev0.max_seq_len) return error.InvalidParam;
+    if (N > ws.dev0.max_seq_len or N > 512) return error.InvalidParam;
+    const answer_idx = P + answer_pos;
 
     // 1. Dual-region input embedding on host (takes ~0.05ms)
     const host_emb = ws.host_staging_buf[0 .. N * ModelConfig.embedding_dim];
@@ -900,73 +948,64 @@ pub fn executeStructuredReadCuda(
         ops.unweightedRmsNorm(row, 1e-6, row);
     }
 
-    // 2. Copy embedding to Device 0 current_emb
+    // 2. Reset buffer pointers to initial configuration and synchronize streams
+    ws.dev0.resetBufferPointers();
+    if (ws.dev1) |*d1| d1.resetBufferPointers();
+
+    try ws.dev0.stream.synchronize();
+    if (ws.dev1) |*d1| try d1.stream.synchronize();
+
     const d0_emb_slice = try ws.dev0.current_emb.slice().subslice(0, N * ModelConfig.embedding_dim);
     try d0_emb_slice.copyFromHost(host_emb);
+    try ws.dev0.stream.synchronize();
 
     // 3. Execute Transformer Blocks
-    std.debug.print("executeStructuredReadCuda: starting layer loop, topology = {}\n", .{model.topology});
     if (model.topology == .single_gpu) {
         for (0..ModelConfig.num_layers) |l| {
-            std.debug.print("executeStructuredReadCuda: layer {d}...\n", .{l});
             const rf = if (model.layers[l].is_global) model.rope_freqs_dev0 else null;
             const rf_slice = if (rf) |r| r.slice() else null;
             try runLayerCuda(&ws.dev0, &model.layers[l], P, N, rf_slice);
         }
 
         // Apply final output RMSNorm on Device 0
-        const answer_idx = P + answer_pos;
-        const answer_slice = try ws.dev0.current_emb.slice().subslice(answer_idx * ModelConfig.embedding_dim, ModelConfig.embedding_dim);
+        const answer_idx_sg = P + answer_pos;
+        const answer_slice = try ws.dev0.current_emb.slice().subslice(answer_idx_sg * ModelConfig.embedding_dim, ModelConfig.embedding_dim);
         try cuda_mem.rmsNorm(answer_slice, model.output_norm.slice(), ws.dev0.norm_hidden.slice(), 1, ModelConfig.embedding_dim, 1e-6, &ws.dev0.stream);
         try ws.dev0.stream.synchronize();
 
         // Copy normalized hidden state to host
         try ws.dev0.norm_hidden.copyToHost(ws.host_norm_hidden);
     } else {
-        var name_buf: [32]u8 = undefined;
-        const answer_idx = P + answer_pos;
         for (0..15) |l| {
             const rf = if (model.layers[l].is_global) model.rope_freqs_dev0 else null;
             const rf_slice = if (rf) |r| r.slice() else null;
             try runLayerCuda(&ws.dev0, &model.layers[l], P, N, rf_slice);
-            if (infer.dump_layers) {
-                try ws.dev0.stream.synchronize();
-                const ans_s = try ws.dev0.current_emb.slice().subslice(answer_idx * ModelConfig.embedding_dim, ModelConfig.embedding_dim);
-                try ans_s.copyToHost(ws.host_norm_hidden);
-                const name = std.fmt.bufPrint(&name_buf, "gpu_l_out-{d}", .{l}) catch "gpu_l_out";
-                infer.printRowStats(name, ws.host_norm_hidden, answer_idx, null);
-            }
         }
-        try ws.dev0.stream.synchronize();
 
         // Boundary transfer H_15 to Device 1
         var dev1 = &ws.dev1.?;
         const d0_out_slice = try ws.dev0.current_emb.slice().subslice(0, N * ModelConfig.embedding_dim);
         const d1_in_slice = try dev1.current_emb.slice().subslice(0, N * ModelConfig.embedding_dim);
-        try transferHiddenState(d0_out_slice, d1_in_slice, ws.host_staging_buf);
+        const ev_opt = if (ws.boundary_event) |*ev| ev else null;
+
+        try transferHiddenState(d0_out_slice, d1_in_slice, &ws.dev0.stream, &dev1.stream, ev_opt, ws.host_staging_buf);
 
         // Layers 15..29 on Device 1
         for (15..30) |l| {
             const rf = if (model.layers[l].is_global) model.rope_freqs_dev1 else null;
             const rf_slice = if (rf) |r| r.slice() else null;
             try runLayerCuda(dev1, &model.layers[l], P, N, rf_slice);
-            if (infer.dump_layers) {
-                try dev1.stream.synchronize();
-                const ans_s = try dev1.current_emb.slice().subslice(answer_idx * ModelConfig.embedding_dim, ModelConfig.embedding_dim);
-                try ans_s.copyToHost(ws.host_norm_hidden);
-                const name = std.fmt.bufPrint(&name_buf, "gpu_l_out-{d}", .{l}) catch "gpu_l_out";
-                infer.printRowStats(name, ws.host_norm_hidden, answer_idx, null);
-            }
         }
 
         // Apply final output RMSNorm on Device 1
-        std.debug.print("executeStructuredReadCuda: applying output RMSNorm on dev1...\n", .{});
         const answer_slice = try dev1.current_emb.slice().subslice(answer_idx * ModelConfig.embedding_dim, ModelConfig.embedding_dim);
         try cuda_mem.rmsNorm(answer_slice, model.output_norm.slice(), dev1.norm_hidden.slice(), 1, ModelConfig.embedding_dim, 1e-6, &dev1.stream);
         try dev1.stream.synchronize();
+        try ws.dev0.stream.synchronize();
 
         // Copy normalized hidden state to host
         try dev1.norm_hidden.copyToHost(ws.host_norm_hidden);
+        try dev1.stream.synchronize();
     }
 
     // 4. Project candidate logits on host using Q6_K dot products
@@ -1028,13 +1067,17 @@ test "transferHiddenState intra-device and cross-device parity" {
     }
 
     // Intra-device transfer on Device 0
+    var stream0 = try CudaStream.init(dev0);
+    defer stream0.deinit();
+
     var buf_src0 = try DeviceBuffer(f32).init(dev0, count);
     defer buf_src0.deinit();
     var buf_dst0 = try DeviceBuffer(f32).init(dev0, count);
     defer buf_dst0.deinit();
 
     try buf_src0.copyFromHost(host_src);
-    try transferHiddenState(buf_src0.slice(), buf_dst0.slice(), staging);
+    try transferHiddenState(buf_src0.slice(), buf_dst0.slice(), &stream0, &stream0, null, staging);
+    try stream0.synchronize();
     try buf_dst0.copyToHost(host_dst);
 
     for (host_src, host_dst) |s, d| {
@@ -1044,10 +1087,16 @@ test "transferHiddenState intra-device and cross-device parity" {
     // Cross-device transfer if 2 devices present
     if (topo.reported_devices >= 2) {
         const dev1 = topo.devices[1].device_id;
+        var stream1 = try CudaStream.init(dev1);
+        defer stream1.deinit();
+        var ev = try cuda_mem.CudaEvent.init(dev0);
+        defer ev.deinit();
+
         var buf_dst1 = try DeviceBuffer(f32).init(dev1, count);
         defer buf_dst1.deinit();
 
-        try transferHiddenState(buf_src0.slice(), buf_dst1.slice(), staging);
+        try transferHiddenState(buf_src0.slice(), buf_dst1.slice(), &stream0, &stream1, &ev, staging);
+        try stream1.synchronize();
         @memset(host_dst, 0.0);
         try buf_dst1.copyToHost(host_dst);
 
@@ -1403,8 +1452,8 @@ test "executeStructuredReadCuda full 30-layer forward pass on local model if pre
     for (0..2) |i| {
         const raw_diff = @abs(cpu_raw[i] - cuda_raw[i]);
         const soft_diff = @abs(cpu_softcapped[i] - cuda_softcapped[i]);
-        try std.testing.expect(raw_diff <= 0.5);
-        try std.testing.expect(soft_diff <= 0.5);
+        try std.testing.expect(raw_diff <= 0.05);
+        try std.testing.expect(soft_diff <= 0.05);
     }
 }
 

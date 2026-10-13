@@ -262,6 +262,64 @@ pub const c = if (is_enabled) struct {
         src_device_id: c_int,
         bytes: usize,
     ) c_int;
+
+    pub extern "c" fn zeno_cuda_memcpy_peer_async(
+        dst: ?*anyopaque,
+        dst_device_id: c_int,
+        src: ?*const anyopaque,
+        src_device_id: c_int,
+        bytes: usize,
+        stream: ?*anyopaque,
+    ) c_int;
+
+    pub extern "c" fn zeno_cuda_event_create(out_event: *?*anyopaque, device_id: c_int) c_int;
+    pub extern "c" fn zeno_cuda_event_destroy(event: ?*anyopaque, device_id: c_int) c_int;
+    pub extern "c" fn zeno_cuda_event_record(event: ?*anyopaque, stream: ?*anyopaque, device_id: c_int) c_int;
+    pub extern "c" fn zeno_cuda_stream_wait_event(stream: ?*anyopaque, event: ?*anyopaque, device_id: c_int) c_int;
+
+    pub extern "c" fn zeno_cuda_moe_gemv_gate_up_batched(
+        all_expert_weights: [*]const u8,
+        tokens_in: [*]const f32,
+        top_indices: [*]const c_int,
+        out_gate_up: [*]f32,
+        num_tokens: c_int,
+        in_dim: c_int,
+        out_dim: c_int,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
+
+    pub extern "c" fn zeno_cuda_moe_geglu_batched(
+        gate_up: [*]const f32,
+        act_out: [*]f32,
+        num_instances: c_int,
+        half_dim: c_int,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
+
+    pub extern "c" fn zeno_cuda_moe_gemv_down_batched(
+        all_expert_weights: [*]const u8,
+        expert_type: c_int,
+        acts_in: [*]const f32,
+        top_indices: [*]const c_int,
+        out_down: [*]f32,
+        num_tokens: c_int,
+        in_dim: c_int,
+        out_dim: c_int,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
+
+    pub extern "c" fn zeno_cuda_moe_accumulate_scaled_batched(
+        moe_accum: [*]f32,
+        down_out: [*]const f32,
+        top_weights: [*]const f32,
+        num_tokens: c_int,
+        dim: c_int,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
 } else struct {};
 
 pub fn mapCudaErrorCode(rc: c_int) CudaError {

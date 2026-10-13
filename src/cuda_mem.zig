@@ -91,6 +91,18 @@ pub fn DeviceSlice(comptime T: type) type {
             const rc = cuda.c.zeno_cuda_memcpy_d2d(dst, src_ptr, bytes, self.device_id, s_handle);
             if (rc != 0) return cuda.mapCudaErrorCode(rc);
         }
+
+        /// Asynchronous copy from peer device memory slice using P2P transfer if supported.
+        pub fn copyFromPeerAsync(self: Self, src: DeviceSlice(T), stream: *const CudaStream) cuda.CudaError!void {
+            if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+            if (src.len != self.len) return error.InvalidParam;
+            if (self.len == 0) return;
+            const dst = self.ptr orelse return error.InvalidParam;
+            const src_ptr = src.ptr orelse return error.InvalidParam;
+            const bytes = std.math.mul(usize, self.len, @sizeOf(T)) catch return error.InvalidParam;
+            const rc = cuda.c.zeno_cuda_memcpy_peer_async(dst, self.device_id, src_ptr, src.device_id, bytes, stream.handle);
+            if (rc != 0) return cuda.mapCudaErrorCode(rc);
+        }
     };
 }
 
@@ -138,6 +150,47 @@ pub const CudaStream = struct {
     pub fn synchronize(self: *const CudaStream) cuda.CudaError!void {
         if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
         const rc = cuda.c.zeno_cuda_stream_sync(self.handle, self.device_id);
+        if (rc != 0) return cuda.mapCudaErrorCode(rc);
+    }
+
+    pub fn waitEvent(self: *const CudaStream, event: *const CudaEvent) cuda.CudaError!void {
+        if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+        const sh = self.handle orelse return error.InvalidParam;
+        const eh = event.handle orelse return error.InvalidParam;
+        const rc = cuda.c.zeno_cuda_stream_wait_event(sh, eh, self.device_id);
+        if (rc != 0) return cuda.mapCudaErrorCode(rc);
+    }
+};
+
+/// Explicit single-owner CUDA event wrapper for cross-stream coordination.
+pub const CudaEvent = struct {
+    handle: ?*anyopaque,
+    device_id: i32,
+
+    pub fn init(device_id: i32) cuda.CudaError!CudaEvent {
+        if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+        var raw_event: ?*anyopaque = null;
+        const rc = cuda.c.zeno_cuda_event_create(&raw_event, device_id);
+        if (rc != 0) return cuda.mapCudaErrorCode(rc);
+        return .{
+            .handle = raw_event,
+            .device_id = device_id,
+        };
+    }
+
+    pub fn deinit(self: *CudaEvent) void {
+        if (!cuda.is_enabled) return;
+        if (self.handle) |h| {
+            _ = cuda.c.zeno_cuda_event_destroy(h, self.device_id);
+            self.handle = null;
+        }
+    }
+
+    pub fn record(self: *const CudaEvent, stream: *const CudaStream) cuda.CudaError!void {
+        if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+        const eh = self.handle orelse return error.InvalidParam;
+        const sh = stream.handle orelse return error.InvalidParam;
+        const rc = cuda.c.zeno_cuda_event_record(eh, sh, self.device_id);
         if (rc != 0) return cuda.mapCudaErrorCode(rc);
     }
 };
@@ -264,6 +317,16 @@ pub fn DeviceBuffer(comptime T: type) type {
             const src_ptr = src.ptr orelse return error.InvalidParam;
             const bytes = std.math.mul(usize, self.len, @sizeOf(T)) catch return error.InvalidParam;
             const rc = cuda.c.zeno_cuda_memcpy_peer(dst, self.device_id, src_ptr, src.device_id, bytes);
+            if (rc != 0) return cuda.mapCudaErrorCode(rc);
+        }
+
+        /// Sets all elements of the device buffer to zero.
+        pub fn setZero(self: *const Self) cuda.CudaError!void {
+            if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+            if (self.len == 0) return;
+            const p = self.ptr orelse return;
+            const bytes = std.math.mul(usize, self.len, @sizeOf(T)) catch return error.InvalidParam;
+            const rc = cuda.c.zeno_cuda_memset(p, 0, bytes, self.device_id);
             if (rc != 0) return cuda.mapCudaErrorCode(rc);
         }
 
@@ -945,6 +1008,180 @@ pub fn layerOutput(
         enc_scale,
         layer_scale,
         out.device_id,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
+/// Batched MoE expert gate/up projection on GPU: out_gate_up = all_experts[top_indices[k]] * tokens_in[k/8]
+pub fn moeGemvGateUpBatched(
+    all_expert_weights: DeviceSlice(u8),
+    tokens_in: DeviceSlice(f32),
+    top_indices: DeviceSlice(i32),
+    out_gate_up: DeviceSlice(f32),
+    num_tokens: usize,
+    in_dim: usize,
+    out_dim: usize,
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (num_tokens == 0 or in_dim == 0 or out_dim == 0) return error.InvalidParam;
+    if (all_expert_weights.device_id != tokens_in.device_id or
+        all_expert_weights.device_id != top_indices.device_id or
+        all_expert_weights.device_id != out_gate_up.device_id)
+    {
+        return error.DeviceMismatch;
+    }
+    if (stream) |s| {
+        if (s.device_id != all_expert_weights.device_id) return error.DeviceMismatch;
+    }
+    const expected_in_len = std.math.mul(usize, num_tokens, in_dim) catch return error.InvalidParam;
+    const expected_indices_len = std.math.mul(usize, num_tokens, 8) catch return error.InvalidParam;
+    const expected_out_len = std.math.mul(usize, expected_indices_len, out_dim) catch return error.InvalidParam;
+    if (tokens_in.len < expected_in_len or top_indices.len < expected_indices_len or out_gate_up.len < expected_out_len) {
+        return error.InvalidParam;
+    }
+
+    const w_ptr = all_expert_weights.ptr orelse return error.InvalidParam;
+    const in_ptr = tokens_in.ptr orelse return error.InvalidParam;
+    const idx_ptr = top_indices.ptr orelse return error.InvalidParam;
+    const out_ptr = out_gate_up.ptr orelse return error.InvalidParam;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_moe_gemv_gate_up_batched(
+        w_ptr,
+        in_ptr,
+        @ptrCast(idx_ptr),
+        out_ptr,
+        @intCast(num_tokens),
+        @intCast(in_dim),
+        @intCast(out_dim),
+        all_expert_weights.device_id,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
+/// Batched MoE GeGLU activation on GPU: act_out[k, i] = GELU(gate_up[k, i]) * gate_up[k, half_dim + i]
+pub fn moeGegluBatched(
+    gate_up: DeviceSlice(f32),
+    act_out: DeviceSlice(f32),
+    num_instances: usize,
+    half_dim: usize,
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (num_instances == 0 or half_dim == 0) return error.InvalidParam;
+    if (gate_up.device_id != act_out.device_id) return error.DeviceMismatch;
+    if (stream) |s| {
+        if (s.device_id != gate_up.device_id) return error.DeviceMismatch;
+    }
+    const expected_in_len = std.math.mul(usize, num_instances, half_dim * 2) catch return error.InvalidParam;
+    const expected_out_len = std.math.mul(usize, num_instances, half_dim) catch return error.InvalidParam;
+    if (gate_up.len < expected_in_len or act_out.len < expected_out_len) return error.InvalidParam;
+
+    const in_ptr = gate_up.ptr orelse return error.InvalidParam;
+    const out_ptr = act_out.ptr orelse return error.InvalidParam;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_moe_geglu_batched(
+        in_ptr,
+        out_ptr,
+        @intCast(num_instances),
+        @intCast(half_dim),
+        gate_up.device_id,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
+/// Batched MoE expert down projection on GPU: out_down = all_experts[top_indices[k]] * acts_in[k]
+pub fn moeGemvDownBatched(
+    all_expert_weights: DeviceSlice(u8),
+    expert_type: u32,
+    acts_in: DeviceSlice(f32),
+    top_indices: DeviceSlice(i32),
+    out_down: DeviceSlice(f32),
+    num_tokens: usize,
+    in_dim: usize,
+    out_dim: usize,
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (num_tokens == 0 or in_dim == 0 or out_dim == 0) return error.InvalidParam;
+    if (all_expert_weights.device_id != acts_in.device_id or
+        all_expert_weights.device_id != top_indices.device_id or
+        all_expert_weights.device_id != out_down.device_id)
+    {
+        return error.DeviceMismatch;
+    }
+    if (stream) |s| {
+        if (s.device_id != all_expert_weights.device_id) return error.DeviceMismatch;
+    }
+    const expected_indices_len = std.math.mul(usize, num_tokens, 8) catch return error.InvalidParam;
+    const expected_in_len = std.math.mul(usize, expected_indices_len, in_dim) catch return error.InvalidParam;
+    const expected_out_len = std.math.mul(usize, expected_indices_len, out_dim) catch return error.InvalidParam;
+    if (acts_in.len < expected_in_len or top_indices.len < expected_indices_len or out_down.len < expected_out_len) {
+        return error.InvalidParam;
+    }
+
+    const w_ptr = all_expert_weights.ptr orelse return error.InvalidParam;
+    const in_ptr = acts_in.ptr orelse return error.InvalidParam;
+    const idx_ptr = top_indices.ptr orelse return error.InvalidParam;
+    const out_ptr = out_down.ptr orelse return error.InvalidParam;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_moe_gemv_down_batched(
+        w_ptr,
+        @intCast(expert_type),
+        in_ptr,
+        @ptrCast(idx_ptr),
+        out_ptr,
+        @intCast(num_tokens),
+        @intCast(in_dim),
+        @intCast(out_dim),
+        all_expert_weights.device_id,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
+/// Batched MoE expert accumulation and scaling: moe_accum[t, d] = sum_{e=0..7} down_out[t*8+e, d] * top_weights[t*8+e]
+pub fn moeAccumulateScaledBatched(
+    moe_accum: DeviceSlice(f32),
+    down_out: DeviceSlice(f32),
+    top_weights: DeviceSlice(f32),
+    num_tokens: usize,
+    dim: usize,
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (num_tokens == 0 or dim == 0) return error.InvalidParam;
+    if (moe_accum.device_id != down_out.device_id or moe_accum.device_id != top_weights.device_id) {
+        return error.DeviceMismatch;
+    }
+    if (stream) |s| {
+        if (s.device_id != moe_accum.device_id) return error.DeviceMismatch;
+    }
+    const expected_accum_len = std.math.mul(usize, num_tokens, dim) catch return error.InvalidParam;
+    const expected_weights_len = std.math.mul(usize, num_tokens, 8) catch return error.InvalidParam;
+    const expected_down_len = std.math.mul(usize, expected_weights_len, dim) catch return error.InvalidParam;
+    if (moe_accum.len < expected_accum_len or top_weights.len < expected_weights_len or down_out.len < expected_down_len) {
+        return error.InvalidParam;
+    }
+
+    const accum_ptr = moe_accum.ptr orelse return error.InvalidParam;
+    const down_ptr = down_out.ptr orelse return error.InvalidParam;
+    const w_ptr = top_weights.ptr orelse return error.InvalidParam;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_moe_accumulate_scaled_batched(
+        accum_ptr,
+        down_ptr,
+        w_ptr,
+        @intCast(num_tokens),
+        @intCast(dim),
+        moe_accum.device_id,
         s_handle,
     );
     if (rc != 0) return cuda.mapCudaErrorCode(rc);

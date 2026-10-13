@@ -10,7 +10,19 @@ const model_mod = @import("model.zig");
 const tokenizer_mod = @import("tokenizer.zig");
 const canvas_mod = @import("canvas.zig");
 const infer = @import("infer.zig");
+const infer_cuda = @import("infer_cuda.zig");
 const ops = @import("ops.zig");
+
+pub const BackendType = enum {
+    cpu,
+    cuda,
+};
+
+pub const EngineOptions = struct {
+    backend: BackendType = .cpu,
+    force_single_gpu: bool = false,
+    workspace_seq_len: usize = 512,
+};
 
 pub const DecisionRequest = decision.DecisionRequest;
 pub const DecisionResponse = decision.DecisionResponse;
@@ -45,33 +57,69 @@ pub const DecisionEngine = struct {
     allocator: std.mem.Allocator,
     model: DiffusionGemmaModel,
     tokenizer: Tokenizer,
-    workspace: *infer.InferenceWorkspace,
+    backend: BackendType,
+    cpu_workspace: ?*infer.InferenceWorkspace = null,
+    cuda_model: ?*infer_cuda.CudaModel = null,
+    cuda_workspace: ?*infer_cuda.CudaWorkspace = null,
     mutex: Mutex = .{},
 
-    /// Initializes decision engine by memory-mapping the GGUF model, loading tokenizer vocabulary,
-    /// and pre-allocating an inference workspace with persistent thread pool.
+    /// Initializes decision engine with default CPU reference execution.
     pub fn init(allocator: std.mem.Allocator, model_path: []const u8) !DecisionEngine {
+        return initWithOptions(allocator, model_path, .{ .backend = .cpu });
+    }
+
+    /// Initializes decision engine with explicit backend and hardware execution options.
+    pub fn initWithOptions(
+        allocator: std.mem.Allocator,
+        model_path: []const u8,
+        options: EngineOptions,
+    ) !DecisionEngine {
         var model = try DiffusionGemmaModel.loadFromFile(allocator, model_path);
         errdefer model.deinit();
 
         var tok = try Tokenizer.initFromGguf(allocator, model.gguf_file);
         errdefer tok.deinit(allocator);
 
-        var ws = try infer.InferenceWorkspace.init(allocator, 512, null);
-        errdefer ws.deinit();
+        var cpu_ws: ?*infer.InferenceWorkspace = null;
+        var cuda_model: ?*infer_cuda.CudaModel = null;
+        var cuda_ws: ?*infer_cuda.CudaWorkspace = null;
+
+        errdefer {
+            if (cuda_ws) |ws| ws.deinit();
+            if (cuda_model) |cm| cm.deinit();
+            if (cpu_ws) |ws| ws.deinit();
+        }
+
+        switch (options.backend) {
+            .cpu => {
+                cpu_ws = try infer.InferenceWorkspace.init(allocator, options.workspace_seq_len, null);
+            },
+            .cuda => {
+                if (!infer_cuda.is_enabled) return error.CudaDisabledAtBuild;
+                const cm = try infer_cuda.CudaModel.initFromCpuModel(allocator, model, options.force_single_gpu);
+                cuda_model = cm;
+                const cws = try infer_cuda.CudaWorkspace.init(allocator, cm.topology, cm.devices, options.workspace_seq_len);
+                cuda_ws = cws;
+            },
+        }
 
         return DecisionEngine{
             .allocator = allocator,
             .model = model,
             .tokenizer = tok,
-            .workspace = ws,
+            .backend = options.backend,
+            .cpu_workspace = cpu_ws,
+            .cuda_model = cuda_model,
+            .cuda_workspace = cuda_ws,
             .mutex = .{},
         };
     }
 
     /// Releases workspace, tokenizer vocabulary, model mapping, and memory.
     pub fn deinit(self: *DecisionEngine) void {
-        self.workspace.deinit();
+        if (self.cuda_workspace) |ws| ws.deinit();
+        if (self.cuda_model) |cm| cm.deinit();
+        if (self.cpu_workspace) |ws| ws.deinit();
         self.tokenizer.deinit(self.allocator);
         self.model.deinit();
     }
@@ -135,16 +183,41 @@ pub const DecisionEngine = struct {
         defer request_allocator.free(softcapped_logits);
 
         const canvas_len = req.canvas_length orelse root.ModelConfig.canvas_length;
-        try infer.executeStructuredReadSlice(
-            self.workspace,
-            self.model,
-            prompt_tokens,
-            canvas.tokens[0..canvas_len],
-            canvas.answer_pos,
-            candidate_tokens,
-            raw_logits,
-            softcapped_logits,
-        );
+        const total_seq_len = prompt_tokens.len + canvas_len;
+        if (total_seq_len > 512) {
+            return error.CanvasOverflow;
+        }
+
+        switch (self.backend) {
+            .cpu => {
+                const ws = self.cpu_workspace orelse return error.InvalidEngineState;
+                try infer.executeStructuredReadSlice(
+                    ws,
+                    self.model,
+                    prompt_tokens,
+                    canvas.tokens[0..canvas_len],
+                    canvas.answer_pos,
+                    candidate_tokens,
+                    raw_logits,
+                    softcapped_logits,
+                );
+            },
+            .cuda => {
+                const ws = self.cuda_workspace orelse return error.InvalidEngineState;
+                const cm = self.cuda_model orelse return error.InvalidEngineState;
+                try infer_cuda.executeStructuredReadCuda(
+                    ws,
+                    cm,
+                    self.model,
+                    prompt_tokens,
+                    canvas.tokens[0..canvas_len],
+                    canvas.answer_pos,
+                    candidate_tokens,
+                    raw_logits,
+                    softcapped_logits,
+                );
+            },
+        }
 
         // 5. Candidate-restricted softmax normalization
         const probs = try request_allocator.alloc(f32, cand_count);
@@ -244,4 +317,45 @@ test "DecisionEngine: normative tie-breaking selects lowest candidate index (U-1
         }
     }
     try std.testing.expectEqual(@as(usize, 0), best_idx);
+}
+
+test "DecisionEngine: end-to-end boolean decision execution on CUDA if present" {
+    if (!root.shouldRunModelTests()) return error.SkipZigTest;
+    if (!root.cuda.is_enabled) return error.SkipZigTest;
+
+    const allocator = std.testing.allocator;
+    const model_path = "models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf";
+
+    var engine = DecisionEngine.initWithOptions(allocator, model_path, .{ .backend = .cuda }) catch |err| {
+        if (err == error.FileNotFound or err == error.NoDevice) return;
+        return err;
+    };
+    defer engine.deinit();
+
+    const candidates = [_]decision.CandidateSpec{
+        .{ .token = "Yes", .label = "Yes" },
+        .{ .token = "No", .label = "No" },
+    };
+
+    const req = DecisionRequest{
+        .query = "Is this service operating normally?",
+        .context = "Heartbeat timestamp: 2026-09-27T20:10:00Z. Errors: 0.",
+        .schema_type = .boolean,
+        .candidates = &candidates,
+        .step_cap = 1,
+        .temperature = 1.0,
+        .entropy_threshold = 0.8,
+    };
+
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+
+    const resp = try engine.decide(arena.allocator(), req);
+
+    try std.testing.expect(std.mem.eql(u8, resp.decision, "Yes") or std.mem.eql(u8, resp.decision, "No"));
+    try std.testing.expect(resp.decision_probability > 0.0 and resp.decision_probability <= 1.0);
+    try std.testing.expect(resp.entropy_nats >= 0.0);
+    try std.testing.expect(resp.normalized_entropy >= 0.0 and resp.normalized_entropy <= 1.0);
+    try std.testing.expect(resp.canvas_tokens_used > 0);
+    try std.testing.expectEqual(@as(usize, 2), resp.candidates.len);
 }

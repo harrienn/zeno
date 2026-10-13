@@ -312,3 +312,23 @@ test "validateFixture: compares local model with stored fixture values if presen
     try validateFixture(allocator, "specs/fixtures/maintenance_priority_uncertain.json", &engine);
     try validateFixture(allocator, "specs/fixtures/satisfaction_score_5class.json", &engine);
 }
+
+test "validateFixture: compares CUDA model with stored fixture values if present" {
+    if (!root.shouldRunModelTests()) return error.SkipZigTest;
+    if (!root.cuda.is_enabled) return error.SkipZigTest;
+
+    const allocator = std.testing.allocator;
+    const model_path = "models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf";
+
+    var engine = engine_mod.DecisionEngine.initWithOptions(allocator, model_path, .{ .backend = .cuda }) catch |err| {
+        if (err == error.FileNotFound or err == error.NoDevice) return;
+        return err;
+    };
+    defer engine.deinit();
+
+    try validateFixture(allocator, "specs/fixtures/system_health_boolean.json", &engine);
+    try validateFixture(allocator, "specs/fixtures/incident_severity_multiclass.json", &engine);
+    try validateFixture(allocator, "specs/fixtures/boundary_256_incident_triage.json", &engine);
+    try validateFixture(allocator, "specs/fixtures/maintenance_priority_uncertain.json", &engine);
+    try validateFixture(allocator, "specs/fixtures/satisfaction_score_5class.json", &engine);
+}

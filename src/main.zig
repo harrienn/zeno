@@ -31,7 +31,7 @@ pub fn main(init: std.process.Init) !void {
         return;
     } else if (args.len > 1 and std.mem.eql(u8, args[1], "serve")) {
         if (args.len < 3) {
-            try stdout_writer.print("Usage: zeno serve <path/to/model.gguf> [--host <ip>] [--port <port>]\n", .{});
+            try stdout_writer.print("Usage: zeno serve <path/to/model.gguf> [--cuda] [--host <ip>] [--port <port>]\n", .{});
             try stdout_writer.flush();
             return;
         }
@@ -39,10 +39,13 @@ pub fn main(init: std.process.Init) !void {
         const model_path = args[2];
         var host: []const u8 = "127.0.0.1";
         var port: u16 = 8000;
+        var use_cuda = false;
 
         var i: usize = 3;
         while (i < args.len) : (i += 1) {
-            if (std.mem.eql(u8, args[i], "--host")) {
+            if (std.mem.eql(u8, args[i], "--cuda")) {
+                use_cuda = true;
+            } else if (std.mem.eql(u8, args[i], "--host")) {
                 if (i + 1 >= args.len) {
                     try stdout_writer.print("Error: --host requires an IP address argument\n", .{});
                     try stdout_writer.flush();
@@ -70,9 +73,29 @@ pub fn main(init: std.process.Init) !void {
         }
 
         try stdout_writer.print("Initializing decision engine with model: {s}...\n", .{model_path});
+        if (use_cuda) {
+            if (!zeno.cuda.is_enabled) {
+                try stdout_writer.print("Error: CUDA support was disabled at build time (-Dcuda=false)\n", .{});
+                try stdout_writer.flush();
+                return;
+            }
+            const topo = zeno.cuda.getTopology() catch |err| {
+                try stdout_writer.print("Error discovering CUDA devices: {}\n", .{err});
+                try stdout_writer.flush();
+                return;
+            };
+            try stdout_writer.print("Backend: CUDA ({d} device(s) detected, topology: {s})\n", .{
+                topo.reported_devices,
+                if (topo.reported_devices >= 2) "dual_gpu_split" else "single_gpu",
+            });
+        } else {
+            try stdout_writer.print("Backend: CPU\n", .{});
+        }
         try stdout_writer.flush();
 
-        var engine = zeno.DecisionEngine.init(arena, model_path) catch |err| {
+        var engine = zeno.DecisionEngine.initWithOptions(arena, model_path, .{
+            .backend = if (use_cuda) .cuda else .cpu,
+        }) catch |err| {
             try stdout_writer.print("Error initializing engine: {}\n", .{err});
             try stdout_writer.flush();
             return;
@@ -97,7 +120,7 @@ pub fn main(init: std.process.Init) !void {
         return;
     } else if (args.len > 1 and std.mem.eql(u8, args[1], "decide")) {
         if (args.len < 4) {
-            try stdout_writer.print("Usage: zeno decide <path/to/model.gguf> <query> [--canvas <N>] [cand1] [cand2] ...\n", .{});
+            try stdout_writer.print("Usage: zeno decide <path/to/model.gguf> <query> [--cuda] [--canvas <N>] [cand1] [cand2] ...\n", .{});
             try stdout_writer.flush();
             return;
         }
@@ -106,20 +129,48 @@ pub fn main(init: std.process.Init) !void {
         const query = args[3];
 
         var canvas_override: ?usize = null;
-        var cand_start: usize = 4;
-        if (args.len > 4 and std.mem.eql(u8, args[4], "--canvas")) {
-            if (args.len > 5) {
-                canvas_override = std.fmt.parseInt(usize, args[5], 10) catch null;
-                cand_start = 6;
+        var use_cuda = false;
+        var raw_candidates: std.ArrayList([]const u8) = .empty;
+        var arg_i: usize = 4;
+        while (arg_i < args.len) : (arg_i += 1) {
+            if (std.mem.eql(u8, args[arg_i], "--cuda")) {
+                use_cuda = true;
+            } else if (std.mem.eql(u8, args[arg_i], "--canvas")) {
+                if (arg_i + 1 < args.len) {
+                    arg_i += 1;
+                    canvas_override = std.fmt.parseInt(usize, args[arg_i], 10) catch null;
+                }
+            } else {
+                try raw_candidates.append(arena, args[arg_i]);
             }
         }
 
-        const candidate_specs = try parseCandidateSpecs(arena, if (args.len > cand_start) args[cand_start..] else &.{});
+        const candidate_specs = try parseCandidateSpecs(arena, raw_candidates.items);
 
         try stdout_writer.print("Initializing decision engine with model: {s}...\n", .{model_path});
+        if (use_cuda) {
+            if (!zeno.cuda.is_enabled) {
+                try stdout_writer.print("Error: CUDA support was disabled at build time (-Dcuda=false)\n", .{});
+                try stdout_writer.flush();
+                return;
+            }
+            const topo = zeno.cuda.getTopology() catch |err| {
+                try stdout_writer.print("Error discovering CUDA devices: {}\n", .{err});
+                try stdout_writer.flush();
+                return;
+            };
+            try stdout_writer.print("Backend: CUDA ({d} device(s) detected, topology: {s})\n", .{
+                topo.reported_devices,
+                if (topo.reported_devices >= 2) "dual_gpu_split" else "single_gpu",
+            });
+        } else {
+            try stdout_writer.print("Backend: CPU\n", .{});
+        }
         try stdout_writer.flush();
 
-        var engine = zeno.DecisionEngine.init(arena, model_path) catch |err| {
+        var engine = zeno.DecisionEngine.initWithOptions(arena, model_path, .{
+            .backend = if (use_cuda) .cuda else .cpu,
+        }) catch |err| {
             try stdout_writer.print("Error initializing engine: {}\n", .{err});
             try stdout_writer.flush();
             return;
@@ -316,7 +367,7 @@ pub fn main(init: std.process.Init) !void {
         return;
     } else if (args.len > 1 and std.mem.eql(u8, args[1], "decide-fixture")) {
         if (args.len < 4) {
-            try stdout_writer.print("Usage: zeno decide-fixture <model.gguf> <fixture.json> [--canvas <N>] [out.json]\n", .{});
+            try stdout_writer.print("Usage: zeno decide-fixture <model.gguf> <fixture.json> [--cuda] [--canvas <N>] [out.json]\n", .{});
             try stdout_writer.flush();
             return;
         }
@@ -325,9 +376,12 @@ pub fn main(init: std.process.Init) !void {
 
         var canvas_override: ?usize = null;
         var out_json_path: ?[]const u8 = null;
+        var use_cuda = false;
         var arg_i: usize = 4;
         while (arg_i < args.len) : (arg_i += 1) {
-            if (std.mem.eql(u8, args[arg_i], "--canvas")) {
+            if (std.mem.eql(u8, args[arg_i], "--cuda")) {
+                use_cuda = true;
+            } else if (std.mem.eql(u8, args[arg_i], "--canvas")) {
                 if (arg_i + 1 < args.len) {
                     arg_i += 1;
                     canvas_override = std.fmt.parseInt(usize, args[arg_i], 10) catch null;
@@ -341,7 +395,15 @@ pub fn main(init: std.process.Init) !void {
         defer parsed.deinit();
         const fix = parsed.value;
 
-        var engine = try zeno.DecisionEngine.init(arena, model_path);
+        if (use_cuda and !zeno.cuda.is_enabled) {
+            try stdout_writer.print("Error: CUDA support was disabled at build time (-Dcuda=false)\n", .{});
+            try stdout_writer.flush();
+            return;
+        }
+
+        var engine = try zeno.DecisionEngine.initWithOptions(arena, model_path, .{
+            .backend = if (use_cuda) .cuda else .cpu,
+        });
         defer engine.deinit();
 
         const candidate_specs = try candidateSpecsFromFixture(arena, fix);
@@ -382,14 +444,24 @@ pub fn main(init: std.process.Init) !void {
             try writeDecisionResponseJson(arena, p, resp);
         }
         return;
-    } else if (args.len > 1 and std.mem.eql(u8, args[1], "benchmark-canvas")) {
+    } else if (args.len > 1 and (std.mem.eql(u8, args[1], "benchmark-canvas") or std.mem.eql(u8, args[1], "benchmark"))) {
         if (args.len < 3) {
-            try stdout_writer.print("Usage: zeno benchmark-canvas <model.gguf> [fixture.json]\n", .{});
+            try stdout_writer.print("Usage: zeno benchmark <model.gguf> [--cuda] [fixture.json]\n", .{});
             try stdout_writer.flush();
             return;
         }
         const model_path = args[2];
-        const specific_fixture: ?[]const u8 = if (args.len > 3) args[3] else null;
+        var specific_fixture: ?[]const u8 = null;
+        var use_cuda = false;
+
+        var b_idx: usize = 3;
+        while (b_idx < args.len) : (b_idx += 1) {
+            if (std.mem.eql(u8, args[b_idx], "--cuda")) {
+                use_cuda = true;
+            } else {
+                specific_fixture = args[b_idx];
+            }
+        }
 
         const all_fixtures = [_][]const u8{
             "specs/fixtures/system_health_boolean.json",
@@ -405,13 +477,31 @@ pub fn main(init: std.process.Init) !void {
             &all_fixtures;
 
         try stdout_writer.print("========================================================================================\n", .{});
-        try stdout_writer.print("Zeno Shortened Canvas Prefix Benchmark (CPU)\n", .{});
+        try stdout_writer.print("Zeno Shortened Canvas Prefix Benchmark ({s})\n", .{if (use_cuda) "CUDA" else "CPU"});
         try stdout_writer.print("Model: {s}\n", .{model_path});
+        if (use_cuda) {
+            if (!zeno.cuda.is_enabled) {
+                try stdout_writer.print("Error: CUDA support was disabled at build time (-Dcuda=false)\n", .{});
+                try stdout_writer.flush();
+                return;
+            }
+            const topo = zeno.cuda.getTopology() catch |err| {
+                try stdout_writer.print("Error discovering CUDA devices: {}\n", .{err});
+                try stdout_writer.flush();
+                return;
+            };
+            try stdout_writer.print("Topology: {s} ({d} device(s) detected)\n", .{
+                if (topo.reported_devices >= 2) "dual_gpu_split" else "single_gpu",
+                topo.reported_devices,
+            });
+        }
         try stdout_writer.print("Evaluating canvas widths C in {{16, 32, 64, 128, 256}}\n", .{});
         try stdout_writer.print("========================================================================================\n\n", .{});
         try stdout_writer.flush();
 
-        var engine = try zeno.DecisionEngine.init(arena, model_path);
+        var engine = try zeno.DecisionEngine.initWithOptions(arena, model_path, .{
+            .backend = if (use_cuda) .cuda else .cpu,
+        });
         defer engine.deinit();
 
         const canvas_widths = [_]usize{ 16, 32, 64, 128, 256 };
@@ -553,10 +643,10 @@ pub fn main(init: std.process.Init) !void {
         });
         try stdout_writer.print("\nUsage:\n", .{});
         try stdout_writer.print("  zeno [info] <path/to/model.gguf>\n", .{});
-        try stdout_writer.print("  zeno decide <path/to/model.gguf> \"<query>\" [--canvas <N>] [cand1] [cand2] ...\n", .{});
-        try stdout_writer.print("  zeno decide-fixture <path/to/model.gguf> <fixture.json> [--canvas <N>] [out.json]\n", .{});
-        try stdout_writer.print("  zeno benchmark-canvas <path/to/model.gguf> [fixture.json]\n", .{});
-        try stdout_writer.print("  zeno serve <path/to/model.gguf> [--host <ip>] [--port <port>]\n", .{});
+        try stdout_writer.print("  zeno decide <path/to/model.gguf> \"<query>\" [--cuda] [--canvas <N>] [cand1] [cand2] ...\n", .{});
+        try stdout_writer.print("  zeno decide-fixture <path/to/model.gguf> <fixture.json> [--cuda] [--canvas <N>] [out.json]\n", .{});
+        try stdout_writer.print("  zeno benchmark <path/to/model.gguf> [--cuda] [fixture.json]\n", .{});
+        try stdout_writer.print("  zeno serve <path/to/model.gguf> [--cuda] [--host <ip>] [--port <port>]\n", .{});
         try stdout_writer.print("  zeno cuda-info\n", .{});
     }
 

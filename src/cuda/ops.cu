@@ -318,7 +318,7 @@ int zeno_cuda_stream_create(void **out_stream, int device_id) {
     if (rc != ZENO_CUDA_SUCCESS) return rc;
 
     cudaStream_t s = NULL;
-    cudaError_t err = cudaStreamCreateWithFlags(&s, cudaStreamNonBlocking);
+    cudaError_t err = cudaStreamCreate(&s);
     int op_rc = ZENO_CUDA_SUCCESS;
     if (err != cudaSuccess) {
         op_rc = ZENO_CUDA_ERR_STREAM_FAILED;
@@ -580,6 +580,87 @@ int zeno_cuda_memcpy_peer(
 
     cudaError_t err = cudaMemcpyPeer(dst, dst_device_id, src, src_device_id, bytes);
     return (err != cudaSuccess) ? ZENO_CUDA_ERR_COPY_FAILED : ZENO_CUDA_SUCCESS;
+}
+
+int zeno_cuda_memcpy_peer_async(
+    void *dst,
+    int dst_device_id,
+    const void *src,
+    int src_device_id,
+    size_t bytes,
+    void *stream
+) {
+    if (bytes == 0) return ZENO_CUDA_SUCCESS;
+    if (!dst || !src) return ZENO_CUDA_ERR_INVALID_PARAM;
+    if (dst_device_id < 0 || src_device_id < 0) return ZENO_CUDA_ERR_INVALID_DEVICE;
+
+    int orig = 0;
+    int rc = set_cuda_device(src_device_id, &orig);
+    if (rc != ZENO_CUDA_SUCCESS) return rc;
+
+    cudaStream_t custream = (cudaStream_t)stream;
+    if (dst_device_id == src_device_id) {
+        int d2d_rc = zeno_cuda_memcpy_d2d(dst, src, bytes, dst_device_id, custream);
+        return restore_cuda_device(orig, d2d_rc);
+    }
+
+    int can_access = 0;
+    cudaError_t can_err = cudaDeviceCanAccessPeer(&can_access, dst_device_id, src_device_id);
+    if (can_err != cudaSuccess || !can_access) {
+        return restore_cuda_device(orig, ZENO_CUDA_ERR_COPY_FAILED);
+    }
+
+    cudaError_t err = cudaMemcpyPeerAsync(dst, dst_device_id, src, src_device_id, bytes, custream);
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_COPY_FAILED : ZENO_CUDA_SUCCESS;
+    return restore_cuda_device(orig, op_rc);
+}
+
+int zeno_cuda_event_create(void **out_event, int device_id) {
+    if (!out_event) return ZENO_CUDA_ERR_INVALID_PARAM;
+    int orig = 0;
+    int rc = set_cuda_device(device_id, &orig);
+    if (rc != ZENO_CUDA_SUCCESS) return rc;
+
+    cudaEvent_t ev;
+    cudaError_t err = cudaEventCreateWithFlags(&ev, cudaEventDisableTiming);
+    if (err != cudaSuccess) {
+        return restore_cuda_device(orig, ZENO_CUDA_ERR_DRIVER_ERROR);
+    }
+    *out_event = (void *)ev;
+    return restore_cuda_device(orig, ZENO_CUDA_SUCCESS);
+}
+
+int zeno_cuda_event_destroy(void *event, int device_id) {
+    if (!event) return ZENO_CUDA_SUCCESS;
+    int orig = 0;
+    int rc = set_cuda_device(device_id, &orig);
+    if (rc != ZENO_CUDA_SUCCESS) return rc;
+
+    cudaError_t err = cudaEventDestroy((cudaEvent_t)event);
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_DRIVER_ERROR : ZENO_CUDA_SUCCESS;
+    return restore_cuda_device(orig, op_rc);
+}
+
+int zeno_cuda_event_record(void *event, void *stream, int device_id) {
+    if (!event) return ZENO_CUDA_ERR_INVALID_PARAM;
+    int orig = 0;
+    int rc = set_cuda_device(device_id, &orig);
+    if (rc != ZENO_CUDA_SUCCESS) return rc;
+
+    cudaError_t err = cudaEventRecord((cudaEvent_t)event, (cudaStream_t)stream);
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_DRIVER_ERROR : ZENO_CUDA_SUCCESS;
+    return restore_cuda_device(orig, op_rc);
+}
+
+int zeno_cuda_stream_wait_event(void *stream, void *event, int device_id) {
+    if (!event) return ZENO_CUDA_ERR_INVALID_PARAM;
+    int orig = 0;
+    int rc = set_cuda_device(device_id, &orig);
+    if (rc != ZENO_CUDA_SUCCESS) return rc;
+
+    cudaError_t err = cudaStreamWaitEvent((cudaStream_t)stream, (cudaEvent_t)event, 0);
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_DRIVER_ERROR : ZENO_CUDA_SUCCESS;
+    return restore_cuda_device(orig, op_rc);
 }
 
 } // extern "C"

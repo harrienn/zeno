@@ -233,6 +233,65 @@ int zeno_cuda_memcpy_peer(
     size_t bytes
 );
 
+int zeno_cuda_memcpy_peer_async(
+    void *dst,
+    int dst_device_id,
+    const void *src,
+    int src_device_id,
+    size_t bytes,
+    void *stream
+);
+
+int zeno_cuda_event_create(void **out_event, int device_id);
+int zeno_cuda_event_destroy(void *event, int device_id);
+int zeno_cuda_event_record(void *event, void *stream, int device_id);
+int zeno_cuda_stream_wait_event(void *stream, void *event, int device_id);
+
+// Stage 6 Batched Device-Side MoE Execution ABI
+int zeno_cuda_moe_gemv_gate_up_batched(
+    const uint8_t *all_expert_weights,
+    const float *tokens_in,
+    const int *top_indices,
+    float *out_gate_up,
+    int num_tokens,
+    int in_dim,
+    int out_dim,
+    int device_id,
+    void *stream
+);
+
+int zeno_cuda_moe_geglu_batched(
+    const float *gate_up,
+    float *act_out,
+    int num_instances,
+    int half_dim,
+    int device_id,
+    void *stream
+);
+
+int zeno_cuda_moe_gemv_down_batched(
+    const uint8_t *all_expert_weights,
+    int expert_type,
+    const float *acts_in,
+    const int *top_indices,
+    float *out_down,
+    int num_tokens,
+    int in_dim,
+    int out_dim,
+    int device_id,
+    void *stream
+);
+
+int zeno_cuda_moe_accumulate_scaled_batched(
+    float *moe_accum,
+    const float *down_out,
+    const float *top_weights,
+    int num_tokens,
+    int dim,
+    int device_id,
+    void *stream
+);
+
 #ifdef __cplusplus
 }
 #endif
