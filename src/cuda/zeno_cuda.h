@@ -237,6 +237,7 @@ int zeno_cuda_memcpy_peer(
     size_t bytes
 );
 
+int zeno_cuda_enable_peer_access(int current_dev, int peer_dev);
 int zeno_cuda_memcpy_peer_async(
     void *dst,
     int dst_device_id,

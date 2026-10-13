@@ -446,18 +446,25 @@ pub fn main(init: std.process.Init) !void {
         return;
     } else if (args.len > 1 and (std.mem.eql(u8, args[1], "benchmark-canvas") or std.mem.eql(u8, args[1], "benchmark"))) {
         if (args.len < 3) {
-            try stdout_writer.print("Usage: zeno benchmark <model.gguf> [--cuda] [fixture.json]\n", .{});
+            try stdout_writer.print("Usage: zeno benchmark <model.gguf> [--cuda] [--samples N] [fixture.json]\n", .{});
             try stdout_writer.flush();
             return;
         }
         const model_path = args[2];
         var specific_fixture: ?[]const u8 = null;
         var use_cuda = false;
+        var num_samples: usize = 3;
 
         var b_idx: usize = 3;
         while (b_idx < args.len) : (b_idx += 1) {
             if (std.mem.eql(u8, args[b_idx], "--cuda")) {
                 use_cuda = true;
+            } else if (std.mem.eql(u8, args[b_idx], "--samples")) {
+                if (b_idx + 1 < args.len) {
+                    b_idx += 1;
+                    num_samples = std.fmt.parseInt(usize, args[b_idx], 10) catch 3;
+                    if (num_samples == 0) num_samples = 1;
+                }
             } else {
                 specific_fixture = args[b_idx];
             }
@@ -494,7 +501,18 @@ pub fn main(init: std.process.Init) !void {
                 if (topo.reported_devices >= 2) "dual_gpu_split" else "single_gpu",
                 topo.reported_devices,
             });
+            for (0..topo.reported_devices) |dev_idx| {
+                const dev = &topo.devices[dev_idx];
+                try stdout_writer.print("  Device {d}: {s} (Compute {d}.{d}, {d} MB VRAM)\n", .{
+                    dev.device_id,
+                    dev.name(),
+                    dev.compute_major,
+                    dev.compute_minor,
+                    dev.total_memory_bytes / (1024 * 1024),
+                });
+            }
         }
+        try stdout_writer.print("Benchmark Configuration: {d} sample(s) per width post-warmup (reporting median & spread)\n", .{num_samples});
         try stdout_writer.print("Evaluating canvas widths C in {{16, 32, 64, 128, 256}}\n", .{});
         try stdout_writer.print("========================================================================================\n\n", .{});
         try stdout_writer.flush();
@@ -527,22 +545,30 @@ pub fn main(init: std.process.Init) !void {
                 .canvas_length = 256,
             };
 
+            // Warmup baseline
             if (use_cuda) {
                 _ = try engine.decide(arena, baseline_req);
             }
-            const t_base_start = getMonotonicMs();
-            const baseline_resp = try engine.decide(arena, baseline_req);
-            const t_base_end = getMonotonicMs();
-            const baseline_ms: f64 = t_base_end - t_base_start;
+            var baseline_samples = try arena.alloc(f64, num_samples);
+            var baseline_resp: zeno.DecisionResponse = undefined;
+            for (0..num_samples) |s_i| {
+                const t_base_start = getMonotonicMs();
+                baseline_resp = try engine.decide(arena, baseline_req);
+                const t_base_end = getMonotonicMs();
+                baseline_samples[s_i] = t_base_end - t_base_start;
+            }
+            const baseline_stats = calculateStats(baseline_samples);
 
-            try stdout_writer.print("Baseline (C=256): Decision='{s}' Prob={d:.4} Latency={d:.2}ms\n\n", .{
+            try stdout_writer.print("Baseline (C=256): Decision='{s}' Prob={d:.4} Median={d:.2}ms Spread={d:.2}ms (N={d})\n\n", .{
                 baseline_resp.decision,
                 baseline_resp.decision_probability,
-                baseline_ms,
+                baseline_stats.median,
+                baseline_stats.spread,
+                num_samples,
             });
 
-            try stdout_writer.print("| Canvas C | Decision | Agreement | Prob    | dProb  | dLogit(raw) | Latency (ms) | Speedup |\n", .{});
-            try stdout_writer.print("|:---------|:---------|:----------|:--------|:-------|:------------|:-------------|:--------|\n", .{});
+            try stdout_writer.print("| Canvas C | Decision | Agreement | Prob    | dProb  | dLogit(raw) | Median (ms) | Spread (ms) | Speedup |\n", .{});
+            try stdout_writer.print("|:---------|:---------|:----------|:--------|:-------|:------------|:------------|:------------|:--------|\n", .{});
 
             for (canvas_widths) |c_len| {
                 const req = zeno.DecisionRequest{
@@ -556,14 +582,20 @@ pub fn main(init: std.process.Init) !void {
                     .canvas_length = c_len,
                 };
 
+                // Warmup per canvas width
                 if (use_cuda) {
                     _ = try engine.decide(arena, req);
                 }
-                const t_start = getMonotonicMs();
-                const resp = try engine.decide(arena, req);
-                const t_end = getMonotonicMs();
-                const latency_ms: f64 = t_end - t_start;
-                const speedup = baseline_ms / latency_ms;
+                var samples = try arena.alloc(f64, num_samples);
+                var resp: zeno.DecisionResponse = undefined;
+                for (0..num_samples) |s_i| {
+                    const t_start = getMonotonicMs();
+                    resp = try engine.decide(arena, req);
+                    const t_end = getMonotonicMs();
+                    samples[s_i] = t_end - t_start;
+                }
+                const stats = calculateStats(samples);
+                const speedup = if (stats.median > 0.0) baseline_stats.median / stats.median else 1.0;
 
                 const agreement = std.mem.eql(u8, resp.decision, baseline_resp.decision);
                 var max_prob_diff: f32 = 0.0;
@@ -575,14 +607,15 @@ pub fn main(init: std.process.Init) !void {
                     if (ldiff > max_logit_diff) max_logit_diff = ldiff;
                 }
 
-                try stdout_writer.print("| {d:>8} | {s:<8} | {s:<9} | {d:.4} | {d:.4} | {d:11.4} | {d:12.2} | {d:6.2}x |\n", .{
+                try stdout_writer.print("| {d:>8} | {s:<8} | {s:<9} | {d:.4} | {d:.4} | {d:11.4} | {d:11.2} | {d:11.2} | {d:6.2}x |\n", .{
                     c_len,
                     resp.decision,
                     if (agreement) "YES" else "NO",
                     resp.decision_probability,
                     max_prob_diff,
                     max_logit_diff,
-                    latency_ms,
+                    stats.median,
+                    stats.spread,
                     speedup,
                 });
                 try stdout_writer.flush();
@@ -774,6 +807,27 @@ fn makeCanvasTokens(seed_token: u32) [256]i32 {
     canvas[1] = @intCast(zeno.SpecialTokens.turn_close);
     @memset(canvas[2..], @intCast(zeno.SpecialTokens.pad));
     return canvas;
+}
+
+const BenchmarkStats = struct {
+    median: f64,
+    spread: f64,
+};
+
+fn calculateStats(samples: []f64) BenchmarkStats {
+    if (samples.len == 0) return .{ .median = 0.0, .spread = 0.0 };
+    std.mem.sort(f64, samples, {}, struct {
+        fn lessThan(_: void, a: f64, b: f64) bool {
+            return a < b;
+        }
+    }.lessThan);
+    const mid = samples.len / 2;
+    const med = if (samples.len % 2 == 1)
+        samples[mid]
+    else
+        (samples[mid - 1] + samples[mid]) / 2.0;
+    const spread = samples[samples.len - 1] - samples[0];
+    return .{ .median = med, .spread = spread };
 }
 
 fn getMonotonicMs() f64 {

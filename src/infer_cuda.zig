@@ -622,6 +622,8 @@ pub const CudaWorkspace = struct {
 
         var dev1: ?CudaDeviceWorkspace = null;
         if (topology == .dual_gpu_split) {
+            _ = cuda.c.zeno_cuda_enable_peer_access(devices[0], devices[1]);
+            _ = cuda.c.zeno_cuda_enable_peer_access(devices[1], devices[0]);
             dev1 = try CudaDeviceWorkspace.init(allocator, devices[1], max_seq_len);
         }
         errdefer if (dev1) |*d1| d1.deinit();
@@ -873,16 +875,19 @@ pub fn transferHiddenState(
         src_stream.handle,
     );
     if (rc == 0) {
+        // Direct P2P DMA transfer enqueued on src_stream.
+        // Coordinate stream execution on GPU hardware via boundary event without blocking host CPU.
         if (boundary_event) |ev| {
             try ev.record(src_stream);
             try dst_stream.waitEvent(ev);
+        } else {
+            try src_stream.synchronize();
         }
-        try src_stream.synchronize();
-        try dst_stream.synchronize();
         return;
     }
 
-    // Fallback to host-staged transfer
+    // Fallback: Hardware topology does not support direct P2P DMA (e.g. GeForce RTX 3060 without NVLink).
+    // Staged through host memory; requires host stream synchronization.
     if (staging_buf.len < src_slice.len) return error.InvalidParam;
     const stage = staging_buf[0..src_slice.len];
     try src_stream.synchronize();
@@ -977,13 +982,33 @@ pub fn executeStructuredReadCuda(
             try cuda_mem.rmsNorm(answer_slice, model.output_norm.slice(), ws.dev0.norm_hidden.slice(), 1, ModelConfig.embedding_dim, 1e-6, &ws.dev0.stream);
 
             if (capture0_ok) {
+                var g0_instantiated = false;
                 if (cuda_mem.CudaGraph.endCapture(&ws.dev0.stream)) |g0| {
                     ws.graph0 = g0;
                     ws.cached_graph_prompt_len = P;
                     ws.cached_graph_canvas_len = C;
                     ws.cached_graph_answer_pos = answer_pos;
-                    try ws.graph0.?.launch(&ws.dev0.stream);
+                    if (ws.graph0.?.launch(&ws.dev0.stream)) |_| {
+                        g0_instantiated = true;
+                    } else |_| {
+                        ws.graph0.?.deinit();
+                        ws.graph0 = null;
+                    }
                 } else |_| {}
+
+                // R23-01: If capture finalization or launch failed, work was captured but not executed.
+                // Rerun eagerly outside capture to prevent returning stale data.
+                if (!g0_instantiated) {
+                    ws.dev0.current_emb = ws.dev0.emb_buf_0;
+                    ws.dev0.next_emb = ws.dev0.emb_buf_1;
+                    for (0..ModelConfig.num_layers) |l| {
+                        const rf = if (model.layers[l].is_global) model.rope_freqs_dev0 else null;
+                        const rf_slice = if (rf) |r| r.slice() else null;
+                        try runLayerCuda(&ws.dev0, &model.layers[l], P, N, rf_slice);
+                    }
+                    const fallback_ans_slice = try ws.dev0.current_emb.slice().subslice(answer_idx_sg * ModelConfig.embedding_dim, ModelConfig.embedding_dim);
+                    try cuda_mem.rmsNorm(fallback_ans_slice, model.output_norm.slice(), ws.dev0.norm_hidden.slice(), 1, ModelConfig.embedding_dim, 1e-6, &ws.dev0.stream);
+                }
             }
 
             try ws.dev0.stream.synchronize();
@@ -1025,10 +1050,27 @@ pub fn executeStructuredReadCuda(
             }
 
             if (capture0_ok) {
+                var g0_instantiated = false;
                 if (cuda_mem.CudaGraph.endCapture(&ws.dev0.stream)) |g0| {
                     ws.graph0 = g0;
-                    try ws.graph0.?.launch(&ws.dev0.stream);
+                    if (ws.graph0.?.launch(&ws.dev0.stream)) |_| {
+                        g0_instantiated = true;
+                    } else |_| {
+                        ws.graph0.?.deinit();
+                        ws.graph0 = null;
+                    }
                 } else |_| {}
+
+                // R23-01: Rerun partition 0 eagerly outside capture if graph instantiation/launch failed
+                if (!g0_instantiated) {
+                    ws.dev0.current_emb = ws.dev0.emb_buf_0;
+                    ws.dev0.next_emb = ws.dev0.emb_buf_1;
+                    for (0..15) |l| {
+                        const rf = if (model.layers[l].is_global) model.rope_freqs_dev0 else null;
+                        const rf_slice = if (rf) |r| r.slice() else null;
+                        try runLayerCuda(&ws.dev0, &model.layers[l], P, N, rf_slice);
+                    }
+                }
             }
 
             // Boundary transfer H_15 to Device 1
@@ -1055,13 +1097,32 @@ pub fn executeStructuredReadCuda(
             try cuda_mem.rmsNorm(answer_slice, model.output_norm.slice(), dev1.norm_hidden.slice(), 1, ModelConfig.embedding_dim, 1e-6, &dev1.stream);
 
             if (capture1_ok) {
+                var g1_instantiated = false;
                 if (cuda_mem.CudaGraph.endCapture(&dev1.stream)) |g1| {
                     ws.graph1 = g1;
                     ws.cached_graph_prompt_len = P;
                     ws.cached_graph_canvas_len = C;
                     ws.cached_graph_answer_pos = answer_pos;
-                    try ws.graph1.?.launch(&dev1.stream);
+                    if (ws.graph1.?.launch(&dev1.stream)) |_| {
+                        g1_instantiated = true;
+                    } else |_| {
+                        ws.graph1.?.deinit();
+                        ws.graph1 = null;
+                    }
                 } else |_| {}
+
+                // R23-01: Rerun partition 1 eagerly outside capture if graph instantiation/launch failed
+                if (!g1_instantiated) {
+                    dev1.current_emb = dev1.emb_buf_0;
+                    dev1.next_emb = dev1.emb_buf_1;
+                    for (15..30) |l| {
+                        const rf = if (model.layers[l].is_global) model.rope_freqs_dev1 else null;
+                        const rf_slice = if (rf) |r| r.slice() else null;
+                        try runLayerCuda(dev1, &model.layers[l], P, N, rf_slice);
+                    }
+                    const rerun_answer_slice = try dev1.current_emb.slice().subslice(answer_idx * ModelConfig.embedding_dim, ModelConfig.embedding_dim);
+                    try cuda_mem.rmsNorm(rerun_answer_slice, model.output_norm.slice(), dev1.norm_hidden.slice(), 1, ModelConfig.embedding_dim, 1e-6, &dev1.stream);
+                }
             }
         }
 

@@ -259,6 +259,7 @@ pub const c = if (is_enabled) struct {
         stream: ?*anyopaque,
     ) c_int;
 
+    pub extern "c" fn zeno_cuda_enable_peer_access(current_dev: c_int, peer_dev: c_int) c_int;
     pub extern "c" fn zeno_cuda_memcpy_peer(
         dst: ?*anyopaque,
         dst_device_id: c_int,

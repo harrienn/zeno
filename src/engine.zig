@@ -184,13 +184,13 @@ pub const DecisionEngine = struct {
 
         const canvas_len = req.canvas_length orelse root.ModelConfig.canvas_length;
         const total_seq_len = prompt_tokens.len + canvas_len;
-        if (total_seq_len > 512) {
-            return error.CanvasOverflow;
-        }
 
         switch (self.backend) {
             .cpu => {
                 const ws = self.cpu_workspace orelse return error.InvalidEngineState;
+                if (total_seq_len > ws.max_seq_len) {
+                    return error.CanvasOverflow;
+                }
                 try infer.executeStructuredReadSlice(
                     ws,
                     self.model,
@@ -205,6 +205,10 @@ pub const DecisionEngine = struct {
             .cuda => {
                 const ws = self.cuda_workspace orelse return error.InvalidEngineState;
                 const cm = self.cuda_model orelse return error.InvalidEngineState;
+                // R23-04: Enforce CUDA 512 sequence ceiling on CUDA backend specifically
+                if (total_seq_len > 512 or total_seq_len > ws.dev0.max_seq_len) {
+                    return error.CanvasOverflow;
+                }
                 try infer_cuda.executeStructuredReadCuda(
                     ws,
                     cm,
@@ -358,4 +362,12 @@ test "DecisionEngine: end-to-end boolean decision execution on CUDA if present" 
     try std.testing.expect(resp.normalized_entropy >= 0.0 and resp.normalized_entropy <= 1.0);
     try std.testing.expect(resp.canvas_tokens_used > 0);
     try std.testing.expectEqual(@as(usize, 2), resp.candidates.len);
+}
+
+test "DecisionEngine: CPU allows sequence length > 512 within workspace_seq_len (R23-04)" {
+    const opts = EngineOptions{
+        .backend = .cpu,
+        .workspace_seq_len = 1024,
+    };
+    try std.testing.expectEqual(@as(usize, 1024), opts.workspace_seq_len);
 }

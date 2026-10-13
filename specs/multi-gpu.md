@@ -6,7 +6,7 @@ This document specifies the multi-GPU architecture, topology partitioning, and e
 
 As of CUDA Stage 5/6, Zeno implements a dual-GPU pipeline layer-splitting architecture (Strategy A) targeting dual-GPU workstations (e.g. dual NVIDIA RTX 3060 12GB GPUs, total 24GB VRAM) for low-latency System One inference.
 
-Multi-GPU research is informed by the [separate community patch for llama.cpp PR #24423](https://github.com/readwrightexecute/llamacpp-diffusiongemma-multigpu). That patch explored a specific two-GPU layer-split setup; Zeno implements a native, zero-host-intervention execution pipeline with asynchronous peer stream/event coordination.
+Multi-GPU research is informed by the [separate community patch for llama.cpp PR #24423](https://github.com/readwrightexecute/llamacpp-diffusiongemma-multigpu). That patch explored a specific two-GPU layer-split setup; Zeno implements a native execution pipeline with device-side batched MoE, zero host round-trips during layer execution, and asynchronous peer stream/event coordination.
 
 ---
 
@@ -14,12 +14,14 @@ Multi-GPU research is informed by the [separate community patch for llama.cpp PR
 
 The GGUF model file (`diffusiongemma-26B-A4B-it-Q4_K_M.gguf`, cataloged in [`gguf-mapping.md`](gguf-mapping.md)) is approximately **16 GB** on disk and ~16.8 GB uncompressed in memory. It exceeds the 12GB VRAM limit of a single RTX 3060, necessitating sharding across two devices.
 
+Zeno implements a hybrid CPU/GPU architecture: input token embedding lookups (~0.05 ms) and candidate logit dot-product readout (~0.01 ms) are executed on the host CPU against mapped GGUF tables, while the compute-intensive 30-layer transformer forward pass runs entirely on the GPUs.
+
 * **Dual-GPU Partitioning (Strategy A)**:
-  - **Device 0**: Token embeddings (~1.5 GB) + Layers 0..14 (~7.3 GB) + Workspace (~100 MB) ≈ **8.9 GB VRAM**.
-  - **Device 1**: Layers 15..29 (~7.3 GB) + Final Output RMSNorm & Output projection (~1.5 GB) + Workspace (~100 MB) ≈ **8.9 GB VRAM**.
-  - Both devices comfortably fit within 12 GB VRAM with >3 GB headroom for OS desktop and CUDA driver allocations.
+  - **Device 0**: Layers 0..14 (~7.3 GB) + Activation Workspace (~100 MB) ≈ **7.4 GB VRAM**.
+  - **Device 1**: Layers 15..29 (~7.3 GB) + Final Output RMSNorm (<1 MB) + Activation Workspace (~100 MB) ≈ **7.4 GB VRAM**.
+  - Both devices comfortably fit within 12 GB VRAM with >4 GB headroom for OS desktop and CUDA driver allocations.
 * **Single-GPU Topology**:
-  - When running on a device with $\ge 24$ GB VRAM (e.g., RTX 3090, RTX 4090, A100), all 30 layers reside on Device 0.
+  - When running on a device with $\ge 24$ GB VRAM (e.g., RTX 3090, RTX 4090, A100), all 30 layers reside on Device 0 (~14.6 GB VRAM).
 * **Canvas Activation Workspace**:
   - Sequence limit $N \le 512$ is strictly enforced at the CUDA entry point.
   - Per-device workspace requires $< 100$ MB, including attention scratch and batched MoE intermediate activations ($512 \times 8 \times 2816 \times 4\text{ B} \approx 46\text{ MB}$).
@@ -33,30 +35,38 @@ The GGUF model file (`diffusiongemma-26B-A4B-it-Q4_K_M.gguf`, cataloged in [`ggu
 For single-step and few-step System One reads ($T \in [1, 4]$), layer splitting provides minimal inter-device communication overhead compared to tensor parallelism: only **one boundary transfer per forward pass step**.
 
 ```text
+[Host CPU]
+  - Token embedding dequantization & RMSNorm (token_embd.weight)
+  - Copies input embeddings H_0 to Device 0 [N, 2816]
+         │
+         ▼
 [GPU 0: Device 0]
-  - Token Embeddings (token_embd.weight)
   - Blocks 0 through 14 (15 transformer layers)
   - Device-side top-8 MoE batched projections
   - Inter-device transfer: Hidden state H_15 (shape [N, 2816], FP32)
          │
-         ▼  (cudaMemcpyPeerAsync + cudaStreamWaitEvent)
+         ▼  (P2P: cudaMemcpyPeerAsync + cudaStreamWaitEvent; or Host-Staged Fallback)
 [GPU 1: Device 1]
   - Blocks 15 through 29 (15 transformer layers)
   - Device-side top-8 MoE batched projections
   - Final Output RMSNorm (output_norm.weight)
-  - Output projection & candidate logit readout (model.output)
+  - Copies normalized answer token vector to Host [1, 2816]
+         │
+         ▼
+[Host CPU]
+  - Candidate logit dot-product readout (model.output)
 ```
 
 #### Boundary Transfer Mechanics:
-1. When peer-to-peer (P2P) access is enabled (`cudaDeviceCanAccessPeer` returns 1), transfer uses `cudaMemcpyPeerAsync` on Device 0's stream.
+1. When peer-to-peer (P2P) access is enabled (`cudaDeviceCanAccessPeer` returns 1 and peer access is enabled), transfer uses `cudaMemcpyPeerAsync` on Device 0's stream.
 2. A CUDA event `boundary_event` is recorded on Device 0's stream.
 3. Device 1's stream calls `cudaStreamWaitEvent(ws1.stream, boundary_event)`, ensuring GPU hardware scheduling without stalling the host CPU thread.
-4. Fallback: If P2P is not supported by the hardware/PCIe topology, transfer is staged through host memory using asynchronous stream synchronization.
+4. Fallback: If direct P2P is not supported by the hardware/PCIe topology (e.g. GeForce RTX 3060 PCIe without NVLink), transfer is staged through host memory with synchronous host stream coordination.
 
 #### MoE Execution Mechanics:
 - MoE routing computes `top_k=8` expert indices and softmax weights directly in device memory.
 - Active experts are evaluated using batched GPU kernels (`zeno_cuda_moe_gemv_gate_up_batched`, `zeno_cuda_moe_geglu_batched`, `zeno_cuda_moe_gemv_down_batched`, `zeno_cuda_moe_accumulate_scaled_batched`).
-- Zero host intervention: no routing decisions or intermediate activations are transferred to the host during layer execution.
+- Zero host intervention within the layer pipeline: no routing decisions or intermediate activations are transferred to the host during transformer layer execution.
 
 ---
 

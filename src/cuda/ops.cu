@@ -638,6 +638,23 @@ int zeno_cuda_memcpy_peer(
     return (err != cudaSuccess) ? ZENO_CUDA_ERR_COPY_FAILED : ZENO_CUDA_SUCCESS;
 }
 
+int zeno_cuda_enable_peer_access(int current_dev, int peer_dev) {
+    if (current_dev < 0 || peer_dev < 0 || current_dev == peer_dev) return ZENO_CUDA_SUCCESS;
+    int orig = 0;
+    int rc = set_cuda_device(current_dev, &orig);
+    if (rc != ZENO_CUDA_SUCCESS) return rc;
+
+    int can_access = 0;
+    cudaError_t can_err = cudaDeviceCanAccessPeer(&can_access, current_dev, peer_dev);
+    if (can_err == cudaSuccess && can_access) {
+        cudaError_t err = cudaDeviceEnablePeerAccess(peer_dev, 0);
+        if (err != cudaSuccess && err != cudaErrorPeerAccessAlreadyEnabled) {
+            // Driver error during peer enabling
+        }
+    }
+    return restore_cuda_device(orig, ZENO_CUDA_SUCCESS);
+}
+
 int zeno_cuda_memcpy_peer_async(
     void *dst,
     int dst_device_id,

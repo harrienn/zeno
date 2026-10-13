@@ -232,7 +232,7 @@ Exit condition:
 
 CUDA execution produces decisions and candidate metrics matching the CPU reference implementation within documented numerical tolerances; any throughput and latency gains are demonstrated by reproducible benchmarks.
 
-*Status: COMPLETED (Stages 1–6)*. Full 30-layer forward pass implemented with dual-GPU layer partitioning (Strategy A), device-side batched MoE, 5/5 golden decision fixtures passing, and reproducible benchmarks recorded.
+*Status: COMPLETED (Stages 1–6)*. Full 30-layer forward pass implemented with dual-GPU layer partitioning (Strategy A), device-side batched MoE, 5/5 golden decision fixtures passing, and benchmark harness established.
 
 ---
 
@@ -251,7 +251,8 @@ Measure before changing architecture.
 * **WP2 (1x4 Warp Coarsening for MoE Projections)**: Coarsened `moe_gemv_down_batched_kernel` and `moe_gemv_gate_up_batched_kernel` to compute 4 output rows per warp, cutting threadblock scheduler launches by 4x and maximizing L1/register activation reuse.
 * **WP3 (CUDA Graph Capture & Zero-Overhead Launch)**: Implemented stream graph capture and replay for partition streams on Device 0 and Device 1, eliminating hundreds of individual driver launches per step.
 * **Redundant Host Stalls Eliminated**: Removed 52 synchronous blocking `cudaMemset` calls on intermediate buffers that are unconditionally written by their producing kernels.
-* **Benchmark Impact**:
+* **Benchmark Impact (Exploratory Measurements)**:
+  * *(Environment: Dual NVIDIA GeForce RTX 3060 12GB GPUs, driver 550.120, CUDA 12.4, ReleaseFast build. Harness updated in Round 23 to execute repeated post-warmup samples ($N=3$) and report median and spread to establish multi-sample statistical rigor.)*
   * $C=16$ single-step latency reduced from **738.2 ms** to **600.93 ms** (**18.6% speedup**, shaving ~137 ms).
   * $C=256$ baseline latency reduced from **4668 ms** to **3801 ms** (shaving **867 ms**).
   * 100% discrete decision match and probability $\Delta \le 0.05$ preserved across all 5 golden fixtures.

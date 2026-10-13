@@ -2828,3 +2828,72 @@ test "CudaGraph capture, instantiation, and execution parity" {
     std.debug.print("[parity] CudaGraph Replay: max_diff = {e:.4}\n", .{max_diff});
 }
 
+test "CudaGraph capture failure eager fallback parity (R23-01)" {
+    if (!cuda.is_enabled) return error.SkipZigTest;
+    const allocator = std.testing.allocator;
+    const topo = cuda.getTopology() catch |err| switch (err) {
+        error.NoDevice => return error.SkipZigTest,
+        else => return err,
+    };
+    if (topo.reported_devices == 0) return error.SkipZigTest;
+    const dev = topo.devices[0].device_id;
+
+    var stream = try CudaStream.init(dev);
+    defer stream.deinit();
+
+    const count: usize = 1024;
+    var d_x = try DeviceBuffer(f32).init(dev, count);
+    defer d_x.deinit();
+    var d_w = try DeviceBuffer(f32).init(dev, count);
+    defer d_w.deinit();
+    var d_out = try DeviceBuffer(f32).init(dev, count);
+    defer d_out.deinit();
+
+    const host_x = try allocator.alloc(f32, count);
+    defer allocator.free(host_x);
+    const host_w = try allocator.alloc(f32, count);
+    defer allocator.free(host_w);
+
+    for (0..count) |i| {
+        host_x[i] = @as(f32, @floatFromInt(i % 50)) * 0.02 + 0.1;
+        host_w[i] = 1.0;
+    }
+
+    try d_x.copyFromHost(host_x);
+    try d_w.copyFromHost(host_w);
+    try stream.synchronize();
+
+    // 1. Begin capture, capture kernels, then end capture but simulate launch failure
+    try CudaGraph.beginCapture(&stream);
+    try rmsNorm(d_x.slice(), d_w.slice(), d_out.slice(), 1, @intCast(count), 1e-6, &stream);
+    try addResidual(d_out.slice(), d_x.slice(), &stream);
+    var graph = try CudaGraph.endCapture(&stream);
+    // Discard graph without launching (simulating graph instantiation/launch failure)
+    graph.deinit();
+
+    // 2. Rerun eagerly outside capture (R23-01 fallback contract)
+    try rmsNorm(d_x.slice(), d_w.slice(), d_out.slice(), 1, @intCast(count), 1e-6, &stream);
+    try addResidual(d_out.slice(), d_x.slice(), &stream);
+    try stream.synchronize();
+
+    const gpu_out = try allocator.alloc(f32, count);
+    defer allocator.free(gpu_out);
+    try d_out.copyToHost(gpu_out);
+
+    // 3. Compute CPU reference
+    const cpu_norm = try allocator.alloc(f32, count);
+    defer allocator.free(cpu_norm);
+    ops.rmsNorm(host_x, host_w, 1e-6, cpu_norm);
+    for (0..count) |i| {
+        cpu_norm[i] += host_x[i];
+    }
+
+    var max_diff: f32 = 0.0;
+    for (cpu_norm, gpu_out) |c, g| {
+        const diff = @abs(c - g);
+        if (diff > max_diff) max_diff = diff;
+        try std.testing.expect(diff <= 1e-5);
+    }
+    std.debug.print("[parity] CudaGraph Eager Fallback: max_diff = {e:.4}\n", .{max_diff});
+}
+
