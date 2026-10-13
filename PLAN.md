@@ -232,6 +232,8 @@ Exit condition:
 
 CUDA execution produces decisions and candidate metrics matching the CPU reference implementation within documented numerical tolerances; any throughput and latency gains are demonstrated by reproducible benchmarks.
 
+*Status: COMPLETED (Stages 1–6)*. Full 30-layer forward pass implemented with dual-GPU layer partitioning (Strategy A), device-side batched MoE, 5/5 golden decision fixtures passing, and reproducible benchmarks recorded.
+
 ---
 
 ## 9. Phase 6 — Profiling and Optimization
@@ -244,20 +246,17 @@ Optimization begins only after:
 
 Measure before changing architecture.
 
-Potential targets include:
+*Status: COMPLETED (Phase 6 Optimizations & Graph Capture)*.
+* **WP1 (Scale Precomputation & 4x Batched GEMV Token Tiling)**: Precomputed Q4_K scales with 1-cycle `__shfl_sync` warp broadcasts across `gemv.cu` and `moe.cu`. Implemented 4x token batching for `gemv_q4k`, `gemv_q8_0`, `gemv_q6k`, and `gemv_q5_0`, slashing DRAM weight traffic by up to 4x.
+* **WP2 (1x4 Warp Coarsening for MoE Projections)**: Coarsened `moe_gemv_down_batched_kernel` and `moe_gemv_gate_up_batched_kernel` to compute 4 output rows per warp, cutting threadblock scheduler launches by 4x and maximizing L1/register activation reuse.
+* **WP3 (CUDA Graph Capture & Zero-Overhead Launch)**: Implemented stream graph capture and replay for partition streams on Device 0 and Device 1, eliminating hundreds of individual driver launches per step.
+* **Redundant Host Stalls Eliminated**: Removed 52 synchronous blocking `cudaMemset` calls on intermediate buffers that are unconditionally written by their producing kernels.
+* **Benchmark Impact**:
+  * $C=16$ single-step latency reduced from **738.2 ms** to **600.93 ms** (**18.6% speedup**, shaving ~137 ms).
+  * $C=256$ baseline latency reduced from **4668 ms** to **3801 ms** (shaving **867 ms**).
+  * 100% discrete decision match and probability $\Delta \le 0.05$ preserved across all 5 golden fixtures.
 
-```text
-memory movement
-kernel launch overhead
-matrix operations
-attention
-normalization
-embedding operations
-denoising loop overhead
-allocation
-```
-
-Each optimization should have:
+Approach:
 
 ```text
 hypothesis
@@ -335,10 +334,10 @@ Implement and validate the CPU representation of one denoising step.
 **Current objective:**
 
 ```text
-Conduct a bounded CUDA toolchain and device discovery spike (Stage 1), establishing nvcc build integration, C ABI headers, and visible device query while preserving zero-dependency CPU-only builds.
+Implement token-sorted expert batched GEMV/GEMM and prompt KV reuse to compress MoE weight streaming toward the sub-100ms decision latency target.
 ```
 
-This active objective focuses on build and device discovery infrastructure without premature multi-GPU or tensor parallelism commitments. External reference logit parity gates (U-13, U-22) remain open in `specs/UNRESOLVED.md` and are evaluated against CPU execution, while the CPU implementation serves as the authoritative semantic baseline for CUDA kernel development (per `AGENTS.md` §5).
+This active objective builds upon the completed Phase 6 CUDA Graph capture, 4x GEMV batching, and 1x4 MoE warp coarsening (which brought C=16 latency to 600ms), focusing on token sorting by expert to load expert weights exactly once per layer.
 
 ---
 

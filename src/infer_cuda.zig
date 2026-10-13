@@ -595,33 +595,6 @@ pub const CudaDeviceWorkspace = struct {
     pub fn resetBufferPointers(self: *CudaDeviceWorkspace) void {
         self.current_emb = self.emb_buf_0;
         self.next_emb = self.emb_buf_1;
-        _ = self.emb_buf_0.setZero() catch {};
-        _ = self.emb_buf_1.setZero() catch {};
-        _ = self.norm_x.setZero() catch {};
-        _ = self.q_buf.setZero() catch {};
-        _ = self.k_buf.setZero() catch {};
-        _ = self.v_buf.setZero() catch {};
-        _ = self.head_out.setZero() catch {};
-        _ = self.attn_out.setZero() catch {};
-        _ = self.dense_in.setZero() catch {};
-        _ = self.gate_buf.setZero() catch {};
-        _ = self.up_buf.setZero() catch {};
-        _ = self.geglu_buf.setZero() catch {};
-        _ = self.dense_out.setZero() catch {};
-        _ = self.h1.setZero() catch {};
-        _ = self.r_in.setZero() catch {};
-        _ = self.router_logits.setZero() catch {};
-        _ = self.top_indices.setZero() catch {};
-        _ = self.top_weights.setZero() catch {};
-        _ = self.moe_in.setZero() catch {};
-        _ = self.exp_gate_up_buf.setZero() catch {};
-        _ = self.exp_act_buf.setZero() catch {};
-        _ = self.exp_down_buf.setZero() catch {};
-        _ = self.moe_accum.setZero() catch {};
-        _ = self.h2.setZero() catch {};
-        _ = self.ffn_comb.setZero() catch {};
-        _ = self.post_ffn.setZero() catch {};
-        _ = self.norm_hidden.setZero() catch {};
     }
 };
 
@@ -634,6 +607,11 @@ pub const CudaWorkspace = struct {
     boundary_event: ?cuda_mem.CudaEvent,
     host_staging_buf: []f32,
     host_norm_hidden: []f32,
+    graph0: ?cuda_mem.CudaGraph,
+    graph1: ?cuda_mem.CudaGraph,
+    cached_graph_prompt_len: usize,
+    cached_graph_canvas_len: usize,
+    cached_graph_answer_pos: usize,
 
     pub fn init(allocator: std.mem.Allocator, topology: ExecutionTopology, devices: [2]i32, max_seq_len: usize) !*CudaWorkspace {
         const ws_ptr = try allocator.create(CudaWorkspace);
@@ -667,11 +645,18 @@ pub const CudaWorkspace = struct {
         ws_ptr.boundary_event = boundary_event;
         ws_ptr.host_staging_buf = host_staging;
         ws_ptr.host_norm_hidden = host_norm;
+        ws_ptr.graph0 = null;
+        ws_ptr.graph1 = null;
+        ws_ptr.cached_graph_prompt_len = 0;
+        ws_ptr.cached_graph_canvas_len = 0;
+        ws_ptr.cached_graph_answer_pos = 0;
 
         return ws_ptr;
     }
 
     pub fn deinit(self: *CudaWorkspace) void {
+        if (self.graph1) |*g1| g1.deinit();
+        if (self.graph0) |*g0| g0.deinit();
         self.allocator.free(self.host_norm_hidden);
         self.allocator.free(self.host_staging_buf);
         if (self.boundary_event) |*ev| ev.deinit();
@@ -960,46 +945,126 @@ pub fn executeStructuredReadCuda(
     try ws.dev0.stream.synchronize();
 
     // 3. Execute Transformer Blocks
+    const graph_valid = (ws.graph0 != null and ws.cached_graph_prompt_len == P and ws.cached_graph_canvas_len == C and ws.cached_graph_answer_pos == answer_pos);
+
     if (model.topology == .single_gpu) {
-        for (0..ModelConfig.num_layers) |l| {
-            const rf = if (model.layers[l].is_global) model.rope_freqs_dev0 else null;
-            const rf_slice = if (rf) |r| r.slice() else null;
-            try runLayerCuda(&ws.dev0, &model.layers[l], P, N, rf_slice);
+        if (graph_valid) {
+            try ws.graph0.?.launch(&ws.dev0.stream);
+            try ws.dev0.stream.synchronize();
+            try ws.dev0.norm_hidden.copyToHost(ws.host_norm_hidden);
+        } else {
+            if (ws.graph0) |*g0| {
+                g0.deinit();
+                ws.graph0 = null;
+            }
+            var capture0_ok = false;
+            if (cuda_mem.CudaGraph.beginCapture(&ws.dev0.stream)) |_| {
+                capture0_ok = true;
+            } else |_| {}
+
+            ws.dev0.current_emb = ws.dev0.emb_buf_0;
+            ws.dev0.next_emb = ws.dev0.emb_buf_1;
+
+            for (0..ModelConfig.num_layers) |l| {
+                const rf = if (model.layers[l].is_global) model.rope_freqs_dev0 else null;
+                const rf_slice = if (rf) |r| r.slice() else null;
+                try runLayerCuda(&ws.dev0, &model.layers[l], P, N, rf_slice);
+            }
+
+            // Apply final output RMSNorm on Device 0
+            const answer_idx_sg = P + answer_pos;
+            const answer_slice = try ws.dev0.current_emb.slice().subslice(answer_idx_sg * ModelConfig.embedding_dim, ModelConfig.embedding_dim);
+            try cuda_mem.rmsNorm(answer_slice, model.output_norm.slice(), ws.dev0.norm_hidden.slice(), 1, ModelConfig.embedding_dim, 1e-6, &ws.dev0.stream);
+
+            if (capture0_ok) {
+                if (cuda_mem.CudaGraph.endCapture(&ws.dev0.stream)) |g0| {
+                    ws.graph0 = g0;
+                    ws.cached_graph_prompt_len = P;
+                    ws.cached_graph_canvas_len = C;
+                    ws.cached_graph_answer_pos = answer_pos;
+                    try ws.graph0.?.launch(&ws.dev0.stream);
+                } else |_| {}
+            }
+
+            try ws.dev0.stream.synchronize();
+            try ws.dev0.norm_hidden.copyToHost(ws.host_norm_hidden);
         }
-
-        // Apply final output RMSNorm on Device 0
-        const answer_idx_sg = P + answer_pos;
-        const answer_slice = try ws.dev0.current_emb.slice().subslice(answer_idx_sg * ModelConfig.embedding_dim, ModelConfig.embedding_dim);
-        try cuda_mem.rmsNorm(answer_slice, model.output_norm.slice(), ws.dev0.norm_hidden.slice(), 1, ModelConfig.embedding_dim, 1e-6, &ws.dev0.stream);
-        try ws.dev0.stream.synchronize();
-
-        // Copy normalized hidden state to host
-        try ws.dev0.norm_hidden.copyToHost(ws.host_norm_hidden);
     } else {
-        for (0..15) |l| {
-            const rf = if (model.layers[l].is_global) model.rope_freqs_dev0 else null;
-            const rf_slice = if (rf) |r| r.slice() else null;
-            try runLayerCuda(&ws.dev0, &model.layers[l], P, N, rf_slice);
-        }
-
-        // Boundary transfer H_15 to Device 1
         var dev1 = &ws.dev1.?;
-        const d0_out_slice = try ws.dev0.current_emb.slice().subslice(0, N * ModelConfig.embedding_dim);
-        const d1_in_slice = try dev1.current_emb.slice().subslice(0, N * ModelConfig.embedding_dim);
+        const d0_out_slice = try ws.dev0.emb_buf_1.slice().subslice(0, N * ModelConfig.embedding_dim);
+        const d1_in_slice = try dev1.emb_buf_0.slice().subslice(0, N * ModelConfig.embedding_dim);
         const ev_opt = if (ws.boundary_event) |*ev| ev else null;
 
-        try transferHiddenState(d0_out_slice, d1_in_slice, &ws.dev0.stream, &dev1.stream, ev_opt, ws.host_staging_buf);
+        if (graph_valid and ws.graph1 != null) {
+            try ws.graph0.?.launch(&ws.dev0.stream);
+            try transferHiddenState(d0_out_slice, d1_in_slice, &ws.dev0.stream, &dev1.stream, ev_opt, ws.host_staging_buf);
+            try ws.graph1.?.launch(&dev1.stream);
+        } else {
+            if (ws.graph0) |*g0| {
+                g0.deinit();
+                ws.graph0 = null;
+            }
+            if (ws.graph1) |*g1| {
+                g1.deinit();
+                ws.graph1 = null;
+            }
 
-        // Layers 15..29 on Device 1
-        for (15..30) |l| {
-            const rf = if (model.layers[l].is_global) model.rope_freqs_dev1 else null;
-            const rf_slice = if (rf) |r| r.slice() else null;
-            try runLayerCuda(dev1, &model.layers[l], P, N, rf_slice);
+            // --- Partition 0 (Device 0, Layers 0..14) ---
+            var capture0_ok = false;
+            if (cuda_mem.CudaGraph.beginCapture(&ws.dev0.stream)) |_| {
+                capture0_ok = true;
+            } else |_| {}
+
+            ws.dev0.current_emb = ws.dev0.emb_buf_0;
+            ws.dev0.next_emb = ws.dev0.emb_buf_1;
+
+            for (0..15) |l| {
+                const rf = if (model.layers[l].is_global) model.rope_freqs_dev0 else null;
+                const rf_slice = if (rf) |r| r.slice() else null;
+                try runLayerCuda(&ws.dev0, &model.layers[l], P, N, rf_slice);
+            }
+
+            if (capture0_ok) {
+                if (cuda_mem.CudaGraph.endCapture(&ws.dev0.stream)) |g0| {
+                    ws.graph0 = g0;
+                    try ws.graph0.?.launch(&ws.dev0.stream);
+                } else |_| {}
+            }
+
+            // Boundary transfer H_15 to Device 1
+            try transferHiddenState(d0_out_slice, d1_in_slice, &ws.dev0.stream, &dev1.stream, ev_opt, ws.host_staging_buf);
+
+            // --- Partition 1 (Device 1, Layers 15..29 + Output RMSNorm) ---
+            var capture1_ok = false;
+            if (cuda_mem.CudaGraph.beginCapture(&dev1.stream)) |_| {
+                capture1_ok = true;
+            } else |_| {}
+
+            dev1.current_emb = dev1.emb_buf_0;
+            dev1.next_emb = dev1.emb_buf_1;
+
+            for (15..30) |l| {
+                const rf = if (model.layers[l].is_global) model.rope_freqs_dev1 else null;
+                const rf_slice = if (rf) |r| r.slice() else null;
+                try runLayerCuda(dev1, &model.layers[l], P, N, rf_slice);
+            }
+
+            // Apply final output RMSNorm on Device 1
+            // dev1.current_emb after 15 layers is dev1.emb_buf_1
+            const answer_slice = try dev1.current_emb.slice().subslice(answer_idx * ModelConfig.embedding_dim, ModelConfig.embedding_dim);
+            try cuda_mem.rmsNorm(answer_slice, model.output_norm.slice(), dev1.norm_hidden.slice(), 1, ModelConfig.embedding_dim, 1e-6, &dev1.stream);
+
+            if (capture1_ok) {
+                if (cuda_mem.CudaGraph.endCapture(&dev1.stream)) |g1| {
+                    ws.graph1 = g1;
+                    ws.cached_graph_prompt_len = P;
+                    ws.cached_graph_canvas_len = C;
+                    ws.cached_graph_answer_pos = answer_pos;
+                    try ws.graph1.?.launch(&dev1.stream);
+                } else |_| {}
+            }
         }
 
-        // Apply final output RMSNorm on Device 1
-        const answer_slice = try dev1.current_emb.slice().subslice(answer_idx * ModelConfig.embedding_dim, ModelConfig.embedding_dim);
-        try cuda_mem.rmsNorm(answer_slice, model.output_norm.slice(), dev1.norm_hidden.slice(), 1, ModelConfig.embedding_dim, 1e-6, &dev1.stream);
         try dev1.stream.synchronize();
         try ws.dev0.stream.synchronize();
 

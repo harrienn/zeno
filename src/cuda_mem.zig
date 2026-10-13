@@ -195,6 +195,47 @@ pub const CudaEvent = struct {
     }
 };
 
+/// Explicit single-owner CUDA Graph wrapper for capture, instantiation, and zero-overhead replay.
+pub const CudaGraph = struct {
+    exec_handle: ?*anyopaque,
+    device_id: i32,
+
+    pub fn beginCapture(stream: *const CudaStream) cuda.CudaError!void {
+        if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+        const sh = stream.handle orelse return error.InvalidParam;
+        const rc = cuda.c.zeno_cuda_graph_begin_capture(sh, stream.device_id);
+        if (rc != 0) return cuda.mapCudaErrorCode(rc);
+    }
+
+    pub fn endCapture(stream: *const CudaStream) cuda.CudaError!CudaGraph {
+        if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+        const sh = stream.handle orelse return error.InvalidParam;
+        var exec_handle: ?*anyopaque = null;
+        const rc = cuda.c.zeno_cuda_graph_end_capture(sh, &exec_handle, stream.device_id);
+        if (rc != 0) return cuda.mapCudaErrorCode(rc);
+        return CudaGraph{
+            .exec_handle = exec_handle,
+            .device_id = stream.device_id,
+        };
+    }
+
+    pub fn launch(self: *const CudaGraph, stream: *const CudaStream) cuda.CudaError!void {
+        if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+        const eh = self.exec_handle orelse return error.InvalidParam;
+        const sh = stream.handle orelse return error.InvalidParam;
+        const rc = cuda.c.zeno_cuda_graph_launch(eh, sh, self.device_id);
+        if (rc != 0) return cuda.mapCudaErrorCode(rc);
+    }
+
+    pub fn deinit(self: *CudaGraph) void {
+        if (!cuda.is_enabled) return;
+        if (self.exec_handle) |h| {
+            _ = cuda.c.zeno_cuda_graph_destroy(h, self.device_id);
+            self.exec_handle = null;
+        }
+    }
+};
+
 /// Typed owning device buffer with explicit device assignment and single ownership.
 pub fn DeviceBuffer(comptime T: type) type {
     comptime {
@@ -2718,5 +2759,72 @@ test "CUDA layerOutput dual-region scaling parity" {
         try std.testing.expect(diff <= 1e-6);
     }
     std.debug.print("[parity] Layer Output: max_diff = {e:.4}\n", .{max_diff});
+}
+
+test "CudaGraph capture, instantiation, and execution parity" {
+    if (!cuda.is_enabled) return error.SkipZigTest;
+    const allocator = std.testing.allocator;
+    const topo = cuda.getTopology() catch |err| switch (err) {
+        error.NoDevice => return error.SkipZigTest,
+        else => return err,
+    };
+    if (topo.reported_devices == 0) return error.SkipZigTest;
+    const dev = topo.devices[0].device_id;
+
+    var stream = try CudaStream.init(dev);
+    defer stream.deinit();
+
+    const count: usize = 1024;
+    var d_x = try DeviceBuffer(f32).init(dev, count);
+    defer d_x.deinit();
+    var d_w = try DeviceBuffer(f32).init(dev, count);
+    defer d_w.deinit();
+    var d_out = try DeviceBuffer(f32).init(dev, count);
+    defer d_out.deinit();
+
+    const host_x = try allocator.alloc(f32, count);
+    defer allocator.free(host_x);
+    const host_w = try allocator.alloc(f32, count);
+    defer allocator.free(host_w);
+
+    for (0..count) |i| {
+        host_x[i] = @as(f32, @floatFromInt(i % 50)) * 0.02 + 0.1;
+        host_w[i] = 1.0;
+    }
+
+    try d_x.copyFromHost(host_x);
+    try d_w.copyFromHost(host_w);
+    try stream.synchronize();
+
+    // 1. Capture graph: RMSNorm + residual add
+    try CudaGraph.beginCapture(&stream);
+    try rmsNorm(d_x.slice(), d_w.slice(), d_out.slice(), 1, @intCast(count), 1e-6, &stream);
+    try addResidual(d_out.slice(), d_x.slice(), &stream);
+    var graph = try CudaGraph.endCapture(&stream);
+    defer graph.deinit();
+
+    // 2. Launch graph
+    try graph.launch(&stream);
+    try stream.synchronize();
+
+    const gpu_out = try allocator.alloc(f32, count);
+    defer allocator.free(gpu_out);
+    try d_out.copyToHost(gpu_out);
+
+    // 3. Compute reference on CPU
+    const cpu_norm = try allocator.alloc(f32, count);
+    defer allocator.free(cpu_norm);
+    ops.rmsNorm(host_x, host_w, 1e-6, cpu_norm);
+    for (0..count) |i| {
+        cpu_norm[i] += host_x[i];
+    }
+
+    var max_diff: f32 = 0.0;
+    for (cpu_norm, gpu_out) |c, g| {
+        const diff = @abs(c - g);
+        if (diff > max_diff) max_diff = diff;
+        try std.testing.expect(diff <= 1e-5);
+    }
+    std.debug.print("[parity] CudaGraph Replay: max_diff = {e:.4}\n", .{max_diff});
 }
 

@@ -527,6 +527,9 @@ pub fn main(init: std.process.Init) !void {
                 .canvas_length = 256,
             };
 
+            if (use_cuda) {
+                _ = try engine.decide(arena, baseline_req);
+            }
             const t_base_start = getMonotonicMs();
             const baseline_resp = try engine.decide(arena, baseline_req);
             const t_base_end = getMonotonicMs();
@@ -553,6 +556,9 @@ pub fn main(init: std.process.Init) !void {
                     .canvas_length = c_len,
                 };
 
+                if (use_cuda) {
+                    _ = try engine.decide(arena, req);
+                }
                 const t_start = getMonotonicMs();
                 const resp = try engine.decide(arena, req);
                 const t_end = getMonotonicMs();

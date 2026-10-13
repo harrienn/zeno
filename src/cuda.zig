@@ -96,6 +96,10 @@ pub const c = if (is_enabled) struct {
     pub extern "c" fn zeno_cuda_stream_create(out_stream: *?*anyopaque, device_id: c_int) c_int;
     pub extern "c" fn zeno_cuda_stream_destroy(stream: ?*anyopaque, device_id: c_int) c_int;
     pub extern "c" fn zeno_cuda_stream_sync(stream: ?*anyopaque, device_id: c_int) c_int;
+    pub extern "c" fn zeno_cuda_graph_begin_capture(stream: ?*anyopaque, device_id: c_int) c_int;
+    pub extern "c" fn zeno_cuda_graph_end_capture(stream: ?*anyopaque, out_graph_exec: *?*anyopaque, device_id: c_int) c_int;
+    pub extern "c" fn zeno_cuda_graph_launch(graph_exec: ?*anyopaque, stream: ?*anyopaque, device_id: c_int) c_int;
+    pub extern "c" fn zeno_cuda_graph_destroy(graph_exec: ?*anyopaque, device_id: c_int) c_int;
 
     // Fused Elementwise Kernels ABI
     pub extern "c" fn zeno_cuda_rms_norm(

@@ -62,4 +62,23 @@ __device__ inline void get_scale_min_k4(int j, const uint8_t *q, uint8_t *sc, ui
     }
 }
 
+__device__ inline void precompute_q4k_scales(
+    const BlockQ4_K *blk,
+    int lane_id,
+    float *my_d,
+    float *my_m
+) {
+    float d = __half2float(blk->d);
+    float min = __half2float(blk->dmin);
+    if (lane_id < 8) {
+        uint8_t sc, m;
+        get_scale_min_k4(lane_id, blk->scales, &sc, &m);
+        *my_d = d * (float)sc;
+        *my_m = min * (float)m;
+    } else {
+        *my_d = 0.0f;
+        *my_m = 0.0f;
+    }
+}
+
 #endif // ZENO_QUANT_TYPES_CUH

@@ -353,6 +353,62 @@ int zeno_cuda_stream_sync(void *stream, int device_id) {
     return restore_cuda_device(orig, op_rc);
 }
 
+int zeno_cuda_graph_begin_capture(void *stream, int device_id) {
+    if (!stream) return ZENO_CUDA_ERR_INVALID_PARAM;
+    int orig = 0;
+    int rc = set_cuda_device(device_id, &orig);
+    if (rc != ZENO_CUDA_SUCCESS) return rc;
+
+    cudaError_t err = cudaStreamBeginCapture((cudaStream_t)stream, cudaStreamCaptureModeGlobal);
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_STREAM_FAILED : ZENO_CUDA_SUCCESS;
+    return restore_cuda_device(orig, op_rc);
+}
+
+int zeno_cuda_graph_end_capture(void *stream, void **out_graph_exec, int device_id) {
+    if (!stream || !out_graph_exec) return ZENO_CUDA_ERR_INVALID_PARAM;
+    int orig = 0;
+    int rc = set_cuda_device(device_id, &orig);
+    if (rc != ZENO_CUDA_SUCCESS) return rc;
+
+    cudaGraph_t graph = NULL;
+    cudaError_t err = cudaStreamEndCapture((cudaStream_t)stream, &graph);
+    if (err != cudaSuccess || !graph) {
+        return restore_cuda_device(orig, ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED);
+    }
+
+    cudaGraphExec_t graph_exec = NULL;
+    err = cudaGraphInstantiate(&graph_exec, graph, NULL, NULL, 0);
+    cudaGraphDestroy(graph);
+    if (err != cudaSuccess || !graph_exec) {
+        return restore_cuda_device(orig, ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED);
+    }
+
+    *out_graph_exec = (void*)graph_exec;
+    return restore_cuda_device(orig, ZENO_CUDA_SUCCESS);
+}
+
+int zeno_cuda_graph_launch(void *graph_exec, void *stream, int device_id) {
+    if (!graph_exec || !stream) return ZENO_CUDA_ERR_INVALID_PARAM;
+    int orig = 0;
+    int rc = set_cuda_device(device_id, &orig);
+    if (rc != ZENO_CUDA_SUCCESS) return rc;
+
+    cudaError_t err = cudaGraphLaunch((cudaGraphExec_t)graph_exec, (cudaStream_t)stream);
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED : ZENO_CUDA_SUCCESS;
+    return restore_cuda_device(orig, op_rc);
+}
+
+int zeno_cuda_graph_destroy(void *graph_exec, int device_id) {
+    if (!graph_exec) return ZENO_CUDA_SUCCESS;
+    int orig = 0;
+    int rc = set_cuda_device(device_id, &orig);
+    if (rc != ZENO_CUDA_SUCCESS) return rc;
+
+    cudaError_t err = cudaGraphExecDestroy((cudaGraphExec_t)graph_exec);
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_DRIVER_ERROR : ZENO_CUDA_SUCCESS;
+    return restore_cuda_device(orig, op_rc);
+}
+
 int zeno_cuda_rms_norm(
     const float *x,
     const float *weight,

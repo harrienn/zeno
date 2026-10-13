@@ -84,6 +84,65 @@ __global__ void gemv_q8_0_kernel(
     }
 }
 
+__global__ void gemv_q8_0_batched_4x_kernel(
+    const BlockQ8_0 *W,
+    const float *x,
+    float *out,
+    int out_dim,
+    int in_dim,
+    int blocks_per_row,
+    int batch_size
+) {
+    int warp_id = threadIdx.x >> 5;
+    int lane_id = threadIdx.x & 31;
+    int row = blockIdx.x * 8 + warp_id;
+    int t_base = blockIdx.y * 4;
+
+    if (row >= out_dim) return;
+
+    int t0 = t_base + 0;
+    int t1 = t_base + 1;
+    int t2 = t_base + 2;
+    int t3 = t_base + 3;
+
+    const float *x0 = (t0 < batch_size) ? (x + (size_t)t0 * in_dim) : NULL;
+    const float *x1 = (t1 < batch_size) ? (x + (size_t)t1 * in_dim) : NULL;
+    const float *x2 = (t2 < batch_size) ? (x + (size_t)t2 * in_dim) : NULL;
+    const float *x3 = (t3 < batch_size) ? (x + (size_t)t3 * in_dim) : NULL;
+
+    const BlockQ8_0 *row_w = W + (size_t)row * blocks_per_row;
+
+    float sum0 = 0.0f, sum1 = 0.0f, sum2 = 0.0f, sum3 = 0.0f;
+    for (int b = 0; b < blocks_per_row; b++) {
+        const BlockQ8_0 *blk = row_w + b;
+        float d = __half2float(blk->d);
+        float w = d * (float)blk->qs[lane_id];
+        size_t off = (size_t)b * 32 + lane_id;
+
+        if (x0) sum0 += w * x0[off];
+        if (x1) sum1 += w * x1[off];
+        if (x2) sum2 += w * x2[off];
+        if (x3) sum3 += w * x3[off];
+    }
+
+    if (x0) {
+        float r0 = warp_reduce_sum(sum0);
+        if (lane_id == 0) out[(size_t)t0 * out_dim + row] = r0;
+    }
+    if (x1) {
+        float r1 = warp_reduce_sum(sum1);
+        if (lane_id == 0) out[(size_t)t1 * out_dim + row] = r1;
+    }
+    if (x2) {
+        float r2 = warp_reduce_sum(sum2);
+        if (lane_id == 0) out[(size_t)t2 * out_dim + row] = r2;
+    }
+    if (x3) {
+        float r3 = warp_reduce_sum(sum3);
+        if (lane_id == 0) out[(size_t)t3 * out_dim + row] = r3;
+    }
+}
+
 __global__ void gemv_q4k_kernel(
     const BlockQ4_K *W,
     const float *x,
@@ -106,21 +165,17 @@ __global__ void gemv_q4k_kernel(
     float thread_sum = 0.0f;
     for (int b = 0; b < blocks_per_row; b++) {
         const BlockQ4_K *blk = row_w + b;
-        float d = __half2float(blk->d);
-        float min = __half2float(blk->dmin);
         size_t base_x = (size_t)b * 256;
+
+        float my_d, my_m;
+        precompute_q4k_scales(blk, lane_id, &my_d, &my_m);
 
         #pragma unroll
         for (int chunk = 0; chunk < 4; chunk++) {
-            int is = chunk * 2;
-            uint8_t sc1, m1, sc2, m2;
-            get_scale_min_k4(is + 0, blk->scales, &sc1, &m1);
-            get_scale_min_k4(is + 1, blk->scales, &sc2, &m2);
-
-            float d1 = d * (float)sc1;
-            float m_val1 = min * (float)m1;
-            float d2 = d * (float)sc2;
-            float m_val2 = min * (float)m2;
+            float d1 = __shfl_sync(0xffffffff, my_d, chunk * 2 + 0);
+            float m_val1 = __shfl_sync(0xffffffff, my_m, chunk * 2 + 0);
+            float d2 = __shfl_sync(0xffffffff, my_d, chunk * 2 + 1);
+            float m_val2 = __shfl_sync(0xffffffff, my_m, chunk * 2 + 1);
 
             const uint8_t *q_slice = blk->qs + chunk * 32;
             uint8_t q_byte = q_slice[lane_id];
@@ -141,6 +196,87 @@ __global__ void gemv_q4k_kernel(
     float row_sum = warp_reduce_sum(thread_sum);
     if (lane_id == 0) {
         batch_out[row] = row_sum;
+    }
+}
+
+__global__ void gemv_q4k_batched_4x_kernel(
+    const BlockQ4_K *W,
+    const float *x,
+    float *out,
+    int out_dim,
+    int in_dim,
+    int blocks_per_row,
+    int batch_size
+) {
+    int warp_id = threadIdx.x >> 5;
+    int lane_id = threadIdx.x & 31;
+    int row = blockIdx.x * 8 + warp_id;
+    int t_base = blockIdx.y * 4;
+
+    if (row >= out_dim) return;
+
+    int t0 = t_base + 0;
+    int t1 = t_base + 1;
+    int t2 = t_base + 2;
+    int t3 = t_base + 3;
+
+    const float *x0 = (t0 < batch_size) ? (x + (size_t)t0 * in_dim) : NULL;
+    const float *x1 = (t1 < batch_size) ? (x + (size_t)t1 * in_dim) : NULL;
+    const float *x2 = (t2 < batch_size) ? (x + (size_t)t2 * in_dim) : NULL;
+    const float *x3 = (t3 < batch_size) ? (x + (size_t)t3 * in_dim) : NULL;
+
+    const BlockQ4_K *row_w = W + (size_t)row * blocks_per_row;
+
+    float sum0 = 0.0f, sum1 = 0.0f, sum2 = 0.0f, sum3 = 0.0f;
+
+    for (int b = 0; b < blocks_per_row; b++) {
+        const BlockQ4_K *blk = row_w + b;
+        size_t base_x = (size_t)b * 256;
+
+        float my_d, my_m;
+        precompute_q4k_scales(blk, lane_id, &my_d, &my_m);
+
+        #pragma unroll
+        for (int chunk = 0; chunk < 4; chunk++) {
+            float d1 = __shfl_sync(0xffffffff, my_d, chunk * 2 + 0);
+            float m_val1 = __shfl_sync(0xffffffff, my_m, chunk * 2 + 0);
+            float d2 = __shfl_sync(0xffffffff, my_d, chunk * 2 + 1);
+            float m_val2 = __shfl_sync(0xffffffff, my_m, chunk * 2 + 1);
+
+            const uint8_t *q_slice = blk->qs + chunk * 32;
+            uint8_t q_byte = q_slice[lane_id];
+
+            float q1 = (float)(q_byte & 0x0F);
+            float q2 = (float)(q_byte >> 4);
+
+            float w1 = d1 * q1 - m_val1;
+            float w2 = d2 * q2 - m_val2;
+
+            size_t off1 = base_x + chunk * 64 + lane_id;
+            size_t off2 = base_x + chunk * 64 + 32 + lane_id;
+
+            if (x0) sum0 += w1 * x0[off1] + w2 * x0[off2];
+            if (x1) sum1 += w1 * x1[off1] + w2 * x1[off2];
+            if (x2) sum2 += w1 * x2[off1] + w2 * x2[off2];
+            if (x3) sum3 += w1 * x3[off1] + w2 * x3[off2];
+        }
+    }
+
+    if (x0) {
+        float r0 = warp_reduce_sum(sum0);
+        if (lane_id == 0) out[(size_t)t0 * out_dim + row] = r0;
+    }
+    if (x1) {
+        float r1 = warp_reduce_sum(sum1);
+        if (lane_id == 0) out[(size_t)t1 * out_dim + row] = r1;
+    }
+    if (x2) {
+        float r2 = warp_reduce_sum(sum2);
+        if (lane_id == 0) out[(size_t)t2 * out_dim + row] = r2;
+    }
+    if (x3) {
+        float r3 = warp_reduce_sum(sum3);
+        if (lane_id == 0) out[(size_t)t3 * out_dim + row] = r3;
     }
 }
 
@@ -201,6 +337,92 @@ __global__ void gemv_q6k_kernel(
     float row_sum = warp_reduce_sum(thread_sum);
     if (lane_id == 0) {
         batch_out[row] = row_sum;
+    }
+}
+
+__global__ void gemv_q6k_batched_4x_kernel(
+    const BlockQ6_K *W,
+    const float *x,
+    float *out,
+    int out_dim,
+    int in_dim,
+    int blocks_per_row,
+    int batch_size
+) {
+    int warp_id = threadIdx.x >> 5;
+    int lane_id = threadIdx.x & 31;
+    int row = blockIdx.x * 8 + warp_id;
+    int t_base = blockIdx.y * 4;
+
+    if (row >= out_dim) return;
+
+    int t0 = t_base + 0;
+    int t1 = t_base + 1;
+    int t2 = t_base + 2;
+    int t3 = t_base + 3;
+
+    const float *x0 = (t0 < batch_size) ? (x + (size_t)t0 * in_dim) : NULL;
+    const float *x1 = (t1 < batch_size) ? (x + (size_t)t1 * in_dim) : NULL;
+    const float *x2 = (t2 < batch_size) ? (x + (size_t)t2 * in_dim) : NULL;
+    const float *x3 = (t3 < batch_size) ? (x + (size_t)t3 * in_dim) : NULL;
+
+    const BlockQ6_K *row_w = W + (size_t)row * blocks_per_row;
+
+    float sum0 = 0.0f, sum1 = 0.0f, sum2 = 0.0f, sum3 = 0.0f;
+    for (int b = 0; b < blocks_per_row; b++) {
+        const BlockQ6_K *blk = row_w + b;
+        float d = __half2float(blk->d);
+        size_t base_x = (size_t)b * 256;
+        int is = lane_id / 16; // 0 or 1
+
+        #pragma unroll
+        for (int n = 0; n < 2; n++) {
+            const uint8_t *ql = blk->ql + n * 64;
+            const uint8_t *qh = blk->qh + n * 32;
+            const int8_t  *sc = blk->scales + n * 8;
+
+            float sc0 = d * (float)sc[is + 0];
+            float sc2 = d * (float)sc[is + 2];
+            float sc4 = d * (float)sc[is + 4];
+            float sc6 = d * (float)sc[is + 6];
+
+            int q1_i = (int)((ql[lane_id + 0]  & 0x0F) | (((qh[lane_id] >> 0) & 3) << 4)) - 32;
+            int q2_i = (int)((ql[lane_id + 32] & 0x0F) | (((qh[lane_id] >> 2) & 3) << 4)) - 32;
+            int q3_i = (int)((ql[lane_id + 0]  >> 4)   | (((qh[lane_id] >> 4) & 3) << 4)) - 32;
+            int q4_i = (int)((ql[lane_id + 32] >> 4)   | (((qh[lane_id] >> 6) & 3) << 4)) - 32;
+
+            float w1 = sc0 * (float)q1_i;
+            float w2 = sc2 * (float)q2_i;
+            float w3 = sc4 * (float)q3_i;
+            float w4 = sc6 * (float)q4_i;
+
+            size_t off1 = base_x + n * 128 + lane_id + 0;
+            size_t off2 = base_x + n * 128 + lane_id + 32;
+            size_t off3 = base_x + n * 128 + lane_id + 64;
+            size_t off4 = base_x + n * 128 + lane_id + 96;
+
+            if (x0) sum0 += w1 * x0[off1] + w2 * x0[off2] + w3 * x0[off3] + w4 * x0[off4];
+            if (x1) sum1 += w1 * x1[off1] + w2 * x1[off2] + w3 * x1[off3] + w4 * x1[off4];
+            if (x2) sum2 += w1 * x2[off1] + w2 * x2[off2] + w3 * x2[off3] + w4 * x2[off4];
+            if (x3) sum3 += w1 * x3[off1] + w2 * x3[off2] + w3 * x3[off3] + w4 * x3[off4];
+        }
+    }
+
+    if (x0) {
+        float r0 = warp_reduce_sum(sum0);
+        if (lane_id == 0) out[(size_t)t0 * out_dim + row] = r0;
+    }
+    if (x1) {
+        float r1 = warp_reduce_sum(sum1);
+        if (lane_id == 0) out[(size_t)t1 * out_dim + row] = r1;
+    }
+    if (x2) {
+        float r2 = warp_reduce_sum(sum2);
+        if (lane_id == 0) out[(size_t)t2 * out_dim + row] = r2;
+    }
+    if (x3) {
+        float r3 = warp_reduce_sum(sum3);
+        if (lane_id == 0) out[(size_t)t3 * out_dim + row] = r3;
     }
 }
 
@@ -265,6 +487,94 @@ __global__ void gemv_q5_0_kernel(
     float row_sum = warp_reduce_sum(thread_sum);
     if (lane_id == 0) {
         batch_out[row] = row_sum;
+    }
+}
+
+__global__ void gemv_q5_0_batched_4x_kernel(
+    const BlockQ5_0 *W,
+    const float *x,
+    float *out,
+    int out_dim,
+    int in_dim,
+    int blocks_per_row,
+    int batch_size
+) {
+    int warp_id = threadIdx.x >> 5;
+    int lane_id = threadIdx.x & 31;
+    int row = blockIdx.x * 8 + warp_id;
+    int t_base = blockIdx.y * 4;
+
+    if (row >= out_dim) return;
+
+    int t0 = t_base + 0;
+    int t1 = t_base + 1;
+    int t2 = t_base + 2;
+    int t3 = t_base + 3;
+
+    const float *x0 = (t0 < batch_size) ? (x + (size_t)t0 * in_dim) : NULL;
+    const float *x1 = (t1 < batch_size) ? (x + (size_t)t1 * in_dim) : NULL;
+    const float *x2 = (t2 < batch_size) ? (x + (size_t)t2 * in_dim) : NULL;
+    const float *x3 = (t3 < batch_size) ? (x + (size_t)t3 * in_dim) : NULL;
+
+    const BlockQ5_0 *row_w = W + (size_t)row * blocks_per_row;
+
+    float sum0 = 0.0f, sum1 = 0.0f, sum2 = 0.0f, sum3 = 0.0f;
+    for (int b = 0; b < blocks_per_row; b++) {
+        const BlockQ5_0 *blk = row_w + b;
+        float d = 0.0f;
+        uint32_t qh = 0;
+        if (lane_id == 0) {
+            d = __half2float(blk->d);
+            uint16_t qh_lo = *(const uint16_t*)(blk->qh + 0);
+            uint16_t qh_hi = *(const uint16_t*)(blk->qh + 2);
+            qh = (uint32_t)qh_lo | ((uint32_t)qh_hi << 16);
+        }
+        d = __shfl_sync(0xffffffff, d, 0);
+        qh = __shfl_sync(0xffffffff, qh, 0);
+        uint16_t qs_pair = 0;
+        if (lane_id < 8) {
+            qs_pair = *(const uint16_t*)(blk->qs + lane_id * 2);
+        }
+        int sub_lane = (lane_id < 16) ? lane_id : (lane_id - 16);
+        uint16_t fetched_pair = __shfl_sync(0xffffffff, qs_pair, sub_lane >> 1);
+        uint8_t q_byte = (uint8_t)((sub_lane & 1) == 0 ? (fetched_pair & 0xFF) : (fetched_pair >> 8));
+
+        size_t base_x = (size_t)b * 32;
+
+        float w;
+        if (lane_id < 16) {
+            uint8_t bit = (uint8_t)((qh >> lane_id) & 1);
+            int q = (int)((q_byte & 0x0F) | (bit << 4)) - 16;
+            w = d * (float)q;
+        } else {
+            int j = lane_id - 16;
+            uint8_t bit = (uint8_t)((qh >> (j + 16)) & 1);
+            int q = (int)((q_byte >> 4) | (bit << 4)) - 16;
+            w = d * (float)q;
+        }
+
+        size_t off = base_x + lane_id;
+        if (x0) sum0 += w * x0[off];
+        if (x1) sum1 += w * x1[off];
+        if (x2) sum2 += w * x2[off];
+        if (x3) sum3 += w * x3[off];
+    }
+
+    if (x0) {
+        float r0 = warp_reduce_sum(sum0);
+        if (lane_id == 0) out[(size_t)t0 * out_dim + row] = r0;
+    }
+    if (x1) {
+        float r1 = warp_reduce_sum(sum1);
+        if (lane_id == 0) out[(size_t)t1 * out_dim + row] = r1;
+    }
+    if (x2) {
+        float r2 = warp_reduce_sum(sum2);
+        if (lane_id == 0) out[(size_t)t2 * out_dim + row] = r2;
+    }
+    if (x3) {
+        float r3 = warp_reduce_sum(sum3);
+        if (lane_id == 0) out[(size_t)t3 * out_dim + row] = r3;
     }
 }
 
@@ -342,17 +652,31 @@ int zeno_cuda_gemv_q8_0(
 
     const int block_size = 256; // 8 warps per threadblock
     unsigned int grid_x = (unsigned int)((out_dim + 7) / 8);
-    dim3 grid(grid_x, (unsigned int)batch_size);
     cudaStream_t custream = (cudaStream_t)stream;
 
-    gemv_q8_0_kernel<<<grid, block_size, 0, custream>>>(
-        (const BlockQ8_0*)W,
-        x,
-        out,
-        out_dim,
-        in_dim,
-        blocks_per_row
-    );
+    if (batch_size == 1) {
+        dim3 grid(grid_x, 1);
+        gemv_q8_0_kernel<<<grid, block_size, 0, custream>>>(
+            (const BlockQ8_0*)W,
+            x,
+            out,
+            out_dim,
+            in_dim,
+            blocks_per_row
+        );
+    } else {
+        unsigned int grid_y = (unsigned int)((batch_size + 3) / 4);
+        dim3 grid(grid_x, grid_y);
+        gemv_q8_0_batched_4x_kernel<<<grid, block_size, 0, custream>>>(
+            (const BlockQ8_0*)W,
+            x,
+            out,
+            out_dim,
+            in_dim,
+            blocks_per_row,
+            batch_size
+        );
+    }
 
     cudaError_t err = cudaGetLastError();
     int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED : ZENO_CUDA_SUCCESS;
@@ -387,17 +711,31 @@ int zeno_cuda_gemv_q4k(
 
     const int block_size = 256;
     unsigned int grid_x = (unsigned int)((out_dim + 7) / 8);
-    dim3 grid(grid_x, (unsigned int)batch_size);
     cudaStream_t custream = (cudaStream_t)stream;
 
-    gemv_q4k_kernel<<<grid, block_size, 0, custream>>>(
-        (const BlockQ4_K*)W,
-        x,
-        out,
-        out_dim,
-        in_dim,
-        blocks_per_row
-    );
+    if (batch_size == 1) {
+        dim3 grid(grid_x, 1);
+        gemv_q4k_kernel<<<grid, block_size, 0, custream>>>(
+            (const BlockQ4_K*)W,
+            x,
+            out,
+            out_dim,
+            in_dim,
+            blocks_per_row
+        );
+    } else {
+        unsigned int grid_y = (unsigned int)((batch_size + 3) / 4);
+        dim3 grid(grid_x, grid_y);
+        gemv_q4k_batched_4x_kernel<<<grid, block_size, 0, custream>>>(
+            (const BlockQ4_K*)W,
+            x,
+            out,
+            out_dim,
+            in_dim,
+            blocks_per_row,
+            batch_size
+        );
+    }
 
     cudaError_t err = cudaGetLastError();
     int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED : ZENO_CUDA_SUCCESS;
@@ -432,17 +770,31 @@ int zeno_cuda_gemv_q6k(
 
     const int block_size = 256;
     unsigned int grid_x = (unsigned int)((out_dim + 7) / 8);
-    dim3 grid(grid_x, (unsigned int)batch_size);
     cudaStream_t custream = (cudaStream_t)stream;
 
-    gemv_q6k_kernel<<<grid, block_size, 0, custream>>>(
-        (const BlockQ6_K*)W,
-        x,
-        out,
-        out_dim,
-        in_dim,
-        blocks_per_row
-    );
+    if (batch_size == 1) {
+        dim3 grid(grid_x, 1);
+        gemv_q6k_kernel<<<grid, block_size, 0, custream>>>(
+            (const BlockQ6_K*)W,
+            x,
+            out,
+            out_dim,
+            in_dim,
+            blocks_per_row
+        );
+    } else {
+        unsigned int grid_y = (unsigned int)((batch_size + 3) / 4);
+        dim3 grid(grid_x, grid_y);
+        gemv_q6k_batched_4x_kernel<<<grid, block_size, 0, custream>>>(
+            (const BlockQ6_K*)W,
+            x,
+            out,
+            out_dim,
+            in_dim,
+            blocks_per_row,
+            batch_size
+        );
+    }
 
     cudaError_t err = cudaGetLastError();
     int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED : ZENO_CUDA_SUCCESS;
@@ -477,17 +829,31 @@ int zeno_cuda_gemv_q5_0(
 
     const int block_size = 256;
     unsigned int grid_x = (unsigned int)((out_dim + 7) / 8);
-    dim3 grid(grid_x, (unsigned int)batch_size);
     cudaStream_t custream = (cudaStream_t)stream;
 
-    gemv_q5_0_kernel<<<grid, block_size, 0, custream>>>(
-        (const BlockQ5_0*)W,
-        x,
-        out,
-        out_dim,
-        in_dim,
-        blocks_per_row
-    );
+    if (batch_size == 1) {
+        dim3 grid(grid_x, 1);
+        gemv_q5_0_kernel<<<grid, block_size, 0, custream>>>(
+            (const BlockQ5_0*)W,
+            x,
+            out,
+            out_dim,
+            in_dim,
+            blocks_per_row
+        );
+    } else {
+        unsigned int grid_y = (unsigned int)((batch_size + 3) / 4);
+        dim3 grid(grid_x, grid_y);
+        gemv_q5_0_batched_4x_kernel<<<grid, block_size, 0, custream>>>(
+            (const BlockQ5_0*)W,
+            x,
+            out,
+            out_dim,
+            in_dim,
+            blocks_per_row,
+            batch_size
+        );
+    }
 
     cudaError_t err = cudaGetLastError();
     int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED : ZENO_CUDA_SUCCESS;
