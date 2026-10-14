@@ -730,8 +730,10 @@ __global__ void moe_accumulate_scaled_sorted_kernel(
         for (int e = 0; e < 8; ++e) {
             int k = token_idx * 8 + e;
             int sorted_k = instance_to_sorted[k];
-            float w = top_weights[k];
-            sum += sorted_down_out[(size_t)sorted_k * dim + d] * w;
+            if (sorted_k >= 0) {
+                float w = top_weights[k];
+                sum += sorted_down_out[(size_t)sorted_k * dim + d] * w;
+            }
         }
         moe_accum[(size_t)token_idx * dim + d] = sum;
     }

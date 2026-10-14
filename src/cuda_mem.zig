@@ -3833,3 +3833,69 @@ test "CUDA Stage 8B: Fused Dense Gate+Up+GeGLU Q4_K parity against separate GEMV
     }
 }
 
+test "CUDA Review 25: moeAccumulateScaledSorted negative index guard (R25-01)" {
+    if (!cuda.is_enabled) return;
+    const dev = requireHardwareDevice() catch |err| switch (err) {
+        error.SkipZigTest => return,
+        else => return err,
+    };
+
+    const allocator = std.testing.allocator;
+    const num_tokens: usize = 2;
+    const dim: usize = 64;
+    const num_instances = num_tokens * 8; // 16
+
+    // Half of instances are valid sorted slots [0..7], half are inactive (-1)
+    const host_inst_to_sorted = try allocator.alloc(i32, num_instances);
+    defer allocator.free(host_inst_to_sorted);
+    for (host_inst_to_sorted, 0..) |*slot, i| {
+        slot.* = if (i % 2 == 0) @intCast(i / 2) else -1;
+    }
+
+    const host_top_weights = try allocator.alloc(f32, num_instances);
+    defer allocator.free(host_top_weights);
+    for (host_top_weights) |*w| w.* = 0.25;
+
+    // sorted_down_out has num_instances buffer capacity
+    const host_sorted_down = try allocator.alloc(f32, num_instances * dim);
+    defer allocator.free(host_sorted_down);
+    for (host_sorted_down, 0..) |*v, idx| {
+        v.* = @floatFromInt(idx + 1);
+    }
+
+    var d_accum = try DeviceBuffer(f32).init(dev, num_tokens * dim);
+    defer d_accum.deinit();
+
+    var d_sorted_down = try DeviceBuffer(f32).init(dev, host_sorted_down.len);
+    defer d_sorted_down.deinit();
+    try d_sorted_down.copyFromHost(host_sorted_down);
+
+    var d_inst_to_sorted = try DeviceBuffer(i32).init(dev, host_inst_to_sorted.len);
+    defer d_inst_to_sorted.deinit();
+    try d_inst_to_sorted.copyFromHost(host_inst_to_sorted);
+
+    var d_top_weights = try DeviceBuffer(f32).init(dev, host_top_weights.len);
+    defer d_top_weights.deinit();
+    try d_top_weights.copyFromHost(host_top_weights);
+
+    // Should execute safely without segfault or illegal memory access
+    try moeAccumulateScaledSorted(
+        d_accum.slice(),
+        d_sorted_down.slice(),
+        d_inst_to_sorted.slice(),
+        d_top_weights.slice(),
+        num_tokens,
+        dim,
+        null,
+    );
+
+    const host_out = try allocator.alloc(f32, num_tokens * dim);
+    defer allocator.free(host_out);
+    try d_accum.copyToHost(host_out);
+
+    // Verify non-zero accumulated values
+    for (host_out) |v| {
+        try std.testing.expect(v > 0.0);
+    }
+}
+

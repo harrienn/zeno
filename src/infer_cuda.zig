@@ -1305,8 +1305,8 @@ pub fn prefillPromptCuda(
             try runLayerCuda(&ws.dev0, &model.layers[l], P, P, rf_slice, l);
         }
 
-        const d0_out_slice = try ws.dev0.current_emb.slice().subslice(0, P * ModelConfig.embedding_dim);
-        const d1_in_slice = try dev1.current_emb.slice().subslice(0, P * ModelConfig.embedding_dim);
+        const d0_out_slice = try ws.dev0.emb_buf_1.slice().subslice(0, P * ModelConfig.embedding_dim);
+        const d1_in_slice = try dev1.emb_buf_0.slice().subslice(0, P * ModelConfig.embedding_dim);
         const ev_opt = if (ws.boundary_event) |*ev| ev else null;
         try transferHiddenState(d0_out_slice, d1_in_slice, &ws.dev0.stream, &dev1.stream, ev_opt, ws.host_staging_buf, ws.peer_access_enabled);
 
@@ -1480,9 +1480,6 @@ pub fn executeStructuredReadCuda(
                     if (!inject_graph_capture_failure) {
                         if (cuda_mem.CudaGraph.endCapture(&ws.dev0.stream)) |g0| {
                             ws.graph0 = g0;
-                            ws.cached_graph_prompt_len = P;
-                            ws.cached_graph_canvas_len = C;
-                            ws.cached_graph_answer_pos = answer_pos;
                             var launch_ok = false;
                             if (!inject_graph_replay_failure) {
                                 if (ws.graph0.?.launch(&ws.dev0.stream)) |_| {
@@ -1491,13 +1488,26 @@ pub fn executeStructuredReadCuda(
                             }
                             if (launch_ok) {
                                 g0_instantiated = true;
+                                ws.cached_graph_prompt_len = P;
+                                ws.cached_graph_canvas_len = C;
+                                ws.cached_graph_answer_pos = answer_pos;
                             } else {
                                 ws.graph0.?.deinit();
                                 ws.graph0 = null;
+                                ws.cached_graph_prompt_len = 0;
+                                ws.cached_graph_canvas_len = 0;
+                                ws.cached_graph_answer_pos = 0;
                             }
-                        } else |_| {}
+                        } else |_| {
+                            ws.cached_graph_prompt_len = 0;
+                            ws.cached_graph_canvas_len = 0;
+                            ws.cached_graph_answer_pos = 0;
+                        }
                     } else {
                         cuda_mem.CudaGraph.cancelCapture(&ws.dev0.stream);
+                        ws.cached_graph_prompt_len = 0;
+                        ws.cached_graph_canvas_len = 0;
+                        ws.cached_graph_answer_pos = 0;
                     }
 
                     if (!g0_instantiated) {
@@ -1558,6 +1568,7 @@ pub fn executeStructuredReadCuda(
                 }
 
                 // --- Partition 0 (Device 0, Layers 0..14) ---
+                var g0_instantiated = false;
                 var capture0_ok = false;
                 if (cuda_mem.CudaGraph.beginCapture(&ws.dev0.stream)) |_| {
                     capture0_ok = true;
@@ -1567,7 +1578,6 @@ pub fn executeStructuredReadCuda(
                     errdefer cuda_mem.CudaGraph.cancelCapture(&ws.dev0.stream);
                     try runPartition0CanvasEager(ws, model, P, C);
 
-                    var g0_instantiated = false;
                     if (!inject_graph_capture_failure) {
                         if (cuda_mem.CudaGraph.endCapture(&ws.dev0.stream)) |g0| {
                             ws.graph0 = g0;
@@ -1612,30 +1622,61 @@ pub fn executeStructuredReadCuda(
                     if (!inject_graph_capture_failure) {
                         if (cuda_mem.CudaGraph.endCapture(&dev1.stream)) |g1| {
                             ws.graph1 = g1;
-                            ws.cached_graph_prompt_len = P;
-                            ws.cached_graph_canvas_len = C;
-                            ws.cached_graph_answer_pos = answer_pos;
                             var p1_launch_ok = false;
                             if (!inject_graph_replay_failure) {
                                 if (ws.graph1.?.launch(&dev1.stream)) |_| {
                                     p1_launch_ok = true;
                                 } else |_| {}
                             }
-                            if (p1_launch_ok) {
+                            if (p1_launch_ok and g0_instantiated) {
                                 g1_instantiated = true;
+                                ws.cached_graph_prompt_len = P;
+                                ws.cached_graph_canvas_len = C;
+                                ws.cached_graph_answer_pos = answer_pos;
                             } else {
-                                ws.graph1.?.deinit();
-                                ws.graph1 = null;
+                                if (ws.graph1) |*g| {
+                                    g.deinit();
+                                    ws.graph1 = null;
+                                }
+                                if (ws.graph0) |*g| {
+                                    g.deinit();
+                                    ws.graph0 = null;
+                                }
+                                ws.cached_graph_prompt_len = 0;
+                                ws.cached_graph_canvas_len = 0;
+                                ws.cached_graph_answer_pos = 0;
                             }
-                        } else |_| {}
+                        } else |_| {
+                            if (ws.graph0) |*g| {
+                                g.deinit();
+                                ws.graph0 = null;
+                            }
+                            ws.cached_graph_prompt_len = 0;
+                            ws.cached_graph_canvas_len = 0;
+                            ws.cached_graph_answer_pos = 0;
+                        }
                     } else {
                         cuda_mem.CudaGraph.cancelCapture(&dev1.stream);
+                        if (ws.graph0) |*g| {
+                            g.deinit();
+                            ws.graph0 = null;
+                        }
+                        ws.cached_graph_prompt_len = 0;
+                        ws.cached_graph_canvas_len = 0;
+                        ws.cached_graph_answer_pos = 0;
                     }
 
                     if (!g1_instantiated) {
                         try runPartition1CanvasEager(ws, model, P, C, answer_pos);
                     }
                 } else {
+                    if (ws.graph0) |*g| {
+                        g.deinit();
+                        ws.graph0 = null;
+                    }
+                    ws.cached_graph_prompt_len = 0;
+                    ws.cached_graph_canvas_len = 0;
+                    ws.cached_graph_answer_pos = 0;
                     try runPartition1CanvasEager(ws, model, P, C, answer_pos);
                 }
             }
