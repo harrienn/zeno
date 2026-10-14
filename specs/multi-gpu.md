@@ -14,17 +14,29 @@ Multi-GPU research is informed by the [separate community patch for llama.cpp PR
 
 The GGUF model file (`diffusiongemma-26B-A4B-it-Q4_K_M.gguf`, cataloged in [`gguf-mapping.md`](gguf-mapping.md)) is approximately **16 GB** on disk and ~16.8 GB uncompressed in memory. It exceeds the 12GB VRAM limit of a single RTX 3060, necessitating sharding across two devices.
 
-Zeno implements a hybrid CPU/GPU architecture: input token embedding lookups (~0.05 ms) and candidate logit dot-product readout (~0.01 ms) are executed on the host CPU against mapped GGUF tables, while the compute-intensive 30-layer transformer forward pass runs entirely on the GPUs.
+Zeno implements a hybrid CPU/GPU architecture: input token embedding lookups and candidate logit dot-product readout are executed on the host CPU against mapped GGUF tables, while the compute-intensive 30-layer transformer forward pass runs entirely on the GPUs.
 
 * **Dual-GPU Partitioning (Strategy A)**:
-  - **Device 0**: Layers 0..14 (~7.3 GB) + Activation Workspace (~100 MB) ≈ **7.4 GB VRAM**.
-  - **Device 1**: Layers 15..29 (~7.3 GB) + Final Output RMSNorm (<1 MB) + Activation Workspace (~100 MB) ≈ **7.4 GB VRAM**.
-  - Both devices comfortably fit within 12 GB VRAM with >4 GB headroom for OS desktop and CUDA driver allocations.
+  - **Device 0**: Layers 0..14 (~7.3 GB) + Activation Workspace (~211 MB / 201 MiB) ≈ **7.5 GB VRAM**.
+  - **Device 1**: Layers 15..29 (~7.3 GB) + Final Output RMSNorm (<1 MB) + Activation Workspace (~211 MB / 201 MiB) ≈ **7.5 GB VRAM**.
+  - Both devices comfortably fit within 12 GB VRAM with >4.4 GB headroom for OS desktop and CUDA driver allocations.
 * **Single-GPU Topology**:
-  - When running on a device with $\ge 24$ GB VRAM (e.g., RTX 3090, RTX 4090, A100), all 30 layers reside on Device 0 (~14.6 GB VRAM).
+  - When running on a device with $\ge 24$ GB VRAM (e.g., RTX 3090, RTX 4090, A100), all 30 layers reside on Device 0 (~14.8 GB VRAM).
 * **Canvas Activation Workspace**:
   - Sequence limit $N \le 512$ is strictly enforced at the CUDA entry point.
-  - Per-device workspace requires $< 100$ MB, including attention scratch and batched MoE intermediate activations ($512 \times 8 \times 2816 \times 4\text{ B} \approx 46\text{ MB}$).
+  - Per-device workspace requires **210,938,880 bytes (~210.94 MB / 201.17 MiB)** at $N=512$, calculated explicitly via `CudaDeviceWorkspace.activationWorkspaceBytes(512)`:
+
+| Buffer Group | Buffers | Dimensions ($N=512$) | Memory (MiB / MB) |
+|---|---|---|---|
+| Embedding & Residuals | `emb_buf_0`, `emb_buf_1`, `norm_x`, `attn_out`, `dense_in`, `dense_out`, `h1`, `r_in`, `moe_in`, `moe_accum`, `h2`, `ffn_comb`, `post_ffn` | $13 \times [N \times 2816]$, FP32 | 71.50 MiB (74.97 MB) |
+| Attention Head & Projections | `q_buf`, `head_out` | $2 \times [N \times 8192]$, FP32 | 32.00 MiB (33.55 MB) |
+| Attention KV Buffers | `k_buf`, `v_buf` | $2 \times [N \times 2048]$, FP32 | 8.00 MiB (8.39 MB) |
+| Dense FFN Scratch | `gate_buf`, `up_buf`, `geglu_buf` | $3 \times [N \times 2112]$, FP32 | 12.38 MiB (12.98 MB) |
+| MoE Router Output & Top-8 | `router_logits`, `top_indices`, `top_weights` | $[N \times 128]$ FP32 + $2 \times [N \times 8]$ | 0.28 MiB (0.30 MB) |
+| Batched MoE Projections | `exp_gate_up_buf`, `exp_act_buf` | $[N \times 8 \times 1408]$ FP32 + $[N \times 8 \times 704]$ FP32 | 33.00 MiB (34.60 MB) |
+| Batched MoE Down-Projection | `exp_down_buf` | $[N \times 8 \times 2816]$, FP32 | 44.00 MiB (46.14 MB) |
+| Final Output Norm Buffer | `norm_hidden` | $[1 \times 2816]$, FP32 | 0.01 MiB (0.01 MB) |
+| **Total Activation Workspace** | **27 buffers** | **All device buffers at $N=512$** | **201.17 MiB (210.94 MB)** |
 
 ---
 

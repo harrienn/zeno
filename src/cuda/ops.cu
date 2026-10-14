@@ -646,11 +646,16 @@ int zeno_cuda_enable_peer_access(int current_dev, int peer_dev) {
 
     int can_access = 0;
     cudaError_t can_err = cudaDeviceCanAccessPeer(&can_access, current_dev, peer_dev);
-    if (can_err == cudaSuccess && can_access) {
-        cudaError_t err = cudaDeviceEnablePeerAccess(peer_dev, 0);
-        if (err != cudaSuccess && err != cudaErrorPeerAccessAlreadyEnabled) {
-            // Driver error during peer enabling
-        }
+    if (can_err != cudaSuccess) {
+        return restore_cuda_device(orig, ZENO_CUDA_ERR_PEER_QUERY_FAILED);
+    }
+    if (!can_access) {
+        return restore_cuda_device(orig, ZENO_CUDA_PEER_UNSUPPORTED);
+    }
+
+    cudaError_t err = cudaDeviceEnablePeerAccess(peer_dev, 0);
+    if (err != cudaSuccess && err != cudaErrorPeerAccessAlreadyEnabled) {
+        return restore_cuda_device(orig, ZENO_CUDA_ERR_PEER_ENABLE_FAILED);
     }
     return restore_cuda_device(orig, ZENO_CUDA_SUCCESS);
 }

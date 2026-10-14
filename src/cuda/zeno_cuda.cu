@@ -112,6 +112,8 @@ const char *zeno_cuda_get_error_string(int error_code) {
         case ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED: return "CUDA kernel launch failed";
         case ZENO_CUDA_ERR_INVALID_DEVICE: return "Invalid CUDA device ID";
         case ZENO_CUDA_ERR_DEVICE_MISMATCH: return "CUDA device mismatch";
+        case ZENO_CUDA_PEER_UNSUPPORTED: return "CUDA peer-to-peer memory access unsupported by topology";
+        case ZENO_CUDA_ERR_PEER_ENABLE_FAILED: return "CUDA peer-to-peer memory access enablement failed";
         default: return "Unknown CUDA error";
     }
 }

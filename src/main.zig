@@ -511,6 +511,12 @@ pub fn main(init: std.process.Init) !void {
                     dev.total_memory_bytes / (1024 * 1024),
                 });
             }
+            if (topo.reported_devices >= 2) {
+                const p2p_rc = zeno.cuda.c.zeno_cuda_enable_peer_access(0, 1);
+                try stdout_writer.print("  Inter-GPU Transfer: {s}\n", .{
+                    if (p2p_rc == 0) "Direct P2P DMA (enabled)" else "Host-staged fallback (P2P unsupported by hardware topology)",
+                });
+            }
         }
         try stdout_writer.print("Benchmark Configuration: {d} sample(s) per width post-warmup (reporting median & spread)\n", .{num_samples});
         try stdout_writer.print("Evaluating canvas widths C in {{16, 32, 64, 128, 256}}\n", .{});
@@ -545,10 +551,9 @@ pub fn main(init: std.process.Init) !void {
                 .canvas_length = 256,
             };
 
-            // Warmup baseline
-            if (use_cuda) {
-                _ = try engine.decide(arena, baseline_req);
-            }
+            // Warmup baseline (for both CPU and CUDA backends, R24-03)
+            _ = try engine.decide(arena, baseline_req);
+
             var baseline_samples = try arena.alloc(f64, num_samples);
             var baseline_resp: zeno.DecisionResponse = undefined;
             for (0..num_samples) |s_i| {
@@ -582,10 +587,8 @@ pub fn main(init: std.process.Init) !void {
                     .canvas_length = c_len,
                 };
 
-                // Warmup per canvas width
-                if (use_cuda) {
-                    _ = try engine.decide(arena, req);
-                }
+                // Warmup per canvas width (for both CPU and CUDA backends, R24-03)
+                _ = try engine.decide(arena, req);
                 var samples = try arena.alloc(f64, num_samples);
                 var resp: zeno.DecisionResponse = undefined;
                 for (0..num_samples) |s_i| {

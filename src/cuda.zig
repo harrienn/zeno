@@ -30,6 +30,8 @@ pub const CudaError = error{
     KernelLaunchFailed,
     InvalidDevice,
     DeviceMismatch,
+    PeerUnsupported,
+    PeerEnableFailed,
     UnknownError,
     CudaDisabledAtBuild,
 };
@@ -345,6 +347,8 @@ pub fn mapCudaErrorCode(rc: c_int) CudaError {
         13 => error.KernelLaunchFailed,
         14 => error.InvalidDevice,
         15 => error.DeviceMismatch,
+        16 => error.PeerUnsupported,
+        17 => error.PeerEnableFailed,
         else => error.UnknownError,
     };
 }

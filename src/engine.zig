@@ -188,9 +188,7 @@ pub const DecisionEngine = struct {
         switch (self.backend) {
             .cpu => {
                 const ws = self.cpu_workspace orelse return error.InvalidEngineState;
-                if (total_seq_len > ws.max_seq_len) {
-                    return error.CanvasOverflow;
-                }
+                try validateSequenceLength(.cpu, total_seq_len, ws.max_seq_len);
                 try infer.executeStructuredReadSlice(
                     ws,
                     self.model,
@@ -205,10 +203,7 @@ pub const DecisionEngine = struct {
             .cuda => {
                 const ws = self.cuda_workspace orelse return error.InvalidEngineState;
                 const cm = self.cuda_model orelse return error.InvalidEngineState;
-                // R23-04: Enforce CUDA 512 sequence ceiling on CUDA backend specifically
-                if (total_seq_len > 512 or total_seq_len > ws.dev0.max_seq_len) {
-                    return error.CanvasOverflow;
-                }
+                try validateSequenceLength(.cuda, total_seq_len, ws.dev0.max_seq_len);
                 try infer_cuda.executeStructuredReadCuda(
                     ws,
                     cm,
@@ -364,10 +359,42 @@ test "DecisionEngine: end-to-end boolean decision execution on CUDA if present" 
     try std.testing.expectEqual(@as(usize, 2), resp.candidates.len);
 }
 
-test "DecisionEngine: CPU allows sequence length > 512 within workspace_seq_len (R23-04)" {
-    const opts = EngineOptions{
-        .backend = .cpu,
-        .workspace_seq_len = 1024,
-    };
-    try std.testing.expectEqual(@as(usize, 1024), opts.workspace_seq_len);
+/// Validates total sequence length (prompt + canvas) against backend capabilities and workspace capacity (R23-04 / R24-05).
+pub fn validateSequenceLength(backend: BackendType, total_seq_len: usize, workspace_max_seq_len: usize) !void {
+    switch (backend) {
+        .cpu => {
+            if (total_seq_len > workspace_max_seq_len) {
+                return error.CanvasOverflow;
+            }
+        },
+        .cuda => {
+            // Strict CUDA attention kernel ceiling is 512
+            if (total_seq_len > 512 or total_seq_len > workspace_max_seq_len) {
+                return error.CanvasOverflow;
+            }
+        },
+    }
+}
+
+test "DecisionEngine: sequence length bounds validation for CPU and CUDA (R24-05)" {
+    // 1. CPU allows sequence lengths > 512 when workspace capacity allows it
+    try validateSequenceLength(.cpu, 513, 1024);
+    try validateSequenceLength(.cpu, 768, 1024);
+    try validateSequenceLength(.cpu, 1024, 1024);
+
+    // 2. CPU rejects sequences exceeding workspace capacity
+    try std.testing.expectError(error.CanvasOverflow, validateSequenceLength(.cpu, 1025, 1024));
+    try std.testing.expectError(error.CanvasOverflow, validateSequenceLength(.cpu, 300, 256));
+
+    // 3. CUDA accepts sequences <= 512 within workspace capacity
+    try validateSequenceLength(.cuda, 16, 512);
+    try validateSequenceLength(.cuda, 256, 512);
+    try validateSequenceLength(.cuda, 512, 512);
+
+    // 4. CUDA rejects sequences > 512 even if workspace capacity is larger
+    try std.testing.expectError(error.CanvasOverflow, validateSequenceLength(.cuda, 513, 1024));
+    try std.testing.expectError(error.CanvasOverflow, validateSequenceLength(.cuda, 600, 1024));
+
+    // 5. CUDA rejects sequences exceeding workspace capacity even if <= 512
+    try std.testing.expectError(error.CanvasOverflow, validateSequenceLength(.cuda, 400, 256));
 }

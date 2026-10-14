@@ -234,6 +234,16 @@ pub const CudaGraph = struct {
             self.exec_handle = null;
         }
     }
+
+    /// Safely terminates an in-flight stream capture and releases any created graph handle,
+    /// restoring the stream to an uncaptured, operational state.
+    pub fn cancelCapture(stream: *const CudaStream) void {
+        if (!cuda.is_enabled) return;
+        if (endCapture(stream)) |mut_g| {
+            var g = mut_g;
+            g.deinit();
+        } else |_| {}
+    }
 };
 
 /// Typed owning device buffer with explicit device assignment and single ownership.
@@ -2895,5 +2905,52 @@ test "CudaGraph capture failure eager fallback parity (R23-01)" {
         try std.testing.expect(diff <= 1e-5);
     }
     std.debug.print("[parity] CudaGraph Eager Fallback: max_diff = {e:.4}\n", .{max_diff});
+}
+
+test "CudaGraph cancelCapture resets stream capture state (R24-02)" {
+    if (!cuda.is_enabled) return error.SkipZigTest;
+    const allocator = std.testing.allocator;
+    const topo = cuda.getTopology() catch |err| switch (err) {
+        error.NoDevice => return error.SkipZigTest,
+        else => return err,
+    };
+    if (topo.reported_devices == 0) return error.SkipZigTest;
+    const dev = topo.devices[0].device_id;
+
+    var stream = try CudaStream.init(dev);
+    defer stream.deinit();
+
+    const count: usize = 512;
+    var d_x = try DeviceBuffer(f32).init(dev, count);
+    defer d_x.deinit();
+    var d_out = try DeviceBuffer(f32).init(dev, count);
+    defer d_out.deinit();
+
+    const host_x = try allocator.alloc(f32, count);
+    defer allocator.free(host_x);
+    for (0..count) |i| {
+        host_x[i] = @as(f32, @floatFromInt(i)) * 0.01;
+    }
+    try d_x.copyFromHost(host_x);
+    try stream.synchronize();
+
+    // 1. Begin capture and enqueue kernel
+    try CudaGraph.beginCapture(&stream);
+    try addResidual(d_out.slice(), d_x.slice(), &stream);
+
+    // 2. Abort capture via cancelCapture
+    CudaGraph.cancelCapture(&stream);
+
+    // 3. Verify the stream is immediately operational outside capture
+    try addResidual(d_out.slice(), d_x.slice(), &stream);
+    try stream.synchronize();
+
+    const gpu_out = try allocator.alloc(f32, count);
+    defer allocator.free(gpu_out);
+    try d_out.copyToHost(gpu_out);
+
+    for (host_x, gpu_out) |h, g| {
+        try std.testing.expectEqual(h, g);
+    }
 }
 
