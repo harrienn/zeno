@@ -45,7 +45,7 @@ DiffusionGemma operates on a **dual-region sequence** $[0 \dots P + C - 1]$:
 In [vLLM PR #57250](https://github.com/vllm-project/vllm/pull/57250) (`examples/features/structured_diffusion/structured_server.py`), the assistant turn template is constructed directly inside the canvas buffer (e.g. `<|turn>model\nAnswer: ` lives on the canvas, and the answer slot $s[\text{"pos"}]$ is located at an offset within that canvas template). Answer slots are seeded with random noise draws across repeated sampling passes.
 
 In contrast, **Zeno's Direct Canvas Decision Contract**:
-1. Formats the full user context and assistant prefix (`<start_of_turn>user\n...<end_of_turn>\n<start_of_turn>model\nAnswer: `) into the causal **prompt region** ($0 \dots P-1$).
+1. Formats the full user context and assistant prefix (`<|turn>user\n...<turn|>\n<|turn>model\nAnswer: `) into the causal **prompt region** ($0 \dots P-1$).
 2. Designates **canvas index 0** ($P+0$) as the answer/read position and seeds it with `MASK` (`4`). Zeno reads its logits without applying the reference sampler's iterative pin/accept/re-noise updates.
 3. Appends `TURN_CLOSE` (`106`) at canvas index 1 ($P+1$), and fills the remaining backing canvas with `PAD` (`0`). The evaluated prefix has width $C$; only positions $0 \dots C-1$ participate in that request.
 4. Reads candidate logits directly from canvas index 0 in one logical read, without iterative sampling draws. CUDA may use prompt KV prefix caching internally; that cache is an execution optimization and does not change the input-token contract.

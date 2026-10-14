@@ -81,6 +81,7 @@ RoPE is applied to Query and Key head vectors with dual frequency bases:
 * **SWA Layers**: Base frequency $\theta_{\text{swa}} = 10,000.0$, dimension $d_{\text{rope}} = 256$.
 * **Global Layers**: Base frequency $\theta_{\text{global}} = 1,000,000.0$, dimension $d_{\text{rope}} = 512$.
 * **Coordinate pairing**: NeoX-style half-split. For rotary dimension $d$, rotate coordinate pairs $(x_i, x_{i+d/2})$ using inverse frequency $\theta^{-2i/d}$. Interleaved adjacent-pair rotation does not match the pinned reference (U-23).
+* **Proportional RoPE factors**: Global (full-attention) layers apply precomputed frequency scaling factors from `rope_freqs.weight` for proportional RoPE, while SWA layers omit them (`llama.cpp@3dac51dc:gemma4-common.h:19-20`, `src/infer.zig:523`).
 
 ### 3.4 Attention Dot-Product & Output
 1. Reshape $Q$ into $[B, L, H_Q, d_k]$ and $K, V$ into $[B, L, H_{KV}, d_k]$.
@@ -91,7 +92,8 @@ RoPE is applied to Query and Key head vectors with dual frequency bases:
 > **Resolved (U-09):** this artifact has no attention-logit softcap metadata; final-logit softcapping is specified separately in [`UNRESOLVED.md`](UNRESOLVED.md).
 
 5. Compute attention scores under the phase's mask:
-   $$\text{Attn}(Q, K, V) = \text{Softmax}\left(\frac{Q K^T}{\sqrt{d_k}}\right) V$$
+   $$\text{Attn}(Q, K, V) = \text{Softmax}(Q K^T) V$$
+   > **Attention Scaling is 1.0 (no $\sqrt{d_k}$ division)**: In Gemma 4 / DiffusionGemma, pre-attention scaling by $1/\sqrt{d_k}$ is NOT used; attention scaling is $1.0$ (`self.scaling = 1.0` in `vllm@1b3b88ec:gemma4.py:401`; `hparams.f_attention_scale = 1.0f` in `llama.cpp@3dac51dc:diffusion-gemma.cpp:221`). Per-head RMSNorm with learned scales on Query (`attn_q_norm`) and Key (`attn_k_norm`) handles head scaling implicitly.
 6. Project back to model dimension:
    $$O = \text{Attn}(Q, K, V) \cdot W_O \quad \text{where } W_O \in \mathbb{R}^{(H_Q \cdot d_k) \times 2816}$$
 
@@ -160,7 +162,7 @@ The exact sequence was established from [`vllm/model_executor/models/gemma4.py`]
 
 * **Slot 10** — the MoE router consumes the *attention residual* $x_{\text{mid}}$ (slot 7), not the FFN-normalized input (slot 8). Router preprocessing applies unweighted RMSNorm, scales by $d_{\text{model}}^{-0.5}$, multiplies by learned dimension scale `blk.{l}.ffn_gate_inp.scale`, projects via `blk.{l}.ffn_gate_inp.weight`, computes softmax over all 128 experts, selects top 8, renormalizes top-8 weights to sum to 1.0, and scales by per-expert `blk.{l}.ffn_down_exps.scale`.
 * **Slots 8–13** — Dense MLP has `pre_feedforward_layernorm` (`ffn_norm`) before MLP and `post_feedforward_layernorm_1` (`post_ffw_norm_1`) after MLP. MoE has `pre_feedforward_layernorm_2` (`pre_ffw_norm_2`) before MoE and `post_feedforward_layernorm_2` (`post_ffw_norm_2`) after MoE. The two branches are summed (slot 12), and the sum is normalized by `post_feedforward_layernorm` (`post_ffw_norm`, slot 13).
-* **Slots 14–15** — The attention residual $x_{\text{mid}}$ is added to slot 13 output (slot 14), and the layer output is scaled by `blk.{l}.layer_output_scale.weight` (slot 15). Decoder reads use `layer_output_scale`; `enc_layer_output_scale` is strictly for encoder mode.
+* **Slots 14–15** — The attention residual $x_{\text{mid}}$ is added to slot 13 output (slot 14), and the layer output is scaled by `blk.{l}.layer_output_scale.weight` (slot 15). In the unified forward pass over $[0 \dots P+C-1]$, prompt positions ($t < P$) are scaled by `blk.{l}.enc_layer_output_scale.weight` and canvas positions ($t \ge P$) are scaled by `blk.{l}.layer_output_scale.weight` (`llama.cpp@3dac51dc:diffusion-gemma.cpp:575-580`, `src/infer.zig:654-658`). In two-pass execution (prefill + decode), prefill uses `enc_layer_output_scale` and decode uses `layer_output_scale`.
 
 ---
 
