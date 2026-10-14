@@ -61,7 +61,7 @@ pub const DecisionResponse = struct {
     uncertain: bool,
     /// Detailed results per candidate.
     candidates: []const CandidateResult,
-    /// Number of diffusion/forward steps executed (always 1 in v0).
+    /// Number of diffusion/forward steps executed (1..4 in adaptive multi-step execution).
     steps_executed: u32,
     /// Number of tokens evaluated up to and including the pinned answer token (prompt_len + 1).
     canvas_tokens_used: u32,

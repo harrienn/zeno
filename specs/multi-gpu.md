@@ -24,21 +24,22 @@ Zeno implements a hybrid CPU/GPU architecture: input token embedding lookups and
   - When running on a device with $\ge 24$ GB VRAM (e.g., RTX 3090, RTX 4090, A100), all 30 layers reside on Device 0 (~15.0 GB VRAM).
 * **Canvas Activation Workspace**:
   - Sequence limit $N \le 512$ is strictly enforced at the CUDA entry point.
-  - Per-device workspace requires **336,801,792 bytes (~336.80 MB / 321.20 MiB)** at $N=512$, calculated explicitly via `CudaDeviceWorkspace.activationWorkspaceBytes(512)`:
+  - Per-device workspace requires **462,661,888 bytes (~462.66 MB / 441.23 MiB)** at $N=512$, calculated explicitly via `CudaDeviceWorkspace.activationWorkspaceBytes(512)`:
 
 | Buffer Group | Buffers | Dimensions ($N=512$) | Memory (MiB / MB) |
 |---|---|---|---|
 | Embedding & Residuals | `emb_buf_0`, `emb_buf_1`, `norm_x`, `attn_out`, `dense_in`, `dense_out`, `h1`, `r_in`, `moe_in`, `moe_accum`, `h2`, `ffn_comb`, `post_ffn` | $13 \times [N \times 2816]$, FP32 | 71.50 MiB (74.97 MB) |
 | Attention Head & Projections | `q_buf`, `head_out` | $2 \times [N \times 8192]$, FP32 | 32.00 MiB (33.55 MB) |
 | Attention KV Buffers | `k_buf`, `v_buf` | $2 \times [N \times 2048]$, FP32 | 8.00 MiB (8.39 MB) |
-| Prompt KV Prefix Cache (Phase 7B) | `prompt_k_cache`, `prompt_v_cache` | $2 \times [30 \times 512 \times 1024]$, FP32 | 120.00 MiB (125.83 MB) |
+| Prompt KV Prefix Cache (Phase 7B / R26-01) | `prompt_k_cache`, `prompt_v_cache` | $2 \times [30 \times 512 \times 2048]$, FP32 | 240.00 MiB (251.66 MB) |
 | Dense FFN Scratch | `gate_buf`, `up_buf`, `geglu_buf` | $3 \times [N \times 2112]$, FP32 | 12.38 MiB (12.98 MB) |
 | MoE Router Output & Top-8 | `router_logits`, `top_indices`, `top_weights` | $[N \times 128]$ FP32 + $2 \times [N \times 8]$ | 0.28 MiB (0.30 MB) |
 | Token-Sorted MoE Metadata (Phase 7A) | `expert_counts`, `expert_offsets`, `sorted_instances`, `instance_to_sorted` | $2 \times [128]$ INT32 + $2 \times [N \times 8]$ INT32 | 0.03 MiB (0.03 MB) |
 | Batched MoE Projections | `exp_gate_up_buf`, `exp_act_buf` | $[N \times 8 \times 1408]$ FP32 + $[N \times 8 \times 704]$ FP32 | 33.00 MiB (34.60 MB) |
 | Batched MoE Down-Projection | `exp_down_buf` | $[N \times 8 \times 2816]$, FP32 | 44.00 MiB (46.14 MB) |
 | Final Output Norm Buffer | `norm_hidden` | $[1 \times 2816]$, FP32 | 0.01 MiB (0.01 MB) |
-| **Total Activation Workspace** | **33 buffers** | **All device buffers at $N=512$** | **321.20 MiB (336.80 MB)** |
+| Self-Conditioning Scratch (Phase 9) | `sc_soft_emb`, `sc_sig_buf`, `sc_geglu_buf` | $2 \times [1 \times 2816]$ FP32 + $[1 \times 2112]$ FP32 | 0.03 MiB (0.03 MB) |
+| **Total Activation Workspace** | **36 buffers** | **All device buffers at $N=512$** | **441.23 MiB (462.66 MB)** |
 
 ---
 

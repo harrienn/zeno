@@ -54,7 +54,7 @@ The decision engine strictly validates that all candidate choices resolve to sin
 | `context` | `string` | No | Unstructured application state or background text. |
 | `schema.type` | `string` | **Yes** | Decision schema: `"boolean"`, `"choice"`, or `"score"`. |
 | `schema.candidates` | object[] | **Yes** | Each item has a `token` string that resolves to one token and a user-facing `label`. Require 2–32 candidates with distinct token IDs. |
-| `options.step_cap` | `integer` | No | Version 0 supports only `1`; reject other values until multi-step semantics are specified and validated. |
+| `options.step_cap` | `integer` | No | Maximum forward/denoising steps, in `[1, 4]` (default: `1`). Single-step reads (`1`) bypass self-conditioning; multi-step reads (`2..4`) apply experimental candidate-restricted adaptive self-conditioning. If the loaded model artifact lacks self-conditioning tensors, requests with `step_cap > 1` fall back to single-step execution. |
 | `options.temperature` | `float` | No | Positive, finite logit scaling factor before candidate normalization (default: `1.0`). It does not control diffusion sampling in a one-step read. |
 | `options.entropy_threshold` | `float` | No | Optional threshold on normalized entropy, in `[0, 1]`. If omitted, `uncertain` is `false`. |
 
@@ -97,6 +97,7 @@ The decision engine strictly validates that all candidate choices resolve to sin
   $$H(P) = -\sum_{i=1}^N p_i \ln(p_i)$$
 * **`normalized_entropy`**: $H(P) / \ln(N)$, in $[0,1]$ for $N \ge 2$.
 * **`uncertain`**: Set to `true` **only when `options.entropy_threshold` was supplied** and `normalized_entropy >= entropy_threshold`. If the threshold is omitted, `uncertain` is always `false`. Entropy is a dispersion measure, not a correctness estimate. *An earlier revision of this document stated "supplied or defaulted", contradicting the field table in §3.1. The field table is normative, and this reading is corroborated by [`denoising.md`](denoising.md) §2.1. See [`UNRESOLVED.md`](UNRESOLVED.md) U-21.*
+* **`steps_executed`**: Number of diffusion/forward steps executed ($t \in [1, \text{step\_cap}]$). Single-step reads return 1. Multi-step adaptive runs terminate early if $H_{\text{norm}} < \tau_{\text{entropy}}$, returning the number of steps actually executed.
 * **`canvas_tokens_used`**: The number of prompt and answer positions, i.e. `answer_pos + 1`. It excludes the `TURN_CLOSE` and padded tail positions specified by U-02 in [`UNRESOLVED.md`](UNRESOLVED.md).
 
 ### 3.3 HTTP Error Envelope and Status Codes
@@ -127,7 +128,7 @@ All non-200 responses return a standard RFC 8259-compliant JSON error object:
 | `400 Bad Request` | `duplicate_candidate_label` | Multiple candidates share identical display labels. |
 | `400 Bad Request` | `token_not_found` | Candidate token text is not found in tokenizer vocabulary. |
 | `400 Bad Request` | `multi_token_candidate` | Candidate resolves to more than 1 vocabulary token. |
-| `400 Bad Request` | `unsupported_step_cap` | `options.step_cap` is set to any value other than 1. |
+| `400 Bad Request` | `unsupported_step_cap` | `options.step_cap` is not an integer in `[1, 4]`. |
 | `400 Bad Request` | `invalid_temperature` | Temperature is non-finite, $\le 0.0$, or NaN. |
 | `400 Bad Request` | `invalid_entropy_threshold` | Threshold is non-finite, $< 0.0$, or $> 1.0$. |
 | `400 Bad Request` | `canvas_overflow` | Rendered prompt exceeds maximum allowed prompt bytes (16 KiB) or prompt tokens (768 tokens, capping total sequence to 1024). |
@@ -238,7 +239,7 @@ The native interface returns typed errors:
 - `error.TooManyCandidates`: more than 32 candidates provided.
 - `error.DuplicateCandidateToken`: candidate options resolve to duplicate vocabulary token IDs.
 - `error.DuplicateCandidateLabel`: candidate options share identical display labels.
-- `error.UnsupportedStepCap`: `step_cap` is not 1.
+- `error.UnsupportedStepCap`: `step_cap` is not an integer in `[1, 4]`.
 - `error.InvalidTemperature`: temperature $\le 0.0$ or non-finite.
 - `error.InvalidEntropyThreshold`: threshold $< 0.0$, $> 1.0$, or non-finite.
 - `error.TokenNotFound`: candidate string absent from model vocabulary.

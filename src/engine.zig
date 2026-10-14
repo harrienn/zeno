@@ -389,6 +389,68 @@ test "DecisionEngine: end-to-end boolean decision execution on CUDA if present" 
     try std.testing.expectEqual(@as(usize, 2), resp.candidates.len);
 }
 
+test "DecisionEngine: multi-step adaptive stepping simulation logic (Phase 9 / R26-03)" {
+    // Verify entropy gating and early termination behavior without model weights
+    const cand_count: usize = 3;
+    const entropy_threshold: f32 = 0.5;
+
+    // Case 1: Step 1 is ambiguous (H_norm >= threshold), Step 2 is decisive (H_norm < threshold)
+    // Step 1: P = [0.6, 0.35, 0.05] -> H_nats ~= 0.778, H_norm ~= 0.708 (>= 0.5 -> proceed to step 2)
+    const probs_step1 = [_]f32{ 0.60, 0.35, 0.05 };
+    const h1_nats = ops.shannonEntropyNats(&probs_step1);
+    const h1_norm = ops.normalizedEntropy(h1_nats, cand_count);
+    try std.testing.expect(h1_norm >= entropy_threshold);
+
+    // Step 2: P = [0.95, 0.04, 0.01] -> H_nats ~= 0.215, H_norm ~= 0.196 (< 0.5 -> stop early)
+    const probs_step2 = [_]f32{ 0.95, 0.04, 0.01 };
+    const h2_nats = ops.shannonEntropyNats(&probs_step2);
+    const h2_norm = ops.normalizedEntropy(h2_nats, cand_count);
+    try std.testing.expect(h2_norm < entropy_threshold);
+
+    // Case 2: Step 1 is already decisive -> terminates at step 1
+    const decisive_probs = [_]f32{ 0.98, 0.01, 0.01 };
+    const h_decisive = ops.normalizedEntropy(ops.shannonEntropyNats(&decisive_probs), cand_count);
+    try std.testing.expect(h_decisive < entropy_threshold);
+}
+
+test "DecisionEngine: multi-step boolean decision execution on CUDA if present (Phase 9)" {
+    if (!root.shouldRunModelTests()) return error.SkipZigTest;
+    if (!root.cuda.is_enabled) return error.SkipZigTest;
+
+    const allocator = std.testing.allocator;
+    const model_path = "models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf";
+
+    var engine = DecisionEngine.initWithOptions(allocator, model_path, .{ .backend = .cuda }) catch |err| {
+        if (err == error.FileNotFound or err == error.NoDevice) return;
+        return err;
+    };
+    defer engine.deinit();
+
+    const candidates = [_]decision.CandidateSpec{
+        .{ .token = "Yes", .label = "Yes" },
+        .{ .token = "No", .label = "No" },
+    };
+
+    const req = DecisionRequest{
+        .query = "Is this service operating normally?",
+        .context = "Heartbeat timestamp: 2026-09-27T20:10:00Z. Errors: 0.",
+        .schema_type = .boolean,
+        .candidates = &candidates,
+        .step_cap = 2,
+        .temperature = 1.0,
+        .entropy_threshold = 0.5,
+    };
+
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+
+    const resp = try engine.decide(arena.allocator(), req);
+
+    try std.testing.expect(resp.steps_executed >= 1 and resp.steps_executed <= 2);
+    try std.testing.expect(std.mem.eql(u8, resp.decision, "Yes") or std.mem.eql(u8, resp.decision, "No"));
+    try std.testing.expect(resp.decision_probability > 0.0 and resp.decision_probability <= 1.0);
+}
+
 /// Validates total sequence length (prompt + canvas) against backend capabilities and workspace capacity (R23-04 / R24-05).
 pub fn validateSequenceLength(backend: BackendType, total_seq_len: usize, workspace_max_seq_len: usize) !void {
     switch (backend) {

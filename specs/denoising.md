@@ -30,8 +30,8 @@ The API may compare normalized candidate entropy with a caller-supplied threshol
    └── NO  ──► Ambiguous: Route to configured ambiguity resolution policy
 ```
 
-### 2.1 Initial API Policy
-The initial API supports one read. If the caller supplies an entropy threshold and normalized candidate entropy meets or exceeds it, set `uncertain: true`; otherwise return the result without claiming calibrated confidence. Multi-step policy remains disabled until specified and validated.
+### 2.1 API Policy & Stepping Bounds
+The default API policy executes a single read (`step_cap: 1`, bypasses self-conditioning). If the caller supplies an entropy threshold and normalized candidate entropy meets or exceeds it, set `uncertain: true`; otherwise return the result. When `step_cap` is configured in $[2, 4]$, the engine activates experimental candidate-restricted multi-step adaptive denoising (§6), iteratively applying self-conditioning until the query is decisive or the step cap is reached. Values outside $[1, 4]$ are rejected with `UnsupportedStepCap`.
 
 ---
 
@@ -72,26 +72,29 @@ Before implementing multi-step behavior:
 
 ## 6. Phase 9 Implementation: Adaptive Denoising & Gated Self-Conditioning
 
-### 6.1 Gated Self-Conditioning MLP Architecture ($H_{\text{sc}}$)
+> [!NOTE]
+> **Status: Experimental Decision Adaptation.** Phase 9 implements an experimental candidate-restricted decision adaptation tailored for System One classification queries, not full generative canvas sampler parity. Full reference sampler parity (vLLM PR #57250) requires multi-token canvas distributions, stochastic re-noising schedules, and token-acceptance gating across all canvas slots.
 
-In multi-step structured reads ($T \in [2, 4]$), subsequent forward passes inject a self-conditioning signal $H_{\text{sc}}$ into the canvas token embedding at answer position $p$:
+### 6.1 Gated Self-Conditioning MLP Architecture ($D_{\text{sc}}$)
+
+In multi-step structured reads ($T \in [2, 4]$), subsequent forward passes inject a self-conditioning signal $D_{\text{sc}}$ into the canvas token embedding at answer position $p$:
 
 1. **Candidate-Weighted Soft Embedding**:
    $$E_{\text{cand}} = \sum_{c=1}^{|C|} P(c) \cdot W_{\text{emb}}[t_c] \in \mathbb{R}^{d_{\text{model}}}$$
-   where $P(c)$ is the candidate softmax probability distribution from step $t-1$, and $W_{\text{emb}}[t_c]$ is the token embedding vector of candidate token $t_c$.
+   where $P(c)$ is the candidate softmax probability distribution from step $t-1$, and $W_{\text{emb}}[t_c]$ is the dequantized token embedding vector of candidate token $t_c$.
 2. **Pre-Layer Normalization**:
    $$\tilde{E} = \text{RMSNorm}(E_{\text{cand}}, w_{\text{sc\_pre\_norm}})$$
 3. **Gated Intermediate Projection & GeGLU Activation**:
    $$G = \tilde{E} \cdot W_{\text{sc\_gate}}, \quad U = \tilde{E} \cdot W_{\text{sc\_up}} \quad \in \mathbb{R}^{d_{\text{inter}}}$$
    $$M = \text{GeGLU}(G, U) = G \odot \text{GELU}_{\text{tanh}}(U)$$
    where $d_{\text{inter}} = 2112$.
-4. **Down Projection & Residual Connection**:
-   $$D = M \cdot W_{\text{sc\_down}} \in \mathbb{R}^{d_{\text{model}}}$$
-   $$R = E_{\text{cand}} + D$$
-5. **Post-Layer Normalization & Injection**:
-   $$H_{\text{sc}} = \text{RMSNorm}(R) \quad (\text{unweighted unit scaling})$$
-   At step $t > 1$, the canvas token embedding at answer position $p$ is modified as:
-   $$E_{\text{canvas}}[p] \leftarrow E_{\text{canvas}}[p] + H_{\text{sc}}$$
+4. **Down Projection**:
+   $$D_{\text{sc}} = M \cdot W_{\text{sc\_down}} \in \mathbb{R}^{d_{\text{model}}}$$
+5. **Canvas Answer Slot Injection & Post-Norm**:
+   Following `vllm@1b3b88ec:diffusion_gemma.py:103,951`, canvas embeddings receive the down-projected signal prior to the shared unweighted canvas post-norm:
+   $$E_{\text{canvas}}[p] \leftarrow E_{\text{canvas}}[p] + D_{\text{sc}}$$
+   $$E_{\text{canvas}}[i] \leftarrow \text{RMSNorm}_{\text{unweighted}}(E_{\text{canvas}}[i]) \quad \forall i \in [0, \text{canvas\_len})$$
+   (At step 1 / zero-SC, $D_{\text{sc}} = 0$, yielding standard unweighted RMSNorm of initial canvas embeddings).
 
 ### 6.2 Adaptive Early-Stopping Dynamics
 
@@ -101,7 +104,7 @@ The decision engine loops over steps $t \in [1, \text{step\_cap}]$:
 3. **Early Termination Check**:
    - If `entropy_threshold` $\tau$ is configured and $H_{\text{norm}}(P_t) < \tau$: terminate loop immediately with `uncertain: false` and `steps_executed: t`.
    - If $t = \text{step\_cap}$ and $H_{\text{norm}}(P_t) \ge \tau$: terminate loop with `uncertain: true` and `steps_executed: step_cap`.
-4. If $t < \text{step\_cap}$ and $H_{\text{norm}}(P_t) \ge \tau$: compute $H_{\text{sc}}$ from $P_t$ and propagate to step $t+1$.
+4. If $t < \text{step\_cap}$ and $H_{\text{norm}}(P_t) \ge \tau$: compute $D_{\text{sc}}$ from $P_t$ and propagate to step $t+1$.
 
 ### 6.3 Empirical Evaluation & Parity Parity (`maintenance_priority_uncertain.json`)
 

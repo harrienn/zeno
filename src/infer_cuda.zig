@@ -522,7 +522,7 @@ pub const CudaDeviceWorkspace = struct {
 
     pub const max_device_layers: usize = 30;
     pub const max_prompt_tokens: usize = 512;
-    pub const max_k_dim_cached: usize = 1024;
+    pub const max_k_dim_cached: usize = 2048; // Max across SWA (8*256=2048) and Global (2*512=1024) layers (R26-01)
     pub const cache_floats_per_layer: usize = max_prompt_tokens * max_k_dim_cached;
     pub const cache_total_floats: usize = max_device_layers * cache_floats_per_layer;
 
@@ -2653,9 +2653,61 @@ test "executeStructuredReadCuda full 30-layer forward pass on local model if pre
     }
 }
 
-test "CudaDeviceWorkspace: activationWorkspaceBytes matches audited footprint (R24-01)" {
+test "CudaDeviceWorkspace: activationWorkspaceBytes matches audited footprint (R24-01, R26-01, R26-04)" {
     const bytes_512 = CudaDeviceWorkspace.activationWorkspaceBytes(512);
-    // Audited exact byte sum for N=512: 336,832,768 bytes (~336.83 MB, 321.23 MiB)
-    try std.testing.expectEqual(@as(usize, 336832768), bytes_512);
+    // Audited exact byte sum for N=512: 462,661,888 bytes (~462.66 MB, 441.23 MiB)
+    // Includes SWA-sized prompt KV prefix cache (k_dim=2048) and Phase 9 self-conditioning scratch buffers
+    try std.testing.expectEqual(@as(usize, 462661888), bytes_512);
+}
+
+test "CudaDeviceWorkspace: prompt KV cache stride isolates SWA layers with long prompt (R26-01)" {
+    if (!is_enabled) return error.SkipZigTest;
+    const count = cuda.getDeviceCount() catch |err| switch (err) {
+        error.NoDevice => return error.SkipZigTest,
+        else => return err,
+    };
+    if (count == 0) return error.SkipZigTest;
+    const allocator = std.testing.allocator;
+
+    var ws = try CudaDeviceWorkspace.init(allocator, 0, 512);
+    defer ws.deinit();
+
+    // Exercise prompt length > 256 tokens with SWA k_dim = 2048 (e.g. 270 tokens)
+    const prompt_len: usize = 270;
+    const swa_k_dim: usize = 2048;
+    const floats_per_layer = prompt_len * swa_k_dim; // 552,960 floats
+
+    const host_pattern = try allocator.alloc(f32, floats_per_layer);
+    defer allocator.free(host_pattern);
+
+    // Fill layer 0 with pattern 1.0f
+    @memset(host_pattern, 1.0);
+    const l0_offset = 0 * CudaDeviceWorkspace.cache_floats_per_layer;
+    const l0_k = try ws.prompt_k_cache.slice().subslice(l0_offset, floats_per_layer);
+    try l0_k.copyFromHost(host_pattern);
+
+    // Fill layer 1 with pattern 2.0f
+    @memset(host_pattern, 2.0);
+    const l1_offset = 1 * CudaDeviceWorkspace.cache_floats_per_layer;
+    const l1_k = try ws.prompt_k_cache.slice().subslice(l1_offset, floats_per_layer);
+    try l1_k.copyFromHost(host_pattern);
+
+    // Verify layer 0 remained completely untouched (no overlap or corruption from layer 1 write)
+    const host_check_l0 = try allocator.alloc(f32, floats_per_layer);
+    defer allocator.free(host_check_l0);
+    try l0_k.copyToHost(host_check_l0);
+
+    for (host_check_l0) |val| {
+        try std.testing.expectEqual(@as(f32, 1.0), val);
+    }
+
+    // Verify layer 1 is completely intact
+    const host_check_l1 = try allocator.alloc(f32, floats_per_layer);
+    defer allocator.free(host_check_l1);
+    try l1_k.copyToHost(host_check_l1);
+
+    for (host_check_l1) |val| {
+        try std.testing.expectEqual(@as(f32, 2.0), val);
+    }
 }
 
