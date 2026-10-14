@@ -81,4 +81,10 @@ __device__ inline void precompute_q4k_scales(
     }
 }
 
+__device__ inline float gelu_tanh_scalar(float x) {
+    const float sqrt_2_over_pi = 0.7978845608f;
+    float inner = sqrt_2_over_pi * (x + 0.044715f * x * x * x);
+    return 0.5f * x * (1.0f + tanhf(inner));
+}
+
 #endif // ZENO_QUANT_TYPES_CUH

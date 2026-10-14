@@ -199,6 +199,17 @@ pub const c = if (is_enabled) struct {
         device_id: c_int,
         stream: ?*anyopaque,
     ) c_int;
+    pub extern "c" fn zeno_cuda_dense_gate_up_geglu_q4k(
+        W_gate: *const anyopaque,
+        W_up: *const anyopaque,
+        x: [*]const f32,
+        out_geglu: [*]f32,
+        out_dim: c_int,
+        in_dim: c_int,
+        batch_size: c_int,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
 
     // Stage 4 Unified Attention & MoE Execution ABI
     pub extern "c" fn zeno_cuda_attention(

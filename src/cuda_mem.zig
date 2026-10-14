@@ -685,6 +685,62 @@ pub fn gemvQ4_K(
     if (rc != 0) return cuda.mapCudaErrorCode(rc);
 }
 
+/// Fused dense FFN Gate + Up projections and GeGLU activation:
+/// out_geglu = GeGLU(W_gate * x, W_up * x)
+/// W_gate, W_up: DeviceSlice(u8) representing row-major BlockQ4_K blocks of shape [out_dim, in_dim]
+/// x: DeviceSlice(f32) of length batch_size * in_dim
+/// out_geglu: DeviceSlice(f32) of length batch_size * out_dim
+pub fn denseGateUpGegluQ4_K(
+    w_gate: DeviceSlice(u8),
+    w_up: DeviceSlice(u8),
+    x: DeviceSlice(f32),
+    out_geglu: DeviceSlice(f32),
+    out_dim: usize,
+    in_dim: usize,
+    batch_size: usize,
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (out_dim == 0 or in_dim == 0 or batch_size == 0) return error.InvalidParam;
+    if (in_dim % quant.QK_K != 0) return error.InvalidParam;
+    if (out_dim > std.math.maxInt(c_int) or in_dim > std.math.maxInt(c_int) or batch_size > 65535) {
+        return error.InvalidParam;
+    }
+
+    const blocks_per_row = in_dim / quant.QK_K;
+    const bytes_per_row = blocks_per_row * @sizeOf(quant.BlockQ4_K);
+    const expected_w_bytes = std.math.mul(usize, out_dim, bytes_per_row) catch return error.InvalidParam;
+    const expected_x_len = std.math.mul(usize, batch_size, in_dim) catch return error.InvalidParam;
+    const expected_out_len = std.math.mul(usize, batch_size, out_dim) catch return error.InvalidParam;
+
+    if (w_gate.len != expected_w_bytes or w_up.len != expected_w_bytes or x.len != expected_x_len or out_geglu.len != expected_out_len) {
+        return error.InvalidParam;
+    }
+    if (w_gate.device_id != x.device_id or w_gate.device_id != w_up.device_id or w_gate.device_id != out_geglu.device_id) return error.DeviceMismatch;
+    if (stream) |s| {
+        if (s.device_id != w_gate.device_id) return error.DeviceMismatch;
+    }
+
+    const w_gate_ptr = w_gate.ptr orelse return error.InvalidParam;
+    const w_up_ptr = w_up.ptr orelse return error.InvalidParam;
+    const x_ptr = x.ptr orelse return error.InvalidParam;
+    const out_ptr = out_geglu.ptr orelse return error.InvalidParam;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_dense_gate_up_geglu_q4k(
+        w_gate_ptr,
+        w_up_ptr,
+        x_ptr,
+        out_ptr,
+        @intCast(out_dim),
+        @intCast(in_dim),
+        @intCast(batch_size),
+        w_gate.device_id,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
 /// Matrix-vector multiplication for Q6_K quantized weights: out = W * x
 /// w: DeviceSlice(u8) representing row-major BlockQ6_K blocks
 /// x: DeviceSlice(f32) of length batch_size * in_dim
@@ -3527,6 +3583,253 @@ test "CudaGraph cancelCapture resets stream capture state (R24-02)" {
 
     for (host_x, gpu_out) |h, g| {
         try std.testing.expectEqual(h, g);
+    }
+}
+
+test "CUDA Stage 8A: 16x token-tiled batched GEMVs numerical parity" {
+    if (!cuda.is_enabled) return;
+    const dev = requireHardwareDevice() catch |err| switch (err) {
+        error.SkipZigTest => return,
+        else => return err,
+    };
+
+    const allocator = std.testing.allocator;
+    var prng = std.Random.DefaultPrng.init(0x313658);
+    const rand = prng.random();
+
+    const out_dim: usize = 16;
+    const in_dim: usize = 256;
+    const batch_size: usize = 16;
+
+    // 1. Test Q8_0 16x Batched GEMV
+    {
+        const blocks_per_row = in_dim / quant.QK8_0; // 8
+        const total_blocks = out_dim * blocks_per_row;
+        const host_w = try allocator.alloc(quant.BlockQ8_0, total_blocks);
+        defer allocator.free(host_w);
+        for (host_w) |*blk| {
+            blk.d = @floatCast((rand.float(f32) * 0.3) + 0.1);
+            for (&blk.qs) |*q| q.* = rand.intRangeAtMost(i8, -100, 100);
+        }
+
+        const host_x = try allocator.alloc(f32, batch_size * in_dim);
+        defer allocator.free(host_x);
+        for (host_x) |*x| x.* = (rand.float(f32) * 3.0) - 1.5;
+
+        var d_w = try DeviceBuffer(u8).init(dev, std.mem.sliceAsBytes(host_w).len);
+        defer d_w.deinit();
+        try d_w.copyFromHost(std.mem.sliceAsBytes(host_w));
+
+        var d_x = try DeviceBuffer(f32).init(dev, host_x.len);
+        defer d_x.deinit();
+        try d_x.copyFromHost(host_x);
+
+        var d_out = try DeviceBuffer(f32).init(dev, batch_size * out_dim);
+        defer d_out.deinit();
+
+        try gemvQ8_0(d_w.slice(), d_x.slice(), d_out.slice(), out_dim, in_dim, batch_size, null);
+
+        const gpu_out = try allocator.alloc(f32, batch_size * out_dim);
+        defer allocator.free(gpu_out);
+        try d_out.copyToHost(gpu_out);
+
+        for (0..batch_size) |b| {
+            const x_sub = host_x[b * in_dim .. (b + 1) * in_dim];
+            var cpu_out: [16]f32 = undefined;
+            infer.gemvQ8_0(host_w.ptr, x_sub, &cpu_out, out_dim, in_dim);
+            const gpu_sub = gpu_out[b * out_dim .. (b + 1) * out_dim];
+            for (cpu_out, gpu_sub) |c, g| {
+                const diff = @abs(c - g);
+                try std.testing.expect(diff <= 1e-3 + 1e-4 * @abs(c));
+            }
+        }
+    }
+
+    // 2. Test Q4_K 16x Batched GEMV
+    {
+        const blocks_per_row = in_dim / quant.QK_K; // 1
+        const total_blocks = out_dim * blocks_per_row;
+        const host_w = try allocator.alloc(quant.BlockQ4_K, total_blocks);
+        defer allocator.free(host_w);
+        for (host_w) |*blk| {
+            blk.d = @floatCast((rand.float(f32) * 0.2) + 0.05);
+            blk.dmin = @floatCast((rand.float(f32) * 0.1) + 0.01);
+            for (&blk.scales) |*s| s.* = rand.intRangeAtMost(u8, 1, 63);
+            for (&blk.qs) |*q| q.* = rand.intRangeAtMost(u8, 0, 255);
+        }
+
+        const host_x = try allocator.alloc(f32, batch_size * in_dim);
+        defer allocator.free(host_x);
+        for (host_x) |*x| x.* = (rand.float(f32) * 2.0) - 1.0;
+
+        var d_w = try DeviceBuffer(u8).init(dev, std.mem.sliceAsBytes(host_w).len);
+        defer d_w.deinit();
+        try d_w.copyFromHost(std.mem.sliceAsBytes(host_w));
+
+        var d_x = try DeviceBuffer(f32).init(dev, host_x.len);
+        defer d_x.deinit();
+        try d_x.copyFromHost(host_x);
+
+        var d_out = try DeviceBuffer(f32).init(dev, batch_size * out_dim);
+        defer d_out.deinit();
+
+        try gemvQ4_K(d_w.slice(), d_x.slice(), d_out.slice(), out_dim, in_dim, batch_size, null);
+
+        const gpu_out = try allocator.alloc(f32, batch_size * out_dim);
+        defer allocator.free(gpu_out);
+        try d_out.copyToHost(gpu_out);
+
+        for (0..batch_size) |b| {
+            const x_sub = host_x[b * in_dim .. (b + 1) * in_dim];
+            var cpu_out: [16]f32 = undefined;
+            infer.gemvQ4_K(host_w.ptr, x_sub, &cpu_out, out_dim, in_dim);
+            const gpu_sub = gpu_out[b * out_dim .. (b + 1) * out_dim];
+            for (cpu_out, gpu_sub) |c, g| {
+                const diff = @abs(c - g);
+                try std.testing.expect(diff <= 1e-3 + 1e-4 * @abs(c));
+            }
+        }
+    }
+
+    // 3. Test Q6_K 16x Batched GEMV
+    {
+        const blocks_per_row = in_dim / quant.QK_K; // 1
+        const total_blocks = out_dim * blocks_per_row;
+        const host_w = try allocator.alloc(quant.BlockQ6_K, total_blocks);
+        defer allocator.free(host_w);
+        for (host_w) |*blk| {
+            blk.d = @floatCast((rand.float(f32) * 0.2) + 0.05);
+            for (&blk.scales) |*s| s.* = rand.intRangeAtMost(i8, -32, 31);
+            for (&blk.ql) |*q| q.* = rand.intRangeAtMost(u8, 0, 255);
+            for (&blk.qh) |*q| q.* = rand.intRangeAtMost(u8, 0, 255);
+        }
+
+        const host_x = try allocator.alloc(f32, batch_size * in_dim);
+        defer allocator.free(host_x);
+        for (host_x) |*x| x.* = (rand.float(f32) * 2.0) - 1.0;
+
+        var d_w = try DeviceBuffer(u8).init(dev, std.mem.sliceAsBytes(host_w).len);
+        defer d_w.deinit();
+        try d_w.copyFromHost(std.mem.sliceAsBytes(host_w));
+
+        var d_x = try DeviceBuffer(f32).init(dev, host_x.len);
+        defer d_x.deinit();
+        try d_x.copyFromHost(host_x);
+
+        var d_out = try DeviceBuffer(f32).init(dev, batch_size * out_dim);
+        defer d_out.deinit();
+
+        try gemvQ6_K(d_w.slice(), d_x.slice(), d_out.slice(), out_dim, in_dim, batch_size, null);
+
+        const gpu_out = try allocator.alloc(f32, batch_size * out_dim);
+        defer allocator.free(gpu_out);
+        try d_out.copyToHost(gpu_out);
+
+        for (0..batch_size) |b| {
+            const x_sub = host_x[b * in_dim .. (b + 1) * in_dim];
+            var cpu_out: [16]f32 = undefined;
+            infer.gemvQ6_K(host_w.ptr, x_sub, &cpu_out, out_dim, in_dim);
+            const gpu_sub = gpu_out[b * out_dim .. (b + 1) * out_dim];
+            for (cpu_out, gpu_sub) |c, g| {
+                const diff = @abs(c - g);
+                try std.testing.expect(diff <= 1e-3 + 1e-4 * @abs(c));
+            }
+        }
+    }
+}
+
+test "CUDA Stage 8B: Fused Dense Gate+Up+GeGLU Q4_K parity against separate GEMV + GeGLU" {
+    if (!cuda.is_enabled) return;
+    const dev = requireHardwareDevice() catch |err| switch (err) {
+        error.SkipZigTest => return,
+        else => return err,
+    };
+
+    const allocator = std.testing.allocator;
+    var prng = std.Random.DefaultPrng.init(0x465553);
+    const rand = prng.random();
+
+    const out_dim: usize = 32;
+    const in_dim: usize = 256;
+    const batch_size: usize = 16;
+    const blocks_per_row = in_dim / quant.QK_K; // 1
+    const total_blocks = out_dim * blocks_per_row;
+
+    const host_w_gate = try allocator.alloc(quant.BlockQ4_K, total_blocks);
+    defer allocator.free(host_w_gate);
+    for (host_w_gate) |*blk| {
+        blk.d = @floatCast((rand.float(f32) * 0.2) + 0.05);
+        blk.dmin = @floatCast((rand.float(f32) * 0.1) + 0.01);
+        for (&blk.scales) |*s| s.* = rand.intRangeAtMost(u8, 1, 63);
+        for (&blk.qs) |*q| q.* = rand.intRangeAtMost(u8, 0, 255);
+    }
+
+    const host_w_up = try allocator.alloc(quant.BlockQ4_K, total_blocks);
+    defer allocator.free(host_w_up);
+    for (host_w_up) |*blk| {
+        blk.d = @floatCast((rand.float(f32) * 0.2) + 0.05);
+        blk.dmin = @floatCast((rand.float(f32) * 0.1) + 0.01);
+        for (&blk.scales) |*s| s.* = rand.intRangeAtMost(u8, 1, 63);
+        for (&blk.qs) |*q| q.* = rand.intRangeAtMost(u8, 0, 255);
+    }
+
+    const host_x = try allocator.alloc(f32, batch_size * in_dim);
+    defer allocator.free(host_x);
+    for (host_x) |*x| x.* = (rand.float(f32) * 2.0) - 1.0;
+
+    var d_w_gate = try DeviceBuffer(u8).init(dev, std.mem.sliceAsBytes(host_w_gate).len);
+    defer d_w_gate.deinit();
+    try d_w_gate.copyFromHost(std.mem.sliceAsBytes(host_w_gate));
+
+    var d_w_up = try DeviceBuffer(u8).init(dev, std.mem.sliceAsBytes(host_w_up).len);
+    defer d_w_up.deinit();
+    try d_w_up.copyFromHost(std.mem.sliceAsBytes(host_w_up));
+
+    var d_x = try DeviceBuffer(f32).init(dev, host_x.len);
+    defer d_x.deinit();
+    try d_x.copyFromHost(host_x);
+
+    // 1. Fused execution
+    var d_fused_out = try DeviceBuffer(f32).init(dev, batch_size * out_dim);
+    defer d_fused_out.deinit();
+
+    try denseGateUpGegluQ4_K(
+        d_w_gate.slice(),
+        d_w_up.slice(),
+        d_x.slice(),
+        d_fused_out.slice(),
+        out_dim,
+        in_dim,
+        batch_size,
+        null,
+    );
+
+    // 2. Separate reference execution (gemv gate -> gemv up -> geglu)
+    var d_gate_out = try DeviceBuffer(f32).init(dev, batch_size * out_dim);
+    defer d_gate_out.deinit();
+    var d_up_out = try DeviceBuffer(f32).init(dev, batch_size * out_dim);
+    defer d_up_out.deinit();
+    var d_ref_out = try DeviceBuffer(f32).init(dev, batch_size * out_dim);
+    defer d_ref_out.deinit();
+
+    try gemvQ4_K(d_w_gate.slice(), d_x.slice(), d_gate_out.slice(), out_dim, in_dim, batch_size, null);
+    try gemvQ4_K(d_w_up.slice(), d_x.slice(), d_up_out.slice(), out_dim, in_dim, batch_size, null);
+    try geglu(d_gate_out.slice(), d_up_out.slice(), d_ref_out.slice(), null);
+
+    // 3. Compare outputs
+    const fused_host = try allocator.alloc(f32, batch_size * out_dim);
+    defer allocator.free(fused_host);
+    try d_fused_out.copyToHost(fused_host);
+
+    const ref_host = try allocator.alloc(f32, batch_size * out_dim);
+    defer allocator.free(ref_host);
+    try d_ref_out.copyToHost(ref_host);
+
+    var max_diff: f32 = 0.0;
+    for (fused_host, ref_host) |f, r| {
+        const diff = @abs(f - r);
+        if (diff > max_diff) max_diff = diff;
+        try std.testing.expect(diff <= 1e-4 + 1e-4 * @abs(r));
     }
 }
 

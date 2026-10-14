@@ -45,6 +45,8 @@ pub fn getExactTensorSlice(cpu_model: DiffusionGemmaModel, tensor: gguf.TensorIn
     return raw[0..size];
 }
 
+pub const GGML_TYPE_Q4_K: u32 = 12;
+
 pub fn gemvTensorCuda(
     ggml_type: u32,
     w: DeviceSlice(u8),
@@ -852,13 +854,26 @@ pub fn runLayerCuda(
     const dense_in_slice = try ws.dense_in.slice().subslice(0, emb_elements);
     try cuda_mem.rmsNorm(x_mid, layer.ffn_norm.slice(), dense_in_slice, num_tokens, ModelConfig.embedding_dim, 1e-6, stream);
 
-    const gate_slice = try ws.gate_buf.slice().subslice(0, num_tokens * 2112);
-    const up_slice = try ws.up_buf.slice().subslice(0, num_tokens * 2112);
     const geglu_slice = try ws.geglu_buf.slice().subslice(0, num_tokens * 2112);
 
-    try gemvTensorCuda(layer.ffn_gate_type, layer.ffn_gate.slice(), dense_in_slice, gate_slice, 2112, ModelConfig.embedding_dim, num_tokens, stream);
-    try gemvTensorCuda(layer.ffn_up_type, layer.ffn_up.slice(), dense_in_slice, up_slice, 2112, ModelConfig.embedding_dim, num_tokens, stream);
-    try cuda_mem.geglu(gate_slice, up_slice, geglu_slice, stream);
+    if (layer.ffn_gate_type == GGML_TYPE_Q4_K and layer.ffn_up_type == GGML_TYPE_Q4_K) {
+        try cuda_mem.denseGateUpGegluQ4_K(
+            layer.ffn_gate.slice(),
+            layer.ffn_up.slice(),
+            dense_in_slice,
+            geglu_slice,
+            2112,
+            ModelConfig.embedding_dim,
+            num_tokens,
+            stream,
+        );
+    } else {
+        const gate_slice = try ws.gate_buf.slice().subslice(0, num_tokens * 2112);
+        const up_slice = try ws.up_buf.slice().subslice(0, num_tokens * 2112);
+        try gemvTensorCuda(layer.ffn_gate_type, layer.ffn_gate.slice(), dense_in_slice, gate_slice, 2112, ModelConfig.embedding_dim, num_tokens, stream);
+        try gemvTensorCuda(layer.ffn_up_type, layer.ffn_up.slice(), dense_in_slice, up_slice, 2112, ModelConfig.embedding_dim, num_tokens, stream);
+        try cuda_mem.geglu(gate_slice, up_slice, geglu_slice, stream);
+    }
 
     const dense_out_slice = try ws.dense_out.slice().subslice(0, emb_elements);
     const h1_slice = try ws.h1.slice().subslice(0, emb_elements);
@@ -1058,13 +1073,26 @@ pub fn runLayerCanvasCuda(
     const dense_in_slice = try ws.dense_in.slice().subslice(0, emb_elements);
     try cuda_mem.rmsNorm(x_mid, layer.ffn_norm.slice(), dense_in_slice, canvas_len, ModelConfig.embedding_dim, 1e-6, stream);
 
-    const gate_slice = try ws.gate_buf.slice().subslice(0, canvas_len * 2112);
-    const up_slice = try ws.up_buf.slice().subslice(0, canvas_len * 2112);
     const geglu_slice = try ws.geglu_buf.slice().subslice(0, canvas_len * 2112);
 
-    try gemvTensorCuda(layer.ffn_gate_type, layer.ffn_gate.slice(), dense_in_slice, gate_slice, 2112, ModelConfig.embedding_dim, canvas_len, stream);
-    try gemvTensorCuda(layer.ffn_up_type, layer.ffn_up.slice(), dense_in_slice, up_slice, 2112, ModelConfig.embedding_dim, canvas_len, stream);
-    try cuda_mem.geglu(gate_slice, up_slice, geglu_slice, stream);
+    if (layer.ffn_gate_type == GGML_TYPE_Q4_K and layer.ffn_up_type == GGML_TYPE_Q4_K) {
+        try cuda_mem.denseGateUpGegluQ4_K(
+            layer.ffn_gate.slice(),
+            layer.ffn_up.slice(),
+            dense_in_slice,
+            geglu_slice,
+            2112,
+            ModelConfig.embedding_dim,
+            canvas_len,
+            stream,
+        );
+    } else {
+        const gate_slice = try ws.gate_buf.slice().subslice(0, canvas_len * 2112);
+        const up_slice = try ws.up_buf.slice().subslice(0, canvas_len * 2112);
+        try gemvTensorCuda(layer.ffn_gate_type, layer.ffn_gate.slice(), dense_in_slice, gate_slice, 2112, ModelConfig.embedding_dim, canvas_len, stream);
+        try gemvTensorCuda(layer.ffn_up_type, layer.ffn_up.slice(), dense_in_slice, up_slice, 2112, ModelConfig.embedding_dim, canvas_len, stream);
+        try cuda_mem.geglu(gate_slice, up_slice, geglu_slice, stream);
+    }
 
     const dense_out_slice = try ws.dense_out.slice().subslice(0, emb_elements);
     const h1_slice = try ws.h1.slice().subslice(0, emb_elements);

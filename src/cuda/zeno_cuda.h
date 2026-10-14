@@ -168,6 +168,17 @@ int zeno_cuda_gemv_f32(
     int device_id,
     void *stream
 );
+int zeno_cuda_dense_gate_up_geglu_q4k(
+    const void *W_gate,
+    const void *W_up,
+    const float *x,
+    float *out_geglu,
+    int out_dim,
+    int in_dim,
+    int batch_size,
+    int device_id,
+    void *stream
+);
 
 // Stage 4 Unified Attention & MoE Execution ABI
 int zeno_cuda_attention(
