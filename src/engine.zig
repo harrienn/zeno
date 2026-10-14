@@ -191,6 +191,14 @@ pub const DecisionEngine = struct {
 
         var prev_probs: ?[]f32 = null;
         if (req.step_cap > 1) {
+            if (!self.model.hasSelfConditioning()) {
+                return error.MissingSelfCondTensor;
+            }
+            if (self.backend == .cuda) {
+                if (self.cuda_model) |cm| {
+                    if (!cm.hasSelfConditioning()) return error.MissingSelfCondTensor;
+                }
+            }
             prev_probs = try request_allocator.alloc(f32, cand_count);
         }
         defer if (prev_probs) |p| request_allocator.free(p);
@@ -389,31 +397,65 @@ test "DecisionEngine: end-to-end boolean decision execution on CUDA if present" 
     try std.testing.expectEqual(@as(usize, 2), resp.candidates.len);
 }
 
-test "DecisionEngine: multi-step adaptive stepping simulation logic (Phase 9 / R26-03)" {
-    // Verify entropy gating and early termination behavior without model weights
-    const cand_count: usize = 3;
-    const entropy_threshold: f32 = 0.5;
+test "DecisionEngine: adaptive early stopping stepping loop state machine (R27-03)" {
+    const StepOutcome = struct {
+        probs: []const f32,
+    };
 
-    // Case 1: Step 1 is ambiguous (H_norm >= threshold), Step 2 is decisive (H_norm < threshold)
-    // Step 1: P = [0.6, 0.35, 0.05] -> H_nats ~= 0.778, H_norm ~= 0.708 (>= 0.5 -> proceed to step 2)
-    const probs_step1 = [_]f32{ 0.60, 0.35, 0.05 };
-    const h1_nats = ops.shannonEntropyNats(&probs_step1);
-    const h1_norm = ops.normalizedEntropy(h1_nats, cand_count);
-    try std.testing.expect(h1_norm >= entropy_threshold);
+    const runLoop = struct {
+        fn execute(step_cap: u32, threshold: ?f32, outcomes: []const StepOutcome) struct { steps: u32, uncertain: bool, prev_probs_updated: bool } {
+            var steps_executed: u32 = 0;
+            var uncertain: bool = false;
+            var prev_probs_updated = false;
 
-    // Step 2: P = [0.95, 0.04, 0.01] -> H_nats ~= 0.215, H_norm ~= 0.196 (< 0.5 -> stop early)
-    const probs_step2 = [_]f32{ 0.95, 0.04, 0.01 };
-    const h2_nats = ops.shannonEntropyNats(&probs_step2);
-    const h2_norm = ops.normalizedEntropy(h2_nats, cand_count);
-    try std.testing.expect(h2_norm < entropy_threshold);
+            while (steps_executed < step_cap) {
+                const cur_outcome = outcomes[steps_executed];
+                steps_executed += 1;
 
-    // Case 2: Step 1 is already decisive -> terminates at step 1
-    const decisive_probs = [_]f32{ 0.98, 0.01, 0.01 };
-    const h_decisive = ops.normalizedEntropy(ops.shannonEntropyNats(&decisive_probs), cand_count);
-    try std.testing.expect(h_decisive < entropy_threshold);
+                const h_nats = ops.shannonEntropyNats(cur_outcome.probs);
+                const h_norm = ops.normalizedEntropy(h_nats, cur_outcome.probs.len);
+
+                uncertain = if (threshold) |th| (h_norm >= th) else false;
+
+                if (threshold) |th| {
+                    if (h_norm < th) break;
+                }
+
+                if (steps_executed < step_cap) {
+                    prev_probs_updated = true;
+                }
+            }
+
+            return .{ .steps = steps_executed, .uncertain = uncertain, .prev_probs_updated = prev_probs_updated };
+        }
+    }.execute;
+
+    const p_ambiguous = [_]f32{ 0.60, 0.35, 0.05 }; // H_norm ~= 0.708 (>= 0.5)
+    const p_decisive = [_]f32{ 0.95, 0.04, 0.01 }; // H_norm ~= 0.196 (< 0.5)
+
+    // Scenario 1: Step 1 ambiguous, Step 2 decisive, step_cap = 3 -> terminates at step 2 (early stopping)
+    const outcomes1 = [_]StepOutcome{ .{ .probs = &p_ambiguous }, .{ .probs = &p_decisive }, .{ .probs = &p_decisive } };
+    const res1 = runLoop(3, 0.5, &outcomes1);
+    try std.testing.expectEqual(@as(u32, 2), res1.steps);
+    try std.testing.expectEqual(false, res1.uncertain);
+    try std.testing.expectEqual(true, res1.prev_probs_updated);
+
+    // Scenario 2: Step 1 already decisive, step_cap = 4 -> terminates immediately at step 1
+    const outcomes2 = [_]StepOutcome{ .{ .probs = &p_decisive }, .{ .probs = &p_ambiguous } };
+    const res2 = runLoop(4, 0.5, &outcomes2);
+    try std.testing.expectEqual(@as(u32, 1), res2.steps);
+    try std.testing.expectEqual(false, res2.uncertain);
+    try std.testing.expectEqual(false, res2.prev_probs_updated);
+
+    // Scenario 3: All steps ambiguous, step_cap = 2 -> exhausts cap, uncertain=true
+    const outcomes3 = [_]StepOutcome{ .{ .probs = &p_ambiguous }, .{ .probs = &p_ambiguous } };
+    const res3 = runLoop(2, 0.5, &outcomes3);
+    try std.testing.expectEqual(@as(u32, 2), res3.steps);
+    try std.testing.expectEqual(true, res3.uncertain);
+    try std.testing.expectEqual(true, res3.prev_probs_updated);
 }
 
-test "DecisionEngine: multi-step boolean decision execution on CUDA if present (Phase 9)" {
+test "DecisionEngine: multi-step decision execution on CUDA if present (Phase 9 / R27-03)" {
     if (!root.shouldRunModelTests()) return error.SkipZigTest;
     if (!root.cuda.is_enabled) return error.SkipZigTest;
 
@@ -426,17 +468,19 @@ test "DecisionEngine: multi-step boolean decision execution on CUDA if present (
     };
     defer engine.deinit();
 
+    // Use ambiguous maintenance fixture: step 1 produces H_norm ~ 0.596 (uncertain), step 2 produces H_norm ~ 0.140 (decisive)
     const candidates = [_]decision.CandidateSpec{
-        .{ .token = "Yes", .label = "Yes" },
-        .{ .token = "No", .label = "No" },
+        .{ .token = "Low", .label = "Low" },
+        .{ .token = "Medium", .label = "Medium" },
+        .{ .token = "High", .label = "High" },
     };
 
-    const req = DecisionRequest{
-        .query = "Is this service operating normally?",
-        .context = "Heartbeat timestamp: 2026-09-27T20:10:00Z. Errors: 0.",
-        .schema_type = .boolean,
+    var req = DecisionRequest{
+        .query = "What is the priority level of this maintenance event?",
+        .context = "Routine index reorganization scheduled for customer analytics warehouse. Query latency expected to elevate by 10% for analytics queries only during off-peak window. Production OLTP databases are entirely unaffected.\n",
+        .schema_type = .choice,
         .candidates = &candidates,
-        .step_cap = 2,
+        .step_cap = 1,
         .temperature = 1.0,
         .entropy_threshold = 0.5,
     };
@@ -444,11 +488,23 @@ test "DecisionEngine: multi-step boolean decision execution on CUDA if present (
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
 
-    const resp = try engine.decide(arena.allocator(), req);
+    // 1. Single-step execution on ambiguous query: must execute exactly 1 step and report uncertain=true
+    const resp1 = try engine.decide(arena.allocator(), req);
+    try std.testing.expectEqual(@as(u32, 1), resp1.steps_executed);
+    try std.testing.expectEqual(true, resp1.uncertain);
 
-    try std.testing.expect(resp.steps_executed >= 1 and resp.steps_executed <= 2);
-    try std.testing.expect(std.mem.eql(u8, resp.decision, "Yes") or std.mem.eql(u8, resp.decision, "No"));
-    try std.testing.expect(resp.decision_probability > 0.0 and resp.decision_probability <= 1.0);
+    // 2. Multi-step execution with step_cap=2: step 1 is ambiguous, step 2 is decisive -> must execute 2 steps and report uncertain=false
+    req.step_cap = 2;
+    const resp2 = try engine.decide(arena.allocator(), req);
+    try std.testing.expectEqual(@as(u32, 2), resp2.steps_executed);
+    try std.testing.expectEqual(false, resp2.uncertain);
+    try std.testing.expect(std.mem.eql(u8, resp2.decision, "Low"));
+
+    // 3. Multi-step execution with step_cap=3: proves adaptive early stopping at step 2 (step 3 is skipped)
+    req.step_cap = 3;
+    const resp3 = try engine.decide(arena.allocator(), req);
+    try std.testing.expectEqual(@as(u32, 2), resp3.steps_executed);
+    try std.testing.expectEqual(false, resp3.uncertain);
 }
 
 /// Validates total sequence length (prompt + canvas) against backend capabilities and workspace capacity (R23-04 / R24-05).

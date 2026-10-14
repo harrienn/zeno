@@ -78,6 +78,14 @@ pub const DiffusionGemmaModel = struct {
     // 30 transformer layers
     layers: [ModelConfig.num_layers]TransformerLayer,
 
+    /// Returns true if all four self-conditioning tensors required for multi-step execution are present.
+    pub fn hasSelfConditioning(self: DiffusionGemmaModel) bool {
+        return self.self_cond_pre_norm != null and
+            self.self_cond_down != null and
+            self.self_cond_gate != null and
+            self.self_cond_up != null;
+    }
+
     /// Loads and memory-maps a DiffusionGemma model from a GGUF file path.
     pub fn loadFromFile(allocator: std.mem.Allocator, path: []const u8) !DiffusionGemmaModel {
         const fd = posix.openat(posix.AT.FDCWD, path, .{ .ACCMODE = .RDONLY }, 0) catch {

@@ -342,6 +342,14 @@ pub const CudaModel = struct {
     sc_up: ?DeviceBuffer(u8),
     sc_down: ?DeviceBuffer(u8),
 
+    /// Returns true if all four self-conditioning tensor buffers are resident on Device 0.
+    pub fn hasSelfConditioning(self: CudaModel) bool {
+        return self.sc_pre_norm != null and
+            self.sc_gate != null and
+            self.sc_up != null and
+            self.sc_down != null;
+    }
+
     pub fn initFromCpuModel(allocator: std.mem.Allocator, cpu_model: DiffusionGemmaModel, force_single_gpu: bool) !*CudaModel {
         if (!is_enabled) return error.CudaDisabledAtBuild;
         const topo = try cuda.getTopology();

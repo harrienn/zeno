@@ -1099,7 +1099,8 @@ pub fn executeStructuredReadSlice(
         const row = emb_buffer[(P + i) * ModelConfig.embedding_dim .. (P + i + 1) * ModelConfig.embedding_dim];
         quant.dequantizeRowQ6_K(blocks, row);
         for (row) |*val| val.* *= emb_scale;
-        if (i == answer_pos and candidate_probs != null and model.self_cond_pre_norm != null) {
+        if (i == answer_pos and candidate_probs != null) {
+            if (!model.hasSelfConditioning()) return error.MissingSelfCondTensor;
             const sc_sig = try computeSelfConditioningSignal(ws, model, candidate_token_ids, candidate_probs.?);
             for (row, sc_sig) |*r, s| {
                 r.* += s;
