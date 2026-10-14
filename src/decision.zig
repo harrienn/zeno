@@ -37,7 +37,7 @@ pub const DecisionRequest = struct {
     schema_type: SchemaType,
     /// Candidate options (must contain between 2 and 32 items).
     candidates: []const CandidateSpec,
-    /// Max diffusion steps. Version 0 only supports 1.
+    /// Max diffusion steps (1..4).
     step_cap: u32 = 1,
     /// Positive, finite logit scaling factor before candidate normalization.
     temperature: f32 = 1.0,
@@ -91,7 +91,7 @@ pub fn validateRequest(req: DecisionRequest) ValidationError!void {
     if (req.candidates.len > 32) {
         return error.TooManyCandidates;
     }
-    if (req.step_cap != 1) {
+    if (req.step_cap < 1 or req.step_cap > 4) {
         return error.UnsupportedStepCap;
     }
     if (!std.math.isFinite(req.temperature) or req.temperature <= 0.0) {
@@ -162,18 +162,29 @@ test "validateRequest: reject duplicate tokens" {
     try std.testing.expectError(error.DuplicateCandidateToken, validateRequest(req));
 }
 
-test "validateRequest: reject unsupported step cap" {
+test "validateRequest: step_cap validation" {
     const candidates = [_]CandidateSpec{
         .{ .token = "A", .label = "Option A" },
         .{ .token = "B", .label = "Option B" },
     };
-    const req = DecisionRequest{
-        .query = "Test query",
-        .schema_type = .choice,
-        .candidates = &candidates,
-        .step_cap = 2,
-    };
-    try std.testing.expectError(error.UnsupportedStepCap, validateRequest(req));
+    for ([_]u32{ 1, 2, 3, 4 }) |valid_cap| {
+        const req = DecisionRequest{
+            .query = "Test query",
+            .schema_type = .choice,
+            .candidates = &candidates,
+            .step_cap = valid_cap,
+        };
+        try validateRequest(req);
+    }
+    for ([_]u32{ 0, 5, 8 }) |bad_cap| {
+        const req = DecisionRequest{
+            .query = "Test query",
+            .schema_type = .choice,
+            .candidates = &candidates,
+            .step_cap = bad_cap,
+        };
+        try std.testing.expectError(error.UnsupportedStepCap, validateRequest(req));
+    }
 }
 
 test "validateRequest: reject invalid temperature" {

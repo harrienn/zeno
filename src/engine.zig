@@ -176,59 +176,89 @@ pub const DecisionEngine = struct {
         const canvas = try Canvas.seedSingleStep(prompt_tokens, root.SpecialTokens.mask);
 
         // 4. Execute structured read over canvas for candidate tokens
+        // 4. Adaptive multi-step forward evaluation loop (Phase 9)
         const raw_logits = try request_allocator.alloc(f32, cand_count);
         defer request_allocator.free(raw_logits);
 
         const softcapped_logits = try request_allocator.alloc(f32, cand_count);
         defer request_allocator.free(softcapped_logits);
 
-        const canvas_len = req.canvas_length orelse root.ModelConfig.canvas_length;
-        const total_seq_len = prompt_tokens.len + canvas_len;
-
-        switch (self.backend) {
-            .cpu => {
-                const ws = self.cpu_workspace orelse return error.InvalidEngineState;
-                try validateSequenceLength(.cpu, total_seq_len, ws.max_seq_len);
-                try infer.executeStructuredReadSlice(
-                    ws,
-                    self.model,
-                    prompt_tokens,
-                    canvas.tokens[0..canvas_len],
-                    canvas.answer_pos,
-                    candidate_tokens,
-                    raw_logits,
-                    softcapped_logits,
-                );
-            },
-            .cuda => {
-                const ws = self.cuda_workspace orelse return error.InvalidEngineState;
-                const cm = self.cuda_model orelse return error.InvalidEngineState;
-                try validateSequenceLength(.cuda, total_seq_len, ws.dev0.max_seq_len);
-                try infer_cuda.executeStructuredReadCuda(
-                    ws,
-                    cm,
-                    self.model,
-                    prompt_tokens,
-                    canvas.tokens[0..canvas_len],
-                    canvas.answer_pos,
-                    candidate_tokens,
-                    raw_logits,
-                    softcapped_logits,
-                );
-            },
-        }
-
-        // 5. Candidate-restricted softmax normalization
         const probs = try request_allocator.alloc(f32, cand_count);
         defer request_allocator.free(probs);
 
-        ops.softmax(softcapped_logits, req.temperature, probs);
+        const canvas_len = req.canvas_length orelse root.ModelConfig.canvas_length;
+        const total_seq_len = prompt_tokens.len + canvas_len;
 
-        // 6. Candidate Shannon entropy in nats and normalized entropy in [0, 1]
-        const h_nats = ops.shannonEntropyNats(probs);
-        const h_norm = ops.normalizedEntropy(h_nats, cand_count);
+        var prev_probs: ?[]f32 = null;
+        if (req.step_cap > 1) {
+            prev_probs = try request_allocator.alloc(f32, cand_count);
+        }
+        defer if (prev_probs) |p| request_allocator.free(p);
 
-        const uncertain = if (req.entropy_threshold) |th| (h_norm >= th) else false;
+        var steps_executed: u32 = 0;
+        var h_nats: f32 = 0.0;
+        var h_norm: f32 = 0.0;
+        var uncertain: bool = false;
+
+        while (steps_executed < req.step_cap) {
+            const step_probs = if (steps_executed == 0) null else prev_probs;
+
+            switch (self.backend) {
+                .cpu => {
+                    const ws = self.cpu_workspace orelse return error.InvalidEngineState;
+                    try validateSequenceLength(.cpu, total_seq_len, ws.max_seq_len);
+                    try infer.executeStructuredReadSlice(
+                        ws,
+                        self.model,
+                        prompt_tokens,
+                        canvas.tokens[0..canvas_len],
+                        canvas.answer_pos,
+                        candidate_tokens,
+                        step_probs,
+                        raw_logits,
+                        softcapped_logits,
+                    );
+                },
+                .cuda => {
+                    const ws = self.cuda_workspace orelse return error.InvalidEngineState;
+                    const cm = self.cuda_model orelse return error.InvalidEngineState;
+                    try validateSequenceLength(.cuda, total_seq_len, ws.dev0.max_seq_len);
+                    try infer_cuda.executeStructuredReadCuda(
+                        ws,
+                        cm,
+                        self.model,
+                        prompt_tokens,
+                        canvas.tokens[0..canvas_len],
+                        canvas.answer_pos,
+                        candidate_tokens,
+                        step_probs,
+                        raw_logits,
+                        softcapped_logits,
+                    );
+                },
+            }
+
+            steps_executed += 1;
+
+            // 5. Candidate-restricted softmax normalization
+            ops.softmax(softcapped_logits, req.temperature, probs);
+
+            // 6. Candidate Shannon entropy in nats and normalized entropy in [0, 1]
+            h_nats = ops.shannonEntropyNats(probs);
+            h_norm = ops.normalizedEntropy(h_nats, cand_count);
+
+            uncertain = if (req.entropy_threshold) |th| (h_norm >= th) else false;
+
+            // Adaptive early stopping: if decisive (h_norm < entropy_threshold), terminate early
+            if (req.entropy_threshold) |th| {
+                if (h_norm < th) break;
+            }
+
+            // Propagate candidate probabilities as self-conditioning for subsequent step
+            if (steps_executed < req.step_cap) {
+                @memcpy(prev_probs.?, probs);
+            }
+        }
 
         // 7. Determine highest-scoring decision candidate
         var best_idx: usize = 0;
@@ -258,7 +288,7 @@ pub const DecisionEngine = struct {
             .normalized_entropy = h_norm,
             .uncertain = uncertain,
             .candidates = candidate_results,
-            .steps_executed = 1,
+            .steps_executed = steps_executed,
             .canvas_tokens_used = @intCast(canvas.prompt_len + 1),
         };
     }

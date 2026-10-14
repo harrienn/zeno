@@ -59,6 +59,8 @@ pub const ModelConfig = struct {
     pub const canvas_length: usize = 256;
     /// Transformer embedding dimension d_model.
     pub const embedding_dim: usize = 2816;
+    /// Self-conditioning intermediate FFN dimension.
+    pub const self_cond_intermediate_dim: usize = 2112;
     /// Total number of transformer layers (30 blocks).
     pub const num_layers: usize = 30;
     /// Total MoE experts per layer.

@@ -818,6 +818,12 @@ pub const InferenceWorkspace = struct {
     norm_x_buf: []f32,
     attn_out_buf: []f32,
     norm_hidden: []f32,
+    // Self-conditioning scratch buffers (Phase 9)
+    sc_soft_emb: []f32,
+    sc_gate_buf: []f32,
+    sc_up_buf: []f32,
+    sc_geglu_buf: []f32,
+    sc_sig_buf: []f32,
     worker_storage: []f32,
     worker_scratches: []WorkerScratch,
     pool: LayerPool,
@@ -860,6 +866,21 @@ pub const InferenceWorkspace = struct {
         ws.norm_hidden = try allocator.alloc(f32, ModelConfig.embedding_dim);
         errdefer allocator.free(ws.norm_hidden);
 
+        ws.sc_soft_emb = try allocator.alloc(f32, ModelConfig.embedding_dim);
+        errdefer allocator.free(ws.sc_soft_emb);
+
+        ws.sc_gate_buf = try allocator.alloc(f32, ModelConfig.self_cond_intermediate_dim);
+        errdefer allocator.free(ws.sc_gate_buf);
+
+        ws.sc_up_buf = try allocator.alloc(f32, ModelConfig.self_cond_intermediate_dim);
+        errdefer allocator.free(ws.sc_up_buf);
+
+        ws.sc_geglu_buf = try allocator.alloc(f32, ModelConfig.self_cond_intermediate_dim);
+        errdefer allocator.free(ws.sc_geglu_buf);
+
+        ws.sc_sig_buf = try allocator.alloc(f32, ModelConfig.embedding_dim);
+        errdefer allocator.free(ws.sc_sig_buf);
+
         const fpw = WorkerScratch.floatsPerWorker(max_len);
         ws.worker_storage = try allocator.alloc(f32, num_threads * fpw);
         errdefer allocator.free(ws.worker_storage);
@@ -883,6 +904,11 @@ pub const InferenceWorkspace = struct {
         self.pool.stop();
         self.allocator.free(self.worker_scratches);
         self.allocator.free(self.worker_storage);
+        self.allocator.free(self.sc_sig_buf);
+        self.allocator.free(self.sc_geglu_buf);
+        self.allocator.free(self.sc_up_buf);
+        self.allocator.free(self.sc_gate_buf);
+        self.allocator.free(self.sc_soft_emb);
         self.allocator.free(self.norm_hidden);
         self.allocator.free(self.attn_out_buf);
         self.allocator.free(self.norm_x_buf);
@@ -987,7 +1013,52 @@ pub fn printRowStats(name: []const u8, row: []const f32, row_idx: usize, fd_opt:
     }
 }
 
-/// Executes a single-step structured read over a slice of canvas tokens using a pre-allocated workspace.
+/// Computes the self-conditioning injection vector s on CPU from candidate probabilities of prior step.
+pub fn computeSelfConditioningSignal(
+    ws: *InferenceWorkspace,
+    model: DiffusionGemmaModel,
+    candidate_token_ids: []const u32,
+    candidate_probs: []const f32,
+) ![]const f32 {
+    const sc_pre_norm = model.self_cond_pre_norm orelse return error.MissingSelfCondTensor;
+    const sc_gate = model.self_cond_gate orelse return error.MissingSelfCondTensor;
+    const sc_up = model.self_cond_up orelse return error.MissingSelfCondTensor;
+    const sc_down = model.self_cond_down orelse return error.MissingSelfCondTensor;
+
+    const emb_dim = ModelConfig.embedding_dim;
+    const intermediate_dim = ModelConfig.self_cond_intermediate_dim;
+    std.debug.assert(candidate_token_ids.len == candidate_probs.len);
+
+    // 1. Soft candidate embedding: e_soft = sqrt(d_model) * sum_c P(c) * E[c]
+    @memset(ws.sc_soft_emb, 0.0);
+    const emb_scale: f32 = @sqrt(@as(f32, @floatFromInt(emb_dim)));
+    for (candidate_token_ids, candidate_probs) |tok, p| {
+        if (p > 0.0) {
+            const blocks = model.getEmbeddingBlocks(tok);
+            quant.dequantizeRowQ6_K(blocks, ws.sc_sig_buf);
+            accumulateScaledF32(ws.sc_soft_emb, ws.sc_sig_buf, p * emb_scale);
+        }
+    }
+
+    // 2. Pre-norm RMSNorm with weights
+    const pre_norm_slice = model.gguf_file.getTensorSlice(sc_pre_norm);
+    const pre_norm_weights: [*]const f32 = @ptrCast(@alignCast(pre_norm_slice.ptr));
+    ops.rmsNorm(ws.sc_soft_emb, pre_norm_weights[0..emb_dim], 1e-6, ws.sc_sig_buf);
+
+    // 3. Gate and Up GEMVs
+    gemvTensor(model.gguf_file, sc_gate, ws.sc_sig_buf, ws.sc_gate_buf, intermediate_dim, emb_dim);
+    gemvTensor(model.gguf_file, sc_up, ws.sc_sig_buf, ws.sc_up_buf, intermediate_dim, emb_dim);
+
+    // 4. GeGLU activation
+    ops.geglu(ws.sc_gate_buf, ws.sc_up_buf, ws.sc_geglu_buf);
+
+    // 5. Down GEMV
+    gemvTensor(model.gguf_file, sc_down, ws.sc_geglu_buf, ws.sc_sig_buf, emb_dim, intermediate_dim);
+
+    return ws.sc_sig_buf;
+}
+
+/// Executes a structured read over a slice of canvas tokens using a pre-allocated workspace.
 /// Embeds prompt and canvas across dual regions, evaluates all 30 transformer layers via the
 /// persistent worker pool, and extracts candidate logits at the canvas answer position.
 pub fn executeStructuredReadSlice(
@@ -997,6 +1068,7 @@ pub fn executeStructuredReadSlice(
     canvas_tokens: []const u32,
     answer_pos: usize,
     candidate_token_ids: []const u32,
+    candidate_probs: ?[]const f32,
     out_raw_logits: []f32,
     out_softcapped_logits: []f32,
 ) !void {
@@ -1014,7 +1086,7 @@ pub fn executeStructuredReadSlice(
 
     // Dual-region token embedding:
     // Prompt tokens [0..P): scaled by sqrt(d_model)
-    // Canvas tokens [P..N): scaled by sqrt(d_model) followed by unweighted RMSNorm
+    // Canvas tokens [P..N): scaled by sqrt(d_model) [+ optional self-conditioning at answer_pos] followed by unweighted RMSNorm
     const emb_scale: f32 = @sqrt(@as(f32, @floatFromInt(ModelConfig.embedding_dim)));
     for (prompt_tokens, 0..) |tok, i| {
         const blocks = model.getEmbeddingBlocks(tok);
@@ -1027,6 +1099,12 @@ pub fn executeStructuredReadSlice(
         const row = emb_buffer[(P + i) * ModelConfig.embedding_dim .. (P + i + 1) * ModelConfig.embedding_dim];
         quant.dequantizeRowQ6_K(blocks, row);
         for (row) |*val| val.* *= emb_scale;
+        if (i == answer_pos and candidate_probs != null and model.self_cond_pre_norm != null) {
+            const sc_sig = try computeSelfConditioningSignal(ws, model, candidate_token_ids, candidate_probs.?);
+            for (row, sc_sig) |*r, s| {
+                r.* += s;
+            }
+        }
         ops.unweightedRmsNorm(row, 1e-6, row);
     }
 
@@ -1117,13 +1195,14 @@ pub fn executeStructuredReadSlice(
     readCandidateLogits(model, ws.norm_hidden, candidate_token_ids, out_raw_logits, out_softcapped_logits);
 }
 
-/// Executes a single-step structured read over a full seeded canvas using a pre-allocated workspace.
+/// Executes a structured read over a full seeded canvas using a pre-allocated workspace.
 pub fn executeStructuredRead(
     ws: *InferenceWorkspace,
     model: DiffusionGemmaModel,
     prompt_tokens: []const u32,
     canvas: Canvas,
     candidate_token_ids: []const u32,
+    candidate_probs: ?[]const f32,
     out_raw_logits: []f32,
     out_softcapped_logits: []f32,
 ) !void {
@@ -1134,6 +1213,7 @@ pub fn executeStructuredRead(
         &canvas.tokens,
         canvas.answer_pos,
         candidate_token_ids,
+        candidate_probs,
         out_raw_logits,
         out_softcapped_logits,
     );
@@ -1216,7 +1296,7 @@ test "embedCanvas and readCandidateLogits execution on local model if present" {
     var ws = try InferenceWorkspace.init(allocator, 512, null);
     defer ws.deinit();
 
-    try executeStructuredRead(ws, model, &prompt, canvas, &candidates, &raw_logits, &softcapped_logits);
+    try executeStructuredRead(ws, model, &prompt, canvas, &candidates, null, &raw_logits, &softcapped_logits);
 
     // Softcapped logits must be within [-30.0, 30.0]
     for (softcapped_logits) |l| {

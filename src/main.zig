@@ -130,11 +130,17 @@ pub fn main(init: std.process.Init) !void {
 
         var canvas_override: ?usize = null;
         var use_cuda = false;
+        var step_cap: u32 = 1;
         var raw_candidates: std.ArrayList([]const u8) = .empty;
         var arg_i: usize = 4;
         while (arg_i < args.len) : (arg_i += 1) {
             if (std.mem.eql(u8, args[arg_i], "--cuda")) {
                 use_cuda = true;
+            } else if (std.mem.eql(u8, args[arg_i], "--steps")) {
+                if (arg_i + 1 < args.len) {
+                    arg_i += 1;
+                    step_cap = std.fmt.parseInt(u32, args[arg_i], 10) catch 1;
+                }
             } else if (std.mem.eql(u8, args[arg_i], "--canvas")) {
                 if (arg_i + 1 < args.len) {
                     arg_i += 1;
@@ -181,7 +187,7 @@ pub fn main(init: std.process.Init) !void {
             .query = query,
             .schema_type = .boolean,
             .candidates = candidate_specs,
-            .step_cap = 1,
+            .step_cap = step_cap,
             .temperature = 1.0,
             .entropy_threshold = 0.5,
             .canvas_length = canvas_override,
@@ -375,12 +381,18 @@ pub fn main(init: std.process.Init) !void {
         const fixture_path = args[3];
 
         var canvas_override: ?usize = null;
+        var step_cap: u32 = 1;
         var out_json_path: ?[]const u8 = null;
         var use_cuda = false;
         var arg_i: usize = 4;
         while (arg_i < args.len) : (arg_i += 1) {
             if (std.mem.eql(u8, args[arg_i], "--cuda")) {
                 use_cuda = true;
+            } else if (std.mem.eql(u8, args[arg_i], "--steps")) {
+                if (arg_i + 1 < args.len) {
+                    arg_i += 1;
+                    step_cap = std.fmt.parseInt(u32, args[arg_i], 10) catch 1;
+                }
             } else if (std.mem.eql(u8, args[arg_i], "--canvas")) {
                 if (arg_i + 1 < args.len) {
                     arg_i += 1;
@@ -414,7 +426,7 @@ pub fn main(init: std.process.Init) !void {
             .context = fix.context,
             .schema_type = schema_t,
             .candidates = candidate_specs,
-            .step_cap = 1,
+            .step_cap = step_cap,
             .temperature = 1.0,
             .entropy_threshold = fix.entropy_threshold,
             .canvas_length = canvas_override,
@@ -427,6 +439,7 @@ pub fn main(init: std.process.Init) !void {
         try stdout_writer.print("Entropy (nats):     {d:.4}\n", .{resp.entropy_nats});
         try stdout_writer.print("Normalized Entropy: {d:.4}\n", .{resp.normalized_entropy});
         try stdout_writer.print("Uncertain:          {}\n", .{resp.uncertain});
+        try stdout_writer.print("Steps Executed:     {d}\n", .{resp.steps_executed});
         try stdout_writer.print("Candidates:\n", .{});
         for (resp.candidates) |c| {
             const sc = zeno.ops.logitSoftcap(c.raw_logit, zeno.ModelConfig.logit_softcap);

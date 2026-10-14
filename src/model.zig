@@ -69,6 +69,12 @@ pub const DiffusionGemmaModel = struct {
     output_norm: TensorInfo,
     rope_freqs: ?TensorInfo,
 
+    // Self-conditioning tensors (Phase 9)
+    self_cond_pre_norm: ?TensorInfo,
+    self_cond_down: ?TensorInfo,
+    self_cond_gate: ?TensorInfo,
+    self_cond_up: ?TensorInfo,
+
     // 30 transformer layers
     layers: [ModelConfig.num_layers]TransformerLayer,
 
@@ -128,6 +134,12 @@ pub const DiffusionGemmaModel = struct {
         const token_embd = gfile.findTensor("token_embd.weight") orelse return error.MissingTensor;
         const output_norm = gfile.findTensor("output_norm.weight") orelse return error.MissingTensor;
         const rope_freqs = gfile.findTensor("rope_freqs.weight");
+
+        // Locate self-conditioning tensors (Phase 9)
+        const sc_pre_norm = gfile.findTensor("self_cond_pre_norm.weight");
+        const sc_down = gfile.findTensor("self_cond_down.weight");
+        const sc_gate = gfile.findTensor("self_cond_gate.weight");
+        const sc_up = gfile.findTensor("self_cond_up.weight");
 
         // Map all 30 layers
         var layers: [ModelConfig.num_layers]TransformerLayer = undefined;
@@ -245,6 +257,10 @@ pub const DiffusionGemmaModel = struct {
             .token_embd = token_embd,
             .output_norm = output_norm,
             .rope_freqs = rope_freqs,
+            .self_cond_pre_norm = sc_pre_norm,
+            .self_cond_down = sc_down,
+            .self_cond_gate = sc_gate,
+            .self_cond_up = sc_up,
             .layers = layers,
         };
     }

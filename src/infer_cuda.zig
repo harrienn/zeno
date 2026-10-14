@@ -336,6 +336,12 @@ pub const CudaModel = struct {
     rope_freqs_dev0: ?DeviceBuffer(f32),
     rope_freqs_dev1: ?DeviceBuffer(f32),
 
+    // Phase 9: Device-resident self-conditioning weights on Device 0
+    sc_pre_norm: ?DeviceBuffer(f32),
+    sc_gate: ?DeviceBuffer(u8),
+    sc_up: ?DeviceBuffer(u8),
+    sc_down: ?DeviceBuffer(u8),
+
     pub fn initFromCpuModel(allocator: std.mem.Allocator, cpu_model: DiffusionGemmaModel, force_single_gpu: bool) !*CudaModel {
         if (!is_enabled) return error.CudaDisabledAtBuild;
         const topo = try cuda.getTopology();
@@ -354,6 +360,10 @@ pub const CudaModel = struct {
         model_ptr.devices = [_]i32{ dev0, dev1 };
         model_ptr.rope_freqs_dev0 = null;
         model_ptr.rope_freqs_dev1 = null;
+        model_ptr.sc_pre_norm = null;
+        model_ptr.sc_gate = null;
+        model_ptr.sc_up = null;
+        model_ptr.sc_down = null;
 
         // Load rope_freqs if present
         if (cpu_model.rope_freqs) |rf| {
@@ -370,12 +380,51 @@ pub const CudaModel = struct {
             }
         }
 
+        // Load self-conditioning tensors onto Device 0 if present (Phase 9)
+        if (cpu_model.self_cond_pre_norm != null and
+            cpu_model.self_cond_gate != null and
+            cpu_model.self_cond_up != null and
+            cpu_model.self_cond_down != null)
+        {
+            const pre_norm_info = cpu_model.self_cond_pre_norm.?;
+            const pre_norm_slice = getExactTensorSlice(cpu_model, pre_norm_info);
+            var sc_pre_norm = try DeviceBuffer(f32).init(dev0, ModelConfig.embedding_dim);
+            errdefer sc_pre_norm.deinit();
+            try sc_pre_norm.copyFromHost(@as([*]const f32, @ptrCast(@alignCast(pre_norm_slice.ptr)))[0..ModelConfig.embedding_dim]);
+            model_ptr.sc_pre_norm = sc_pre_norm;
+
+            const gate_info = cpu_model.self_cond_gate.?;
+            const gate_slice = getExactTensorSlice(cpu_model, gate_info);
+            var sc_gate = try DeviceBuffer(u8).init(dev0, gate_slice.len);
+            errdefer sc_gate.deinit();
+            try sc_gate.copyFromHost(gate_slice);
+            model_ptr.sc_gate = sc_gate;
+
+            const up_info = cpu_model.self_cond_up.?;
+            const up_slice = getExactTensorSlice(cpu_model, up_info);
+            var sc_up = try DeviceBuffer(u8).init(dev0, up_slice.len);
+            errdefer sc_up.deinit();
+            try sc_up.copyFromHost(up_slice);
+            model_ptr.sc_up = sc_up;
+
+            const down_info = cpu_model.self_cond_down.?;
+            const down_slice = getExactTensorSlice(cpu_model, down_info);
+            var sc_down = try DeviceBuffer(u8).init(dev0, down_slice.len);
+            errdefer sc_down.deinit();
+            try sc_down.copyFromHost(down_slice);
+            model_ptr.sc_down = sc_down;
+        }
+
         // Load all 30 layers with layer-splitting
         var loaded_layers: usize = 0;
         errdefer {
             for (0..loaded_layers) |l| {
                 model_ptr.layers[l].deinit();
             }
+            if (model_ptr.sc_down) |*b| b.deinit();
+            if (model_ptr.sc_up) |*b| b.deinit();
+            if (model_ptr.sc_gate) |*b| b.deinit();
+            if (model_ptr.sc_pre_norm) |*b| b.deinit();
             if (model_ptr.rope_freqs_dev0) |*rf0| rf0.deinit();
             if (model_ptr.rope_freqs_dev1) |*rf1| rf1.deinit();
         }
@@ -402,6 +451,10 @@ pub const CudaModel = struct {
         for (&self.layers) |*l| {
             l.deinit();
         }
+        if (self.sc_down) |*b| b.deinit();
+        if (self.sc_up) |*b| b.deinit();
+        if (self.sc_gate) |*b| b.deinit();
+        if (self.sc_pre_norm) |*b| b.deinit();
         if (self.rope_freqs_dev0) |*rf0| rf0.deinit();
         if (self.rope_freqs_dev1) |*rf1| rf1.deinit();
         self.allocator.destroy(self);
@@ -457,6 +510,11 @@ pub const CudaDeviceWorkspace = struct {
     // Prompt KV Cache buffers (Phase 7B)
     prompt_k_cache: DeviceBuffer(f32),
     prompt_v_cache: DeviceBuffer(f32),
+
+    // Phase 9: Self-Conditioning device scratch buffers (Device 0)
+    sc_soft_emb: DeviceBuffer(f32),
+    sc_geglu_buf: DeviceBuffer(f32),
+    sc_sig_buf: DeviceBuffer(f32),
 
     // Final answer norm hidden output
     norm_hidden: DeviceBuffer(f32),
@@ -546,6 +604,13 @@ pub const CudaDeviceWorkspace = struct {
         var norm_hidden = try DeviceBuffer(f32).init(device_id, ModelConfig.embedding_dim);
         errdefer norm_hidden.deinit();
 
+        var sc_soft_emb = try DeviceBuffer(f32).init(device_id, ModelConfig.embedding_dim);
+        errdefer sc_soft_emb.deinit();
+        var sc_geglu_buf = try DeviceBuffer(f32).init(device_id, ModelConfig.self_cond_intermediate_dim);
+        errdefer sc_geglu_buf.deinit();
+        var sc_sig_buf = try DeviceBuffer(f32).init(device_id, ModelConfig.embedding_dim);
+        errdefer sc_sig_buf.deinit();
+
         return CudaDeviceWorkspace{
             .device_id = device_id,
             .stream = stream,
@@ -585,11 +650,17 @@ pub const CudaDeviceWorkspace = struct {
             .prompt_k_cache = prompt_k_cache,
             .prompt_v_cache = prompt_v_cache,
             .norm_hidden = norm_hidden,
+            .sc_soft_emb = sc_soft_emb,
+            .sc_geglu_buf = sc_geglu_buf,
+            .sc_sig_buf = sc_sig_buf,
             .allocator = allocator,
         };
     }
 
     pub fn deinit(self: *CudaDeviceWorkspace) void {
+        self.sc_sig_buf.deinit();
+        self.sc_geglu_buf.deinit();
+        self.sc_soft_emb.deinit();
         self.norm_hidden.deinit();
         self.prompt_v_cache.deinit();
         self.prompt_k_cache.deinit();
@@ -655,7 +726,9 @@ pub const CudaDeviceWorkspace = struct {
             (128 * @sizeOf(i32) * 2) + // expert_counts, expert_offsets
             (max_seq_len * 8 * @sizeOf(i32) * 2) + // sorted_instances, instance_to_sorted
             (cache_total_floats * @sizeOf(f32) * 2) + // prompt_k_cache, prompt_v_cache (Phase 7B)
-            (d_emb * @sizeOf(f32)); // norm_hidden
+            (d_emb * @sizeOf(f32)) + // norm_hidden
+            (d_emb * @sizeOf(f32) * 2) + // sc_soft_emb, sc_sig_buf (Phase 9)
+            (ModelConfig.self_cond_intermediate_dim * @sizeOf(f32)); // sc_geglu_buf (Phase 9)
     }
 };
 
@@ -1387,9 +1460,96 @@ fn runPartition1CanvasEager(ws: *CudaWorkspace, model: *const CudaModel, P: usiz
     try cuda_mem.rmsNorm(answer_slice, model.output_norm.slice(), dev1.norm_hidden.slice(), 1, ModelConfig.embedding_dim, 1e-6, &dev1.stream);
 }
 
+/// Applies device-resident self-conditioning on Device 0 at target_pos.
+pub fn applyDeviceSelfConditioning(
+    ws: *CudaWorkspace,
+    model: *const CudaModel,
+    cpu_model: DiffusionGemmaModel,
+    candidate_token_ids: []const u32,
+    candidate_probs: []const f32,
+    target_pos: usize,
+) !void {
+    const sc_pre_norm = model.sc_pre_norm orelse return error.MissingSelfCondTensor;
+    const sc_gate = model.sc_gate orelse return error.MissingSelfCondTensor;
+    const sc_up = model.sc_up orelse return error.MissingSelfCondTensor;
+    const sc_down = model.sc_down orelse return error.MissingSelfCondTensor;
+
+    const emb_dim = ModelConfig.embedding_dim;
+    const intermediate_dim = ModelConfig.self_cond_intermediate_dim;
+    const emb_scale: f32 = @sqrt(@as(f32, @floatFromInt(emb_dim)));
+
+    // 1. Construct soft embedding on host staging buffer and copy to Device 0 sc_soft_emb
+    const soft_emb = ws.host_staging_buf[0..emb_dim];
+    @memset(soft_emb, 0.0);
+    const row_temp = ws.host_staging_buf[emb_dim .. 2 * emb_dim];
+    for (candidate_token_ids, candidate_probs) |tok, p| {
+        if (p > 0.0) {
+            const blocks = cpu_model.getEmbeddingBlocks(tok);
+            quant.dequantizeRowQ6_K(blocks, row_temp);
+            infer.accumulateScaledF32(soft_emb, row_temp, p * emb_scale);
+        }
+    }
+    try ws.dev0.sc_soft_emb.copyFromHost(soft_emb);
+
+    // 2. Pre-norm on Device 0: sc_soft_emb -> sc_sig_buf
+    try cuda_mem.rmsNorm(
+        ws.dev0.sc_soft_emb.slice(),
+        sc_pre_norm.slice(),
+        ws.dev0.sc_sig_buf.slice(),
+        1,
+        emb_dim,
+        1e-6,
+        &ws.dev0.stream,
+    );
+
+    // 3. Fused Gate + Up + GeGLU on Device 0: sc_sig_buf -> sc_geglu_buf
+    try cuda_mem.denseGateUpGegluQ4_K(
+        sc_gate.slice(),
+        sc_up.slice(),
+        ws.dev0.sc_sig_buf.slice(),
+        ws.dev0.sc_geglu_buf.slice(),
+        intermediate_dim,
+        emb_dim,
+        1,
+        &ws.dev0.stream,
+    );
+
+    // 4. Down projection GEMV on Device 0 (Q5_0): sc_geglu_buf -> sc_sig_buf
+    try cuda_mem.gemvQ5_0(
+        sc_down.slice(),
+        ws.dev0.sc_geglu_buf.slice(),
+        ws.dev0.sc_sig_buf.slice(),
+        emb_dim,
+        intermediate_dim,
+        1,
+        &ws.dev0.stream,
+    );
+
+    // 5. Add residual sc_sig_buf to current_emb at target_pos
+    const ans_slice = try ws.dev0.current_emb.slice().subslice(target_pos * emb_dim, emb_dim);
+    try cuda_mem.addResidual(
+        ans_slice,
+        ws.dev0.sc_sig_buf.slice(),
+        &ws.dev0.stream,
+    );
+
+    // 6. Unweighted RMSNorm in-place on current_emb at target_pos
+    try cuda_mem.rmsNorm(
+        ans_slice,
+        null,
+        ans_slice,
+        1,
+        emb_dim,
+        1e-6,
+        &ws.dev0.stream,
+    );
+
+    try ws.dev0.stream.synchronize();
+}
+
 pub var enable_prompt_cache: bool = true;
 
-/// Executes a complete single-step structured read forward pass across all 30 layers using CUDA acceleration.
+/// Executes a structured read forward pass across all 30 layers using CUDA acceleration.
 pub fn executeStructuredReadCuda(
     ws: *CudaWorkspace,
     model: *const CudaModel,
@@ -1398,6 +1558,7 @@ pub fn executeStructuredReadCuda(
     canvas_tokens: []const u32,
     answer_pos: usize,
     candidate_token_ids: []const u32,
+    candidate_probs: ?[]const f32,
     out_raw_logits: []f32,
     out_softcapped_logits: []f32,
 ) !void {
@@ -1430,7 +1591,9 @@ pub fn executeStructuredReadCuda(
             const row = host_emb[i * ModelConfig.embedding_dim .. (i + 1) * ModelConfig.embedding_dim];
             quant.dequantizeRowQ6_K(blocks, row);
             for (row) |*val| val.* *= emb_scale;
-            ops.unweightedRmsNorm(row, 1e-6, row);
+            if (candidate_probs == null or i != answer_pos) {
+                ops.unweightedRmsNorm(row, 1e-6, row);
+            }
         }
 
         ws.dev0.resetBufferPointers();
@@ -1442,6 +1605,11 @@ pub fn executeStructuredReadCuda(
         const d0_emb_slice = try ws.dev0.current_emb.slice().subslice(0, C * ModelConfig.embedding_dim);
         try d0_emb_slice.copyFromHost(host_emb);
         try ws.dev0.stream.synchronize();
+
+        // Phase 9: If self-conditioning is enabled (steps t >= 2), apply device-resident SC MLP at answer position
+        if (candidate_probs) |sc_probs| {
+            try applyDeviceSelfConditioning(ws, model, cpu_model, candidate_token_ids, sc_probs, answer_pos);
+        }
 
         const graph_valid = (ws.graph0 != null and ws.cached_graph_prompt_len == P and ws.cached_graph_canvas_len == C and ws.cached_graph_answer_pos == answer_pos);
 
@@ -1713,7 +1881,9 @@ pub fn executeStructuredReadCuda(
         const row = host_emb[(P + i) * ModelConfig.embedding_dim .. (P + i + 1) * ModelConfig.embedding_dim];
         quant.dequantizeRowQ6_K(blocks, row);
         for (row) |*val| val.* *= emb_scale;
-        ops.unweightedRmsNorm(row, 1e-6, row);
+        if (candidate_probs == null or i != answer_pos) {
+            ops.unweightedRmsNorm(row, 1e-6, row);
+        }
     }
 
     // 2. Reset buffer pointers to initial configuration and synchronize streams
@@ -1726,6 +1896,11 @@ pub fn executeStructuredReadCuda(
     const d0_emb_slice = try ws.dev0.current_emb.slice().subslice(0, N * ModelConfig.embedding_dim);
     try d0_emb_slice.copyFromHost(host_emb);
     try ws.dev0.stream.synchronize();
+
+    // Phase 9: If self-conditioning is enabled (steps t >= 2), apply device-resident SC MLP at answer position
+    if (candidate_probs) |sc_probs| {
+        try applyDeviceSelfConditioning(ws, model, cpu_model, candidate_token_ids, sc_probs, answer_idx);
+    }
 
     // 3. Execute Transformer Blocks
     const graph_valid = (ws.graph0 != null and ws.cached_graph_prompt_len == P and ws.cached_graph_canvas_len == C and ws.cached_graph_answer_pos == answer_pos);
@@ -2349,6 +2524,7 @@ test "executeStructuredReadCuda full 30-layer forward pass on local model if pre
         canvas.tokens[0..canvas_len],
         canvas.answer_pos,
         &candidate_tokens,
+        null,
         &cuda_raw,
         &cuda_softcapped,
     );
@@ -2368,6 +2544,7 @@ test "executeStructuredReadCuda full 30-layer forward pass on local model if pre
         canvas.tokens[0..canvas_len],
         canvas.answer_pos,
         &candidate_tokens,
+        null,
         &cpu_raw,
         &cpu_softcapped,
     );
@@ -2409,6 +2586,7 @@ test "executeStructuredReadCuda full 30-layer forward pass on local model if pre
         canvas.tokens[0..canvas_len],
         canvas.answer_pos,
         &candidate_tokens,
+        null,
         &cap_fail_raw,
         &cap_fail_soft,
     );
@@ -2427,6 +2605,7 @@ test "executeStructuredReadCuda full 30-layer forward pass on local model if pre
         canvas.tokens[0..canvas_len],
         canvas.answer_pos,
         &candidate_tokens,
+        null,
         &cap_fail_raw,
         &cap_fail_soft,
     );
@@ -2443,6 +2622,7 @@ test "executeStructuredReadCuda full 30-layer forward pass on local model if pre
         canvas.tokens[0..canvas_len],
         canvas.answer_pos,
         &candidate_tokens,
+        null,
         &rep_fail_raw,
         &rep_fail_soft,
     );
@@ -2463,6 +2643,7 @@ test "executeStructuredReadCuda full 30-layer forward pass on local model if pre
         canvas.tokens[0..canvas_len],
         canvas.answer_pos,
         &candidate_tokens,
+        null,
         &uncached_raw,
         &uncached_soft,
     );
@@ -2474,7 +2655,7 @@ test "executeStructuredReadCuda full 30-layer forward pass on local model if pre
 
 test "CudaDeviceWorkspace: activationWorkspaceBytes matches audited footprint (R24-01)" {
     const bytes_512 = CudaDeviceWorkspace.activationWorkspaceBytes(512);
-    // Audited exact byte sum for N=512: 336,801,792 bytes (~336.80 MB, 321.20 MiB)
-    try std.testing.expectEqual(@as(usize, 336801792), bytes_512);
+    // Audited exact byte sum for N=512: 336,832,768 bytes (~336.83 MB, 321.23 MiB)
+    try std.testing.expectEqual(@as(usize, 336832768), bytes_512);
 }
 
