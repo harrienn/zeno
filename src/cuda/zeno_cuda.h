@@ -188,6 +188,26 @@ int zeno_cuda_attention(
     void *stream
 );
 
+int zeno_cuda_attention_cached(
+    const float *q,
+    const float *prompt_k,
+    const float *prompt_v,
+    const float *canvas_k,
+    const float *canvas_v,
+    float *out,
+    int prompt_len,
+    int canvas_len,
+    int num_q_heads,
+    int num_kv_heads,
+    int head_dim,
+    int stride_q,
+    int stride_k,
+    int stride_v,
+    int stride_out,
+    int device_id,
+    void *stream
+);
+
 int zeno_cuda_moe_router_prep(
     float *r_in,
     const float *router_scale,
@@ -292,6 +312,58 @@ int zeno_cuda_moe_gemv_down_batched(
 int zeno_cuda_moe_accumulate_scaled_batched(
     float *moe_accum,
     const float *down_out,
+    const float *top_weights,
+    int num_tokens,
+    int dim,
+    int device_id,
+    void *stream
+);
+
+// Stage 7 Token-Sorted Expert MoE Execution ABI (Phase 7A)
+int zeno_cuda_moe_build_expert_bins(
+    const int *top_indices,
+    int *expert_counts,
+    int *expert_offsets,
+    int *sorted_instances,
+    int *instance_to_sorted,
+    int num_tokens,
+    int device_id,
+    void *stream
+);
+
+int zeno_cuda_moe_gemv_gate_up_sorted(
+    const uint8_t *all_expert_weights,
+    const float *tokens_in,
+    const int *expert_counts,
+    const int *expert_offsets,
+    const int *sorted_instances,
+    float *out_gate_up,
+    int num_tokens,
+    int in_dim,
+    int out_dim,
+    int device_id,
+    void *stream
+);
+
+int zeno_cuda_moe_gemv_down_sorted(
+    const uint8_t *all_expert_weights,
+    int expert_type,
+    const float *acts_in,
+    const int *expert_counts,
+    const int *expert_offsets,
+    const int *sorted_instances,
+    float *out_down,
+    int num_tokens,
+    int in_dim,
+    int out_dim,
+    int device_id,
+    void *stream
+);
+
+int zeno_cuda_moe_accumulate_scaled_sorted(
+    float *moe_accum,
+    const float *sorted_down_out,
+    const int *instance_to_sorted,
     const float *top_weights,
     int num_tokens,
     int dim,

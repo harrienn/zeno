@@ -219,6 +219,26 @@ pub const c = if (is_enabled) struct {
         stream: ?*anyopaque,
     ) c_int;
 
+    pub extern "c" fn zeno_cuda_attention_cached(
+        q: [*]const f32,
+        prompt_k: ?[*]const f32,
+        prompt_v: ?[*]const f32,
+        canvas_k: [*]const f32,
+        canvas_v: [*]const f32,
+        out: [*]f32,
+        prompt_len: c_int,
+        canvas_len: c_int,
+        num_q_heads: c_int,
+        num_kv_heads: c_int,
+        head_dim: c_int,
+        stride_q: c_int,
+        stride_k: c_int,
+        stride_v: c_int,
+        stride_out: c_int,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
+
     pub extern "c" fn zeno_cuda_moe_router_prep(
         r_in: [*]f32,
         router_scale: [*]const f32,
@@ -321,6 +341,58 @@ pub const c = if (is_enabled) struct {
     pub extern "c" fn zeno_cuda_moe_accumulate_scaled_batched(
         moe_accum: [*]f32,
         down_out: [*]const f32,
+        top_weights: [*]const f32,
+        num_tokens: c_int,
+        dim: c_int,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
+
+    // Stage 7 Token-Sorted Expert MoE Execution ABI (Phase 7A)
+    pub extern "c" fn zeno_cuda_moe_build_expert_bins(
+        top_indices: [*]const c_int,
+        expert_counts: [*]c_int,
+        expert_offsets: [*]c_int,
+        sorted_instances: [*]c_int,
+        instance_to_sorted: [*]c_int,
+        num_tokens: c_int,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
+
+    pub extern "c" fn zeno_cuda_moe_gemv_gate_up_sorted(
+        all_expert_weights: [*]const u8,
+        tokens_in: [*]const f32,
+        expert_counts: [*]const c_int,
+        expert_offsets: [*]const c_int,
+        sorted_instances: [*]const c_int,
+        out_gate_up: [*]f32,
+        num_tokens: c_int,
+        in_dim: c_int,
+        out_dim: c_int,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
+
+    pub extern "c" fn zeno_cuda_moe_gemv_down_sorted(
+        all_expert_weights: [*]const u8,
+        expert_type: c_int,
+        acts_in: [*]const f32,
+        expert_counts: [*]const c_int,
+        expert_offsets: [*]const c_int,
+        sorted_instances: [*]const c_int,
+        out_down: [*]f32,
+        num_tokens: c_int,
+        in_dim: c_int,
+        out_dim: c_int,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
+
+    pub extern "c" fn zeno_cuda_moe_accumulate_scaled_sorted(
+        moe_accum: [*]f32,
+        sorted_down_out: [*]const f32,
+        instance_to_sorted: [*]const c_int,
         top_weights: [*]const f32,
         num_tokens: c_int,
         dim: c_int,

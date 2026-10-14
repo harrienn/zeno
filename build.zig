@@ -35,15 +35,19 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    const test_filter = b.option([]const u8, "test-filter", "Filter tests to run");
+
     // Module unit tests
     const mod_tests = b.addTest(.{
         .root_module = zeno_mod,
+        .filters = if (test_filter) |f| &.{f} else &.{},
     });
     const run_mod_tests = b.addRunArtifact(mod_tests);
 
     // Executable unit tests
     const exe_tests = b.addTest(.{
         .root_module = exe.root_module,
+        .filters = if (test_filter) |f| &.{f} else &.{},
     });
     const run_exe_tests = b.addRunArtifact(exe_tests);
 
@@ -59,8 +63,6 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     model_test_mod.addImport("build_options", model_options.createModule());
-
-    const test_filter = b.option([]const u8, "test-filter", "Filter tests to run");
 
     const model_tests = b.addTest(.{
         .root_module = model_test_mod,

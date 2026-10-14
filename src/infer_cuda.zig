@@ -444,13 +444,27 @@ pub const CudaDeviceWorkspace = struct {
     exp_act_buf: DeviceBuffer(f32),
     exp_down_buf: DeviceBuffer(f32),
     moe_accum: DeviceBuffer(f32),
+    expert_counts: DeviceBuffer(i32),
+    expert_offsets: DeviceBuffer(i32),
+    sorted_instances: DeviceBuffer(i32),
+    instance_to_sorted: DeviceBuffer(i32),
     h2: DeviceBuffer(f32),
     ffn_comb: DeviceBuffer(f32),
     post_ffn: DeviceBuffer(f32),
 
+    // Prompt KV Cache buffers (Phase 7B)
+    prompt_k_cache: DeviceBuffer(f32),
+    prompt_v_cache: DeviceBuffer(f32),
+
     // Final answer norm hidden output
     norm_hidden: DeviceBuffer(f32),
     allocator: std.mem.Allocator,
+
+    pub const max_device_layers: usize = 30;
+    pub const max_prompt_tokens: usize = 512;
+    pub const max_k_dim_cached: usize = 1024;
+    pub const cache_floats_per_layer: usize = max_prompt_tokens * max_k_dim_cached;
+    pub const cache_total_floats: usize = max_device_layers * cache_floats_per_layer;
 
     pub fn init(allocator: std.mem.Allocator, device_id: i32, max_seq_len: usize) !CudaDeviceWorkspace {
         const stream = try CudaStream.init(device_id);
@@ -509,12 +523,24 @@ pub const CudaDeviceWorkspace = struct {
         errdefer exp_down_buf.deinit();
         var moe_accum = try DeviceBuffer(f32).init(device_id, emb_size);
         errdefer moe_accum.deinit();
+        var expert_counts = try DeviceBuffer(i32).init(device_id, 128);
+        errdefer expert_counts.deinit();
+        var expert_offsets = try DeviceBuffer(i32).init(device_id, 128);
+        errdefer expert_offsets.deinit();
+        var sorted_instances = try DeviceBuffer(i32).init(device_id, max_seq_len * 8);
+        errdefer sorted_instances.deinit();
+        var instance_to_sorted = try DeviceBuffer(i32).init(device_id, max_seq_len * 8);
+        errdefer instance_to_sorted.deinit();
         var h2 = try DeviceBuffer(f32).init(device_id, emb_size);
         errdefer h2.deinit();
         var ffn_comb = try DeviceBuffer(f32).init(device_id, emb_size);
         errdefer ffn_comb.deinit();
         var post_ffn = try DeviceBuffer(f32).init(device_id, emb_size);
         errdefer post_ffn.deinit();
+        var prompt_k_cache = try DeviceBuffer(f32).init(device_id, cache_total_floats);
+        errdefer prompt_k_cache.deinit();
+        var prompt_v_cache = try DeviceBuffer(f32).init(device_id, cache_total_floats);
+        errdefer prompt_v_cache.deinit();
         var norm_hidden = try DeviceBuffer(f32).init(device_id, ModelConfig.embedding_dim);
         errdefer norm_hidden.deinit();
 
@@ -547,9 +573,15 @@ pub const CudaDeviceWorkspace = struct {
             .exp_act_buf = exp_act_buf,
             .exp_down_buf = exp_down_buf,
             .moe_accum = moe_accum,
+            .expert_counts = expert_counts,
+            .expert_offsets = expert_offsets,
+            .sorted_instances = sorted_instances,
+            .instance_to_sorted = instance_to_sorted,
             .h2 = h2,
             .ffn_comb = ffn_comb,
             .post_ffn = post_ffn,
+            .prompt_k_cache = prompt_k_cache,
+            .prompt_v_cache = prompt_v_cache,
             .norm_hidden = norm_hidden,
             .allocator = allocator,
         };
@@ -557,9 +589,15 @@ pub const CudaDeviceWorkspace = struct {
 
     pub fn deinit(self: *CudaDeviceWorkspace) void {
         self.norm_hidden.deinit();
+        self.prompt_v_cache.deinit();
+        self.prompt_k_cache.deinit();
         self.post_ffn.deinit();
         self.ffn_comb.deinit();
         self.h2.deinit();
+        self.instance_to_sorted.deinit();
+        self.sorted_instances.deinit();
+        self.expert_offsets.deinit();
+        self.expert_counts.deinit();
         self.moe_accum.deinit();
         self.exp_down_buf.deinit();
         self.exp_act_buf.deinit();
@@ -612,6 +650,9 @@ pub const CudaDeviceWorkspace = struct {
             (max_seq_len * 8 * 1408 * @sizeOf(f32)) + // exp_gate_up_buf
             (max_seq_len * 8 * 704 * @sizeOf(f32)) + // exp_act_buf
             (max_seq_len * 8 * d_emb * @sizeOf(f32)) + // exp_down_buf
+            (128 * @sizeOf(i32) * 2) + // expert_counts, expert_offsets
+            (max_seq_len * 8 * @sizeOf(i32) * 2) + // sorted_instances, instance_to_sorted
+            (cache_total_floats * @sizeOf(f32) * 2) + // prompt_k_cache, prompt_v_cache (Phase 7B)
             (d_emb * @sizeOf(f32)); // norm_hidden
     }
 };
@@ -635,6 +676,11 @@ pub const CudaWorkspace = struct {
     cached_graph_prompt_len: usize,
     cached_graph_canvas_len: usize,
     cached_graph_answer_pos: usize,
+
+    // Prompt KV Cache tracking (Phase 7B)
+    cached_prompt_hash: u64,
+    cached_prompt_len: usize,
+    prompt_cache_valid: bool,
 
     pub fn init(allocator: std.mem.Allocator, topology: ExecutionTopology, devices: [2]i32, max_seq_len: usize) !*CudaWorkspace {
         const ws_ptr = try allocator.create(CudaWorkspace);
@@ -680,8 +726,28 @@ pub const CudaWorkspace = struct {
         ws_ptr.cached_graph_prompt_len = 0;
         ws_ptr.cached_graph_canvas_len = 0;
         ws_ptr.cached_graph_answer_pos = 0;
+        ws_ptr.cached_prompt_hash = 0;
+        ws_ptr.cached_prompt_len = 0;
+        ws_ptr.prompt_cache_valid = false;
 
         return ws_ptr;
+    }
+
+    pub fn invalidatePromptCache(self: *CudaWorkspace) void {
+        self.cached_prompt_hash = 0;
+        self.cached_prompt_len = 0;
+        self.prompt_cache_valid = false;
+        if (self.graph1) |*g1| {
+            g1.deinit();
+            self.graph1 = null;
+        }
+        if (self.graph0) |*g0| {
+            g0.deinit();
+            self.graph0 = null;
+        }
+        self.cached_graph_prompt_len = 0;
+        self.cached_graph_canvas_len = 0;
+        self.cached_graph_answer_pos = 0;
     }
 
     pub fn deinit(self: *CudaWorkspace) void {
@@ -703,6 +769,7 @@ pub fn runLayerCuda(
     prompt_len: usize,
     num_tokens: usize,
     rope_freqs: ?DeviceSlice(f32),
+    save_prompt_kv_layer_idx: ?usize,
 ) !void {
     const stream = &ws.stream;
     const is_global = layer.is_global;
@@ -743,6 +810,15 @@ pub fn runLayerCuda(
     const factors = if (is_global) rope_freqs else null;
     try cuda_mem.rope(q_slice, num_tokens, num_q_heads, head_dim, 0, theta, factors, stream);
     try cuda_mem.rope(k_slice, num_tokens, num_kv_heads, head_dim, 0, theta, factors, stream);
+
+    // Save prompt KV prefix cache if requested (Phase 7B)
+    if (save_prompt_kv_layer_idx) |dev_layer_idx| {
+        const offset = dev_layer_idx * CudaDeviceWorkspace.cache_floats_per_layer;
+        const dst_k = try ws.prompt_k_cache.slice().subslice(offset, num_tokens * k_dim);
+        const dst_v = try ws.prompt_v_cache.slice().subslice(offset, num_tokens * k_dim);
+        try dst_k.copyFromDevice(k_slice, stream);
+        try dst_v.copyFromDevice(v_slice, stream);
+    }
 
     // 5. GQA Attention
     const head_out_slice = try ws.head_out.slice().subslice(0, num_tokens * q_dim);
@@ -805,13 +881,30 @@ pub fn runLayerCuda(
     const moe_in_slice = try ws.moe_in.slice().subslice(0, emb_elements);
     try cuda_mem.rmsNorm(x_mid, layer.pre_ffw_norm_2.slice(), moe_in_slice, num_tokens, ModelConfig.embedding_dim, 1e-6, stream);
 
-    // 9. Evaluate active MoE experts entirely on device (R22-01: zero host round-trips, batched launches)
+    // 9. Evaluate active MoE experts on device using token-sorted projections (Phase 7A)
     const num_instances = num_tokens * 8;
+    const exp_counts_slice = try ws.expert_counts.slice().subslice(0, 128);
+    const exp_offsets_slice = try ws.expert_offsets.slice().subslice(0, 128);
+    const sorted_inst_slice = try ws.sorted_instances.slice().subslice(0, num_instances);
+    const inst_to_sorted_slice = try ws.instance_to_sorted.slice().subslice(0, num_instances);
+
+    try cuda_mem.moeBuildExpertBins(
+        top_idx_slice,
+        exp_counts_slice,
+        exp_offsets_slice,
+        sorted_inst_slice,
+        inst_to_sorted_slice,
+        num_tokens,
+        stream,
+    );
+
     const exp_gu_slice = try ws.exp_gate_up_buf.slice().subslice(0, num_instances * 1408);
-    try cuda_mem.moeGemvGateUpBatched(
+    try cuda_mem.moeGemvGateUpSorted(
         layer.expert_gate_up.slice(),
         moe_in_slice,
-        top_idx_slice,
+        exp_counts_slice,
+        exp_offsets_slice,
+        sorted_inst_slice,
         exp_gu_slice,
         num_tokens,
         ModelConfig.embedding_dim,
@@ -823,11 +916,13 @@ pub fn runLayerCuda(
     try cuda_mem.moeGegluBatched(exp_gu_slice, exp_act_slice, num_instances, 704, stream);
 
     const exp_down_slice = try ws.exp_down_buf.slice().subslice(0, num_instances * ModelConfig.embedding_dim);
-    try cuda_mem.moeGemvDownBatched(
+    try cuda_mem.moeGemvDownSorted(
         layer.expert_down.slice(),
         layer.expert_down_type,
         exp_act_slice,
-        top_idx_slice,
+        exp_counts_slice,
+        exp_offsets_slice,
+        sorted_inst_slice,
         exp_down_slice,
         num_tokens,
         704,
@@ -836,9 +931,10 @@ pub fn runLayerCuda(
     );
 
     const moe_accum_slice = try ws.moe_accum.slice().subslice(0, emb_elements);
-    try cuda_mem.moeAccumulateScaledBatched(
+    try cuda_mem.moeAccumulateScaledSorted(
         moe_accum_slice,
         exp_down_slice,
+        inst_to_sorted_slice,
         top_w_slice,
         num_tokens,
         ModelConfig.embedding_dim,
@@ -865,6 +961,212 @@ pub fn runLayerCuda(
         post_ffn_slice,
         prompt_len,
         num_tokens,
+        ModelConfig.embedding_dim,
+        layer.enc_layer_output_scale,
+        layer.layer_output_scale,
+        stream,
+    );
+
+    // 13. Double-buffer swap
+    ws.swapBuffers();
+}
+
+/// Executes a single transformer layer forward pass on the GPU for canvas tokens ONLY,
+/// querying both the cached prompt KV and canvas KV (Phase 7B).
+pub fn runLayerCanvasCuda(
+    ws: *CudaDeviceWorkspace,
+    layer: *const CudaLayerWeights,
+    dev_layer_idx: usize,
+    prompt_len: usize,
+    canvas_len: usize,
+    rope_freqs: ?DeviceSlice(f32),
+) !void {
+    const stream = &ws.stream;
+    const is_global = layer.is_global;
+    const q_dim = layer.q_dim;
+    const k_dim = layer.k_dim;
+    const head_dim = layer.head_dim;
+    const num_q_heads = layer.num_q_heads;
+    const num_kv_heads = layer.num_kv_heads;
+    const theta: f32 = if (is_global) 1000000.0 else 10000.0;
+
+    const emb_elements = canvas_len * ModelConfig.embedding_dim;
+    const curr_slice = try ws.current_emb.slice().subslice(0, emb_elements);
+    const nx_slice = try ws.norm_x.slice().subslice(0, emb_elements);
+
+    // 1. Input normalization
+    try cuda_mem.rmsNorm(curr_slice, layer.attn_norm.slice(), nx_slice, canvas_len, ModelConfig.embedding_dim, 1e-6, stream);
+
+    // 2. Q, K, V projections for canvas tokens
+    const q_slice = try ws.q_buf.slice().subslice(0, canvas_len * q_dim);
+    const k_slice = try ws.k_buf.slice().subslice(0, canvas_len * k_dim);
+    const v_slice = try ws.v_buf.slice().subslice(0, canvas_len * k_dim);
+
+    try gemvTensorCuda(layer.q_weight_type, layer.q_weight.slice(), nx_slice, q_slice, q_dim, ModelConfig.embedding_dim, canvas_len, stream);
+    try gemvTensorCuda(layer.k_weight_type, layer.k_weight.slice(), nx_slice, k_slice, k_dim, ModelConfig.embedding_dim, canvas_len, stream);
+
+    if (is_global) {
+        try v_slice.copyFromDevice(k_slice, stream);
+    } else {
+        try gemvTensorCuda(layer.v_weight_type, layer.v_weight.?.slice(), nx_slice, v_slice, k_dim, ModelConfig.embedding_dim, canvas_len, stream);
+    }
+
+    // 3. Per-head RMSNorms
+    try cuda_mem.rmsNorm(q_slice, layer.q_norm.slice(), q_slice, canvas_len * num_q_heads, head_dim, 1e-6, stream);
+    try cuda_mem.rmsNorm(k_slice, layer.k_norm.slice(), k_slice, canvas_len * num_kv_heads, head_dim, 1e-6, stream);
+    try cuda_mem.rmsNorm(v_slice, null, v_slice, canvas_len * num_kv_heads, head_dim, 1e-6, stream);
+
+    // 4. RoPE with position offset = prompt_len
+    const factors = if (is_global) rope_freqs else null;
+    try cuda_mem.rope(q_slice, canvas_len, num_q_heads, head_dim, prompt_len, theta, factors, stream);
+    try cuda_mem.rope(k_slice, canvas_len, num_kv_heads, head_dim, prompt_len, theta, factors, stream);
+
+    // 5. GQA Attention with cached prompt KV
+    const cache_offset = dev_layer_idx * CudaDeviceWorkspace.cache_floats_per_layer;
+    const prompt_k_slice = try ws.prompt_k_cache.slice().subslice(cache_offset, prompt_len * k_dim);
+    const prompt_v_slice = try ws.prompt_v_cache.slice().subslice(cache_offset, prompt_len * k_dim);
+    const head_out_slice = try ws.head_out.slice().subslice(0, canvas_len * q_dim);
+
+    try cuda_mem.attentionCached(
+        q_slice,
+        prompt_k_slice,
+        prompt_v_slice,
+        k_slice,
+        v_slice,
+        head_out_slice,
+        prompt_len,
+        canvas_len,
+        num_q_heads,
+        num_kv_heads,
+        head_dim,
+        q_dim,
+        k_dim,
+        k_dim,
+        q_dim,
+        stream,
+    );
+
+    // 6. Attention output projection & post norm & residual connection
+    const a_out_slice = try ws.attn_out.slice().subslice(0, emb_elements);
+    try gemvTensorCuda(layer.o_weight_type, layer.o_weight.slice(), head_out_slice, a_out_slice, ModelConfig.embedding_dim, q_dim, canvas_len, stream);
+    try cuda_mem.rmsNorm(a_out_slice, layer.post_attention_norm.slice(), a_out_slice, canvas_len, ModelConfig.embedding_dim, 1e-6, stream);
+    try cuda_mem.addResidual(a_out_slice, curr_slice, stream);
+
+    const x_mid = a_out_slice;
+
+    // 7. Dense FFN
+    const dense_in_slice = try ws.dense_in.slice().subslice(0, emb_elements);
+    try cuda_mem.rmsNorm(x_mid, layer.ffn_norm.slice(), dense_in_slice, canvas_len, ModelConfig.embedding_dim, 1e-6, stream);
+
+    const gate_slice = try ws.gate_buf.slice().subslice(0, canvas_len * 2112);
+    const up_slice = try ws.up_buf.slice().subslice(0, canvas_len * 2112);
+    const geglu_slice = try ws.geglu_buf.slice().subslice(0, canvas_len * 2112);
+
+    try gemvTensorCuda(layer.ffn_gate_type, layer.ffn_gate.slice(), dense_in_slice, gate_slice, 2112, ModelConfig.embedding_dim, canvas_len, stream);
+    try gemvTensorCuda(layer.ffn_up_type, layer.ffn_up.slice(), dense_in_slice, up_slice, 2112, ModelConfig.embedding_dim, canvas_len, stream);
+    try cuda_mem.geglu(gate_slice, up_slice, geglu_slice, stream);
+
+    const dense_out_slice = try ws.dense_out.slice().subslice(0, emb_elements);
+    const h1_slice = try ws.h1.slice().subslice(0, emb_elements);
+    try gemvTensorCuda(layer.ffn_down_type, layer.ffn_down.slice(), geglu_slice, dense_out_slice, ModelConfig.embedding_dim, 2112, canvas_len, stream);
+    try cuda_mem.rmsNorm(dense_out_slice, layer.post_ffw_norm_1.slice(), h1_slice, canvas_len, ModelConfig.embedding_dim, 1e-6, stream);
+
+    // 8. MoE router
+    const r_in_slice = try ws.r_in.slice().subslice(0, emb_elements);
+    try cuda_mem.rmsNorm(x_mid, null, r_in_slice, canvas_len, ModelConfig.embedding_dim, 1e-6, stream);
+    const root_size: f32 = 1.0 / @sqrt(@as(f32, @floatFromInt(ModelConfig.embedding_dim)));
+    try cuda_mem.moeRouterPrep(r_in_slice, layer.router_scale.slice(), root_size, canvas_len, ModelConfig.embedding_dim, stream);
+
+    const router_logits_slice = try ws.router_logits.slice().subslice(0, canvas_len * 128);
+    try gemvTensorCuda(layer.router_gate_type, layer.router_gate.slice(), r_in_slice, router_logits_slice, 128, ModelConfig.embedding_dim, canvas_len, stream);
+
+    const top_idx_slice = try ws.top_indices.slice().subslice(0, canvas_len * 8);
+    const top_w_slice = try ws.top_weights.slice().subslice(0, canvas_len * 8);
+    try cuda_mem.moeRouterTop8(router_logits_slice, layer.expert_down_scale.slice(), top_idx_slice, top_w_slice, canvas_len, stream);
+
+    const moe_in_slice = try ws.moe_in.slice().subslice(0, emb_elements);
+    try cuda_mem.rmsNorm(x_mid, layer.pre_ffw_norm_2.slice(), moe_in_slice, canvas_len, ModelConfig.embedding_dim, 1e-6, stream);
+
+    // 9. Evaluate active MoE experts on device using token-sorted projections (Phase 7A)
+    const num_instances = canvas_len * 8;
+    const exp_counts_slice = try ws.expert_counts.slice().subslice(0, 128);
+    const exp_offsets_slice = try ws.expert_offsets.slice().subslice(0, 128);
+    const sorted_inst_slice = try ws.sorted_instances.slice().subslice(0, num_instances);
+    const inst_to_sorted_slice = try ws.instance_to_sorted.slice().subslice(0, num_instances);
+
+    try cuda_mem.moeBuildExpertBins(
+        top_idx_slice,
+        exp_counts_slice,
+        exp_offsets_slice,
+        sorted_inst_slice,
+        inst_to_sorted_slice,
+        canvas_len,
+        stream,
+    );
+
+    const exp_gu_slice = try ws.exp_gate_up_buf.slice().subslice(0, num_instances * 1408);
+    try cuda_mem.moeGemvGateUpSorted(
+        layer.expert_gate_up.slice(),
+        moe_in_slice,
+        exp_counts_slice,
+        exp_offsets_slice,
+        sorted_inst_slice,
+        exp_gu_slice,
+        canvas_len,
+        ModelConfig.embedding_dim,
+        1408,
+        stream,
+    );
+
+    const exp_act_slice = try ws.exp_act_buf.slice().subslice(0, num_instances * 704);
+    try cuda_mem.moeGegluBatched(exp_gu_slice, exp_act_slice, num_instances, 704, stream);
+
+    const exp_down_slice = try ws.exp_down_buf.slice().subslice(0, num_instances * ModelConfig.embedding_dim);
+    try cuda_mem.moeGemvDownSorted(
+        layer.expert_down.slice(),
+        layer.expert_down_type,
+        exp_act_slice,
+        exp_counts_slice,
+        exp_offsets_slice,
+        sorted_inst_slice,
+        exp_down_slice,
+        canvas_len,
+        704,
+        ModelConfig.embedding_dim,
+        stream,
+    );
+
+    const moe_accum_slice = try ws.moe_accum.slice().subslice(0, emb_elements);
+    try cuda_mem.moeAccumulateScaledSorted(
+        moe_accum_slice,
+        exp_down_slice,
+        inst_to_sorted_slice,
+        top_w_slice,
+        canvas_len,
+        ModelConfig.embedding_dim,
+        stream,
+    );
+
+    // 10. MoE post norm
+    const h2_slice = try ws.h2.slice().subslice(0, emb_elements);
+    try cuda_mem.rmsNorm(moe_accum_slice, layer.post_ffw_norm_2.slice(), h2_slice, canvas_len, ModelConfig.embedding_dim, 1e-6, stream);
+
+    // 11. Combine FFN branches & post FFN norm
+    const ffn_comb_slice = try ws.ffn_comb.slice().subslice(0, emb_elements);
+    try ffn_comb_slice.copyFromDevice(h1_slice, stream);
+    try cuda_mem.addResidual(ffn_comb_slice, h2_slice, stream);
+
+    const post_ffn_slice = try ws.post_ffn.slice().subslice(0, emb_elements);
+    try cuda_mem.rmsNorm(ffn_comb_slice, layer.post_ffw_norm.slice(), post_ffn_slice, canvas_len, ModelConfig.embedding_dim, 1e-6, stream);
+
+    // 12. Block output dual-region scaling (all tokens are canvas tokens, so prompt_len=0)
+    const next_slice = try ws.next_emb.slice().subslice(0, emb_elements);
+    try cuda_mem.layerOutput(
+        next_slice,
+        x_mid,
+        post_ffn_slice,
+        0,
+        canvas_len,
         ModelConfig.embedding_dim,
         layer.enc_layer_output_scale,
         layer.layer_output_scale,
@@ -929,12 +1231,75 @@ pub fn transferHiddenState(
     try dst_stream.synchronize();
 }
 
+/// Evaluates prompt tokens through all layers on device and populates prompt KV cache (Phase 7B).
+pub fn prefillPromptCuda(
+    ws: *CudaWorkspace,
+    model: *const CudaModel,
+    cpu_model: DiffusionGemmaModel,
+    prompt_tokens: []const u32,
+) !void {
+    const P = prompt_tokens.len;
+    if (P == 0) return;
+    if (P > ws.dev0.max_seq_len or P > CudaDeviceWorkspace.max_prompt_tokens) return error.InvalidParam;
+
+    const host_emb = ws.host_staging_buf[0 .. P * ModelConfig.embedding_dim];
+    const emb_scale: f32 = @sqrt(@as(f32, @floatFromInt(ModelConfig.embedding_dim)));
+
+    for (prompt_tokens, 0..) |tok, i| {
+        const blocks = cpu_model.getEmbeddingBlocks(tok);
+        const row = host_emb[i * ModelConfig.embedding_dim .. (i + 1) * ModelConfig.embedding_dim];
+        quant.dequantizeRowQ6_K(blocks, row);
+        for (row) |*val| val.* *= emb_scale;
+    }
+
+    ws.dev0.resetBufferPointers();
+    if (ws.dev1) |*d1| d1.resetBufferPointers();
+
+    try ws.dev0.stream.synchronize();
+    if (ws.dev1) |*d1| try d1.stream.synchronize();
+
+    const d0_emb_slice = try ws.dev0.current_emb.slice().subslice(0, P * ModelConfig.embedding_dim);
+    try d0_emb_slice.copyFromHost(host_emb);
+    try ws.dev0.stream.synchronize();
+
+    if (model.topology == .single_gpu) {
+        for (0..ModelConfig.num_layers) |l| {
+            const rf = if (model.layers[l].is_global) model.rope_freqs_dev0 else null;
+            const rf_slice = if (rf) |r| r.slice() else null;
+            try runLayerCuda(&ws.dev0, &model.layers[l], P, P, rf_slice, l);
+        }
+        try ws.dev0.stream.synchronize();
+    } else {
+        var dev1 = &ws.dev1.?;
+        for (0..15) |l| {
+            const rf = if (model.layers[l].is_global) model.rope_freqs_dev0 else null;
+            const rf_slice = if (rf) |r| r.slice() else null;
+            try runLayerCuda(&ws.dev0, &model.layers[l], P, P, rf_slice, l);
+        }
+
+        const d0_out_slice = try ws.dev0.current_emb.slice().subslice(0, P * ModelConfig.embedding_dim);
+        const d1_in_slice = try dev1.current_emb.slice().subslice(0, P * ModelConfig.embedding_dim);
+        const ev_opt = if (ws.boundary_event) |*ev| ev else null;
+        try transferHiddenState(d0_out_slice, d1_in_slice, &ws.dev0.stream, &dev1.stream, ev_opt, ws.host_staging_buf, ws.peer_access_enabled);
+
+        for (15..30) |l| {
+            const dev_layer_idx = l - 15;
+            const rf = if (model.layers[l].is_global) model.rope_freqs_dev1 else null;
+            const rf_slice = if (rf) |r| r.slice() else null;
+            try runLayerCuda(dev1, &model.layers[l], P, P, rf_slice, dev_layer_idx);
+        }
+
+        try dev1.stream.synchronize();
+        try ws.dev0.stream.synchronize();
+    }
+}
+
 fn runSingleGpuLayersEager(ws: *CudaWorkspace, model: *const CudaModel, P: usize, N: usize, answer_idx: usize) !void {
     ws.dev0.resetBufferPointers();
     for (0..ModelConfig.num_layers) |l| {
         const rf = if (model.layers[l].is_global) model.rope_freqs_dev0 else null;
         const rf_slice = if (rf) |r| r.slice() else null;
-        try runLayerCuda(&ws.dev0, &model.layers[l], P, N, rf_slice);
+        try runLayerCuda(&ws.dev0, &model.layers[l], P, N, rf_slice, null);
     }
     const answer_slice = try ws.dev0.current_emb.slice().subslice(answer_idx * ModelConfig.embedding_dim, ModelConfig.embedding_dim);
     try cuda_mem.rmsNorm(answer_slice, model.output_norm.slice(), ws.dev0.norm_hidden.slice(), 1, ModelConfig.embedding_dim, 1e-6, &ws.dev0.stream);
@@ -945,7 +1310,7 @@ fn runPartition0Eager(ws: *CudaWorkspace, model: *const CudaModel, P: usize, N: 
     for (0..15) |l| {
         const rf = if (model.layers[l].is_global) model.rope_freqs_dev0 else null;
         const rf_slice = if (rf) |r| r.slice() else null;
-        try runLayerCuda(&ws.dev0, &model.layers[l], P, N, rf_slice);
+        try runLayerCuda(&ws.dev0, &model.layers[l], P, N, rf_slice, null);
     }
 }
 
@@ -955,11 +1320,46 @@ fn runPartition1Eager(ws: *CudaWorkspace, model: *const CudaModel, P: usize, N: 
     for (15..30) |l| {
         const rf = if (model.layers[l].is_global) model.rope_freqs_dev1 else null;
         const rf_slice = if (rf) |r| r.slice() else null;
-        try runLayerCuda(dev1, &model.layers[l], P, N, rf_slice);
+        try runLayerCuda(dev1, &model.layers[l], P, N, rf_slice, null);
     }
     const answer_slice = try dev1.current_emb.slice().subslice(answer_idx * ModelConfig.embedding_dim, ModelConfig.embedding_dim);
     try cuda_mem.rmsNorm(answer_slice, model.output_norm.slice(), dev1.norm_hidden.slice(), 1, ModelConfig.embedding_dim, 1e-6, &dev1.stream);
 }
+
+fn runSingleGpuCanvasEager(ws: *CudaWorkspace, model: *const CudaModel, P: usize, C: usize, answer_pos: usize) !void {
+    ws.dev0.resetBufferPointers();
+    for (0..ModelConfig.num_layers) |l| {
+        const rf = if (model.layers[l].is_global) model.rope_freqs_dev0 else null;
+        const rf_slice = if (rf) |r| r.slice() else null;
+        try runLayerCanvasCuda(&ws.dev0, &model.layers[l], l, P, C, rf_slice);
+    }
+    const answer_slice = try ws.dev0.current_emb.slice().subslice(answer_pos * ModelConfig.embedding_dim, ModelConfig.embedding_dim);
+    try cuda_mem.rmsNorm(answer_slice, model.output_norm.slice(), ws.dev0.norm_hidden.slice(), 1, ModelConfig.embedding_dim, 1e-6, &ws.dev0.stream);
+}
+
+fn runPartition0CanvasEager(ws: *CudaWorkspace, model: *const CudaModel, P: usize, C: usize) !void {
+    ws.dev0.resetBufferPointers();
+    for (0..15) |l| {
+        const rf = if (model.layers[l].is_global) model.rope_freqs_dev0 else null;
+        const rf_slice = if (rf) |r| r.slice() else null;
+        try runLayerCanvasCuda(&ws.dev0, &model.layers[l], l, P, C, rf_slice);
+    }
+}
+
+fn runPartition1CanvasEager(ws: *CudaWorkspace, model: *const CudaModel, P: usize, C: usize, answer_pos: usize) !void {
+    var dev1 = &ws.dev1.?;
+    dev1.resetBufferPointers();
+    for (15..30) |l| {
+        const dev_layer_idx = l - 15;
+        const rf = if (model.layers[l].is_global) model.rope_freqs_dev1 else null;
+        const rf_slice = if (rf) |r| r.slice() else null;
+        try runLayerCanvasCuda(dev1, &model.layers[l], dev_layer_idx, P, C, rf_slice);
+    }
+    const answer_slice = try dev1.current_emb.slice().subslice(answer_pos * ModelConfig.embedding_dim, ModelConfig.embedding_dim);
+    try cuda_mem.rmsNorm(answer_slice, model.output_norm.slice(), dev1.norm_hidden.slice(), 1, ModelConfig.embedding_dim, 1e-6, &dev1.stream);
+}
+
+pub var enable_prompt_cache: bool = true;
 
 /// Executes a complete single-step structured read forward pass across all 30 layers using CUDA acceleration.
 pub fn executeStructuredReadCuda(
@@ -980,6 +1380,253 @@ pub fn executeStructuredReadCuda(
     const C = canvas_tokens.len;
     const N = P + C;
     if (N > ws.dev0.max_seq_len or N > 512) return error.InvalidParam;
+
+    // Phase 7B: Prompt KV prefix caching and canvas-only forward pass execution
+    if (enable_prompt_cache and P > 0 and P <= CudaDeviceWorkspace.max_prompt_tokens) {
+        const prompt_hash = std.hash.Wyhash.hash(0, std.mem.sliceAsBytes(prompt_tokens));
+        const prompt_hit = ws.prompt_cache_valid and ws.cached_prompt_hash == prompt_hash and ws.cached_prompt_len == P;
+
+        if (!prompt_hit) {
+            ws.invalidatePromptCache();
+            try prefillPromptCuda(ws, model, cpu_model, prompt_tokens);
+            ws.cached_prompt_hash = prompt_hash;
+            ws.cached_prompt_len = P;
+            ws.prompt_cache_valid = true;
+        }
+
+        // Embed canvas tokens on host
+        const host_emb = ws.host_staging_buf[0 .. C * ModelConfig.embedding_dim];
+        const emb_scale: f32 = @sqrt(@as(f32, @floatFromInt(ModelConfig.embedding_dim)));
+        for (canvas_tokens, 0..) |tok, i| {
+            const blocks = cpu_model.getEmbeddingBlocks(tok);
+            const row = host_emb[i * ModelConfig.embedding_dim .. (i + 1) * ModelConfig.embedding_dim];
+            quant.dequantizeRowQ6_K(blocks, row);
+            for (row) |*val| val.* *= emb_scale;
+            ops.unweightedRmsNorm(row, 1e-6, row);
+        }
+
+        ws.dev0.resetBufferPointers();
+        if (ws.dev1) |*d1| d1.resetBufferPointers();
+
+        try ws.dev0.stream.synchronize();
+        if (ws.dev1) |*d1| try d1.stream.synchronize();
+
+        const d0_emb_slice = try ws.dev0.current_emb.slice().subslice(0, C * ModelConfig.embedding_dim);
+        try d0_emb_slice.copyFromHost(host_emb);
+        try ws.dev0.stream.synchronize();
+
+        const graph_valid = (ws.graph0 != null and ws.cached_graph_prompt_len == P and ws.cached_graph_canvas_len == C and ws.cached_graph_answer_pos == answer_pos);
+
+        if (model.topology == .single_gpu) {
+            var replay_success = false;
+            if (graph_valid and !inject_graph_replay_failure) {
+                if (ws.graph0.?.launch(&ws.dev0.stream)) |_| {
+                    replay_success = true;
+                } else |_| {
+                    if (ws.graph0) |*g0| {
+                        g0.deinit();
+                        ws.graph0 = null;
+                    }
+                }
+            }
+
+            if (replay_success) {
+                try ws.dev0.stream.synchronize();
+                try ws.dev0.norm_hidden.copyToHost(ws.host_norm_hidden);
+            } else {
+                if (ws.graph0) |*g0| {
+                    g0.deinit();
+                    ws.graph0 = null;
+                }
+
+                var capture0_ok = false;
+                if (cuda_mem.CudaGraph.beginCapture(&ws.dev0.stream)) |_| {
+                    capture0_ok = true;
+                } else |_| {}
+
+                if (capture0_ok) {
+                    errdefer cuda_mem.CudaGraph.cancelCapture(&ws.dev0.stream);
+                    try runSingleGpuCanvasEager(ws, model, P, C, answer_pos);
+
+                    var g0_instantiated = false;
+                    if (!inject_graph_capture_failure) {
+                        if (cuda_mem.CudaGraph.endCapture(&ws.dev0.stream)) |g0| {
+                            ws.graph0 = g0;
+                            ws.cached_graph_prompt_len = P;
+                            ws.cached_graph_canvas_len = C;
+                            ws.cached_graph_answer_pos = answer_pos;
+                            var launch_ok = false;
+                            if (!inject_graph_replay_failure) {
+                                if (ws.graph0.?.launch(&ws.dev0.stream)) |_| {
+                                    launch_ok = true;
+                                } else |_| {}
+                            }
+                            if (launch_ok) {
+                                g0_instantiated = true;
+                            } else {
+                                ws.graph0.?.deinit();
+                                ws.graph0 = null;
+                            }
+                        } else |_| {}
+                    } else {
+                        cuda_mem.CudaGraph.cancelCapture(&ws.dev0.stream);
+                    }
+
+                    if (!g0_instantiated) {
+                        try runSingleGpuCanvasEager(ws, model, P, C, answer_pos);
+                    }
+                } else {
+                    try runSingleGpuCanvasEager(ws, model, P, C, answer_pos);
+                }
+
+                try ws.dev0.stream.synchronize();
+                try ws.dev0.norm_hidden.copyToHost(ws.host_norm_hidden);
+            }
+        } else {
+            var dev1 = &ws.dev1.?;
+            const d0_out_slice = try ws.dev0.emb_buf_1.slice().subslice(0, C * ModelConfig.embedding_dim);
+            const d1_in_slice = try dev1.emb_buf_0.slice().subslice(0, C * ModelConfig.embedding_dim);
+            const ev_opt = if (ws.boundary_event) |*ev| ev else null;
+
+            var replay_success = false;
+            if (graph_valid and ws.graph1 != null and !inject_graph_replay_failure) {
+                var l0_ok = false;
+                if (ws.graph0.?.launch(&ws.dev0.stream)) |_| {
+                    l0_ok = true;
+                } else |_| {}
+
+                if (l0_ok) {
+                    var tr_ok = false;
+                    if (transferHiddenState(d0_out_slice, d1_in_slice, &ws.dev0.stream, &dev1.stream, ev_opt, ws.host_staging_buf, ws.peer_access_enabled)) |_| {
+                        tr_ok = true;
+                    } else |_| {}
+
+                    if (tr_ok) {
+                        if (ws.graph1.?.launch(&dev1.stream)) |_| {
+                            replay_success = true;
+                        } else |_| {}
+                    }
+                }
+                if (!replay_success) {
+                    if (ws.graph0) |*g0| {
+                        g0.deinit();
+                        ws.graph0 = null;
+                    }
+                    if (ws.graph1) |*g1| {
+                        g1.deinit();
+                        ws.graph1 = null;
+                    }
+                }
+            }
+
+            if (!replay_success) {
+                if (ws.graph0) |*g0| {
+                    g0.deinit();
+                    ws.graph0 = null;
+                }
+                if (ws.graph1) |*g1| {
+                    g1.deinit();
+                    ws.graph1 = null;
+                }
+
+                // --- Partition 0 (Device 0, Layers 0..14) ---
+                var capture0_ok = false;
+                if (cuda_mem.CudaGraph.beginCapture(&ws.dev0.stream)) |_| {
+                    capture0_ok = true;
+                } else |_| {}
+
+                if (capture0_ok) {
+                    errdefer cuda_mem.CudaGraph.cancelCapture(&ws.dev0.stream);
+                    try runPartition0CanvasEager(ws, model, P, C);
+
+                    var g0_instantiated = false;
+                    if (!inject_graph_capture_failure) {
+                        if (cuda_mem.CudaGraph.endCapture(&ws.dev0.stream)) |g0| {
+                            ws.graph0 = g0;
+                            var p0_launch_ok = false;
+                            if (!inject_graph_replay_failure) {
+                                if (ws.graph0.?.launch(&ws.dev0.stream)) |_| {
+                                    p0_launch_ok = true;
+                                } else |_| {}
+                            }
+                            if (p0_launch_ok) {
+                                g0_instantiated = true;
+                            } else {
+                                ws.graph0.?.deinit();
+                                ws.graph0 = null;
+                            }
+                        } else |_| {}
+                    } else {
+                        cuda_mem.CudaGraph.cancelCapture(&ws.dev0.stream);
+                    }
+
+                    if (!g0_instantiated) {
+                        try runPartition0CanvasEager(ws, model, P, C);
+                    }
+                } else {
+                    try runPartition0CanvasEager(ws, model, P, C);
+                }
+
+                // Boundary transfer H_15 to Device 1 (canvas length C)
+                try transferHiddenState(d0_out_slice, d1_in_slice, &ws.dev0.stream, &dev1.stream, ev_opt, ws.host_staging_buf, ws.peer_access_enabled);
+
+                // --- Partition 1 (Device 1, Layers 15..29 + Output RMSNorm) ---
+                var capture1_ok = false;
+                if (cuda_mem.CudaGraph.beginCapture(&dev1.stream)) |_| {
+                    capture1_ok = true;
+                } else |_| {}
+
+                if (capture1_ok) {
+                    errdefer cuda_mem.CudaGraph.cancelCapture(&dev1.stream);
+                    try runPartition1CanvasEager(ws, model, P, C, answer_pos);
+
+                    var g1_instantiated = false;
+                    if (!inject_graph_capture_failure) {
+                        if (cuda_mem.CudaGraph.endCapture(&dev1.stream)) |g1| {
+                            ws.graph1 = g1;
+                            ws.cached_graph_prompt_len = P;
+                            ws.cached_graph_canvas_len = C;
+                            ws.cached_graph_answer_pos = answer_pos;
+                            var p1_launch_ok = false;
+                            if (!inject_graph_replay_failure) {
+                                if (ws.graph1.?.launch(&dev1.stream)) |_| {
+                                    p1_launch_ok = true;
+                                } else |_| {}
+                            }
+                            if (p1_launch_ok) {
+                                g1_instantiated = true;
+                            } else {
+                                ws.graph1.?.deinit();
+                                ws.graph1 = null;
+                            }
+                        } else |_| {}
+                    } else {
+                        cuda_mem.CudaGraph.cancelCapture(&dev1.stream);
+                    }
+
+                    if (!g1_instantiated) {
+                        try runPartition1CanvasEager(ws, model, P, C, answer_pos);
+                    }
+                } else {
+                    try runPartition1CanvasEager(ws, model, P, C, answer_pos);
+                }
+            }
+
+            try dev1.stream.synchronize();
+            try ws.dev0.stream.synchronize();
+
+            // Copy normalized hidden state to host
+            try dev1.norm_hidden.copyToHost(ws.host_norm_hidden);
+            try dev1.stream.synchronize();
+        }
+
+        // Project candidate logits on host using Q6_K dot products
+        infer.readCandidateLogits(cpu_model, ws.host_norm_hidden, candidate_token_ids, out_raw_logits, out_softcapped_logits);
+        return;
+    }
+
+    // --- Uncached Fallback Execution Path (when enable_prompt_cache == false or P > max_prompt_tokens) ---
+    ws.invalidatePromptCache();
     const answer_idx = P + answer_pos;
 
     // 1. Dual-region input embedding on host (takes ~0.05ms)
@@ -1420,7 +2067,7 @@ test "runLayerCuda single-layer forward pass on local model layer 0 if present" 
     for (0..num_tokens) |t| {
         std.debug.print("host_in on GPU Token {d}: {any}\n", .{ t, chk[t * ModelConfig.embedding_dim .. t * ModelConfig.embedding_dim + 5] });
     }
-    try runLayerCuda(&dev_ws, &layer0, prompt_len, num_tokens, null);
+    try runLayerCuda(&dev_ws, &layer0, prompt_len, num_tokens, null, null);
     try dev_ws.stream.synchronize();
 
     const gpu_out = try allocator.alloc(f32, total_elements);
@@ -1556,7 +2203,7 @@ test "runLayerCuda single-layer forward pass on local model layer 5 (global atte
         std.debug.print("host_in on GPU L5 Token {d}: {any}\n", .{ t, chk5[t * ModelConfig.embedding_dim .. t * ModelConfig.embedding_dim + 5] });
     }
     const rf_slice = if (rope_freqs_dev) |*rf| rf.slice() else null;
-    try runLayerCuda(&dev_ws, &layer5, prompt_len, num_tokens, rf_slice);
+    try runLayerCuda(&dev_ws, &layer5, prompt_len, num_tokens, rf_slice, null);
     try dev_ws.stream.synchronize();
 
     const gpu_out = try allocator.alloc(f32, total_elements);
@@ -1733,11 +2380,32 @@ test "executeStructuredReadCuda full 30-layer forward pass on local model if pre
     for (0..2) |i| {
         try std.testing.expectApproxEqAbs(cuda_raw[i], rep_fail_raw[i], 1e-4);
     }
+
+    // Phase 7B Parity Test: Compare cached structured read against uncached full forward pass
+    enable_prompt_cache = false;
+    defer enable_prompt_cache = true;
+    var uncached_raw: [2]f32 = undefined;
+    var uncached_soft: [2]f32 = undefined;
+    try executeStructuredReadCuda(
+        ws,
+        cuda_model,
+        cpu_model,
+        &prompt_tokens,
+        canvas.tokens[0..canvas_len],
+        canvas.answer_pos,
+        &candidate_tokens,
+        &uncached_raw,
+        &uncached_soft,
+    );
+    for (0..2) |i| {
+        try std.testing.expectApproxEqAbs(cuda_raw[i], uncached_raw[i], 1e-4);
+        try std.testing.expectApproxEqAbs(cuda_softcapped[i], uncached_soft[i], 1e-4);
+    }
 }
 
 test "CudaDeviceWorkspace: activationWorkspaceBytes matches audited footprint (R24-01)" {
     const bytes_512 = CudaDeviceWorkspace.activationWorkspaceBytes(512);
-    // Audited exact byte sum for N=512: 210,938,880 bytes (~210.94 MB, 201.17 MiB)
-    try std.testing.expectEqual(@as(usize, 210938880), bytes_512);
+    // Audited exact byte sum for N=512: 336,801,792 bytes (~336.80 MB, 321.20 MiB)
+    try std.testing.expectEqual(@as(usize, 336801792), bytes_512);
 }
 

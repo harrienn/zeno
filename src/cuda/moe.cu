@@ -419,6 +419,369 @@ __global__ void moe_accumulate_scaled_batched_kernel(
 }
 
 // ---------------------------------------------------------------------------
+// 5. Stage 7 Token-Sorted Expert MoE Kernels (Phase 7A)
+// ---------------------------------------------------------------------------
+
+__global__ void moe_build_expert_bins_kernel(
+    const int *__restrict__ top_indices,
+    int *__restrict__ expert_counts,
+    int *__restrict__ expert_offsets,
+    int *__restrict__ sorted_instances,
+    int *__restrict__ instance_to_sorted,
+    int num_tokens
+) {
+    __shared__ int s_counts[128];
+    __shared__ int s_offsets[128];
+    __shared__ int s_write_ptrs[128];
+
+    int tid = threadIdx.x;
+    int num_instances = num_tokens * 8;
+
+    if (tid < 128) {
+        s_counts[tid] = 0;
+    }
+    __syncthreads();
+
+    // 1. Histogram of expert assignments
+    for (int i = tid; i < num_instances; i += blockDim.x) {
+        int exp_id = top_indices[i];
+        if (exp_id >= 0 && exp_id < 128) {
+            atomicAdd(&s_counts[exp_id], 1);
+        }
+    }
+    __syncthreads();
+
+    // 2. Prefix scan over 128 experts (performed deterministically by thread 0)
+    if (tid == 0) {
+        int offset = 0;
+        for (int e = 0; e < 128; ++e) {
+            int cnt = s_counts[e];
+            s_offsets[e] = offset;
+            s_write_ptrs[e] = offset;
+            offset += cnt;
+        }
+    }
+    __syncthreads();
+
+    // 3. Deterministic scatter of instances into sorted buckets (thread 0)
+    if (tid == 0) {
+        for (int i = 0; i < num_instances; ++i) {
+            int exp_id = top_indices[i];
+            if (exp_id >= 0 && exp_id < 128) {
+                int pos = s_write_ptrs[exp_id]++;
+                sorted_instances[pos] = i;
+                instance_to_sorted[i] = pos;
+            } else {
+                instance_to_sorted[i] = -1;
+            }
+        }
+    }
+    __syncthreads();
+
+    // 4. Write back counts and offsets to global memory
+    if (tid < 128) {
+        expert_counts[tid] = s_counts[tid];
+        expert_offsets[tid] = s_offsets[tid];
+    }
+}
+
+__global__ void moe_gemv_gate_up_sorted_kernel(
+    const uint8_t *__restrict__ all_expert_weights,
+    const float *__restrict__ tokens_in,
+    const int *__restrict__ expert_counts,
+    const int *__restrict__ expert_offsets,
+    const int *__restrict__ sorted_instances,
+    float *__restrict__ out_gate_up,
+    int in_dim,
+    int out_dim,
+    int blocks_per_row,
+    size_t expert_bytes
+) {
+    int exp_id = blockIdx.y;
+    int count = expert_counts[exp_id];
+    if (count <= 0) return;
+
+    int warp_id = threadIdx.x >> 5;
+    int lane_id = threadIdx.x & 31;
+    int row_base = (blockIdx.x * 8 + warp_id) * 4;
+    int offset = expert_offsets[exp_id];
+
+    const BlockQ4_K *exp_W = (const BlockQ4_K *)(all_expert_weights + (size_t)exp_id * expert_bytes);
+
+    for (int m_base = 0; m_base < count; m_base += 4) {
+        int batch = count - m_base;
+        if (batch > 4) batch = 4;
+
+        const float *tok_ptrs[4];
+        float *out_ptrs[4];
+        #pragma unroll
+        for (int m = 0; m < 4; ++m) {
+            if (m < batch) {
+                int sorted_slot = offset + m_base + m;
+                int inst = sorted_instances[sorted_slot];
+                int tok_idx = inst / 8;
+                tok_ptrs[m] = tokens_in + (size_t)tok_idx * in_dim;
+                out_ptrs[m] = out_gate_up + (size_t)sorted_slot * out_dim;
+            } else {
+                tok_ptrs[m] = NULL;
+                out_ptrs[m] = NULL;
+            }
+        }
+
+        #pragma unroll
+        for (int r = 0; r < 4; ++r) {
+            int row = row_base + r;
+            if (row >= out_dim) continue;
+
+            const BlockQ4_K *row_w = exp_W + (size_t)row * blocks_per_row;
+            float thread_sum[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+
+            for (int b = 0; b < blocks_per_row; b++) {
+                const BlockQ4_K *blk = row_w + b;
+                size_t base_x = (size_t)b * 256;
+
+                float my_d, my_m;
+                precompute_q4k_scales(blk, lane_id, &my_d, &my_m);
+
+                #pragma unroll
+                for (int chunk = 0; chunk < 4; chunk++) {
+                    float d1 = __shfl_sync(0xffffffff, my_d, chunk * 2 + 0);
+                    float m_val1 = __shfl_sync(0xffffffff, my_m, chunk * 2 + 0);
+                    float d2 = __shfl_sync(0xffffffff, my_d, chunk * 2 + 1);
+                    float m_val2 = __shfl_sync(0xffffffff, my_m, chunk * 2 + 1);
+
+                    const uint8_t *q_slice = blk->qs + chunk * 32;
+                    uint8_t q_byte = q_slice[lane_id];
+
+                    float q1 = (float)(q_byte & 0x0F);
+                    float q2 = (float)(q_byte >> 4);
+
+                    float w1 = d1 * q1 - m_val1;
+                    float w2 = d2 * q2 - m_val2;
+
+                    #pragma unroll
+                    for (int m = 0; m < 4; ++m) {
+                        if (m < batch) {
+                            float x1 = tok_ptrs[m][base_x + chunk * 64 + lane_id];
+                            float x2 = tok_ptrs[m][base_x + chunk * 64 + 32 + lane_id];
+                            thread_sum[m] += w1 * x1 + w2 * x2;
+                        }
+                    }
+                }
+            }
+
+            #pragma unroll
+            for (int m = 0; m < 4; ++m) {
+                if (m < batch) {
+                    float row_sum = warp_reduce_sum(thread_sum[m]);
+                    if (lane_id == 0) {
+                        out_ptrs[m][row] = row_sum;
+                    }
+                }
+            }
+        }
+    }
+}
+
+__global__ void moe_gemv_down_sorted_kernel(
+    const uint8_t *__restrict__ all_expert_weights,
+    int expert_type,
+    const float *__restrict__ acts_in,
+    const int *__restrict__ expert_counts,
+    const int *__restrict__ expert_offsets,
+    const int *__restrict__ sorted_instances,
+    float *__restrict__ out_down,
+    int in_dim,
+    int out_dim,
+    int blocks_per_row,
+    size_t expert_bytes
+) {
+    int exp_id = blockIdx.y;
+    int count = expert_counts[exp_id];
+    if (count <= 0) return;
+
+    int warp_id = threadIdx.x >> 5;
+    int lane_id = threadIdx.x & 31;
+    int row_base = (blockIdx.x * 8 + warp_id) * 4;
+    int offset = expert_offsets[exp_id];
+
+    for (int m_base = 0; m_base < count; m_base += 4) {
+        int batch = count - m_base;
+        if (batch > 4) batch = 4;
+
+        const float *tok_acts[4];
+        float *tok_outs[4];
+        #pragma unroll
+        for (int m = 0; m < 4; ++m) {
+            if (m < batch) {
+                int sorted_slot = offset + m_base + m;
+                tok_acts[m] = acts_in + (size_t)sorted_slot * in_dim;
+                tok_outs[m] = out_down + (size_t)sorted_slot * out_dim;
+            } else {
+                tok_acts[m] = NULL;
+                tok_outs[m] = NULL;
+            }
+        }
+
+        if (expert_type == 8) { // Q8_0
+            const BlockQ8_0 *exp_W = (const BlockQ8_0 *)(all_expert_weights + (size_t)exp_id * expert_bytes);
+            int r0 = row_base + 0;
+            int r1 = row_base + 1;
+            int r2 = row_base + 2;
+            int r3 = row_base + 3;
+
+            const BlockQ8_0 *row_w0 = (r0 < out_dim) ? (exp_W + (size_t)r0 * blocks_per_row) : NULL;
+            const BlockQ8_0 *row_w1 = (r1 < out_dim) ? (exp_W + (size_t)r1 * blocks_per_row) : NULL;
+            const BlockQ8_0 *row_w2 = (r2 < out_dim) ? (exp_W + (size_t)r2 * blocks_per_row) : NULL;
+            const BlockQ8_0 *row_w3 = (r3 < out_dim) ? (exp_W + (size_t)r3 * blocks_per_row) : NULL;
+
+            float sum0[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            float sum1[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            float sum2[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            float sum3[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+
+            for (int b = 0; b < blocks_per_row; b++) {
+                float w0 = 0.0f, w1 = 0.0f, w2 = 0.0f, w3 = 0.0f;
+                if (row_w0) {
+                    const BlockQ8_0 *blk0 = row_w0 + b;
+                    w0 = __half2float(blk0->d) * (float)blk0->qs[lane_id];
+                }
+                if (row_w1) {
+                    const BlockQ8_0 *blk1 = row_w1 + b;
+                    w1 = __half2float(blk1->d) * (float)blk1->qs[lane_id];
+                }
+                if (row_w2) {
+                    const BlockQ8_0 *blk2 = row_w2 + b;
+                    w2 = __half2float(blk2->d) * (float)blk2->qs[lane_id];
+                }
+                if (row_w3) {
+                    const BlockQ8_0 *blk3 = row_w3 + b;
+                    w3 = __half2float(blk3->d) * (float)blk3->qs[lane_id];
+                }
+
+                #pragma unroll
+                for (int m = 0; m < 4; ++m) {
+                    if (m < batch) {
+                        float xv = tok_acts[m][b * 32 + lane_id];
+                        sum0[m] += w0 * xv;
+                        sum1[m] += w1 * xv;
+                        sum2[m] += w2 * xv;
+                        sum3[m] += w3 * xv;
+                    }
+                }
+            }
+
+            #pragma unroll
+            for (int m = 0; m < 4; ++m) {
+                if (m < batch) {
+                    if (row_w0) {
+                        float rsum0 = warp_reduce_sum(sum0[m]);
+                        if (lane_id == 0) tok_outs[m][r0] = rsum0;
+                    }
+                    if (row_w1) {
+                        float rsum1 = warp_reduce_sum(sum1[m]);
+                        if (lane_id == 0) tok_outs[m][r1] = rsum1;
+                    }
+                    if (row_w2) {
+                        float rsum2 = warp_reduce_sum(sum2[m]);
+                        if (lane_id == 0) tok_outs[m][r2] = rsum2;
+                    }
+                    if (row_w3) {
+                        float rsum3 = warp_reduce_sum(sum3[m]);
+                        if (lane_id == 0) tok_outs[m][r3] = rsum3;
+                    }
+                }
+            }
+        } else { // Q5_0
+            const BlockQ5_0 *exp_W = (const BlockQ5_0 *)(all_expert_weights + (size_t)exp_id * expert_bytes);
+            #pragma unroll
+            for (int r = 0; r < 4; ++r) {
+                int row = row_base + r;
+                if (row >= out_dim) continue;
+                const BlockQ5_0 *row_w = exp_W + (size_t)row * blocks_per_row;
+                float thread_sum[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+
+                for (int b = 0; b < blocks_per_row; b++) {
+                    const BlockQ5_0 *blk = row_w + b;
+                    float d = 0.0f;
+                    uint32_t qh = 0;
+                    if (lane_id == 0) {
+                        d = __half2float(blk->d);
+                        uint16_t qh_lo = *(const uint16_t*)(blk->qh + 0);
+                        uint16_t qh_hi = *(const uint16_t*)(blk->qh + 2);
+                        qh = (uint32_t)qh_lo | ((uint32_t)qh_hi << 16);
+                    }
+                    d = __shfl_sync(0xffffffff, d, 0);
+                    qh = __shfl_sync(0xffffffff, qh, 0);
+                    uint16_t qs_pair = 0;
+                    if (lane_id < 8) {
+                        qs_pair = *(const uint16_t*)(blk->qs + lane_id * 2);
+                    }
+                    int sub_lane = (lane_id < 16) ? lane_id : (lane_id - 16);
+                    uint16_t fetched_pair = __shfl_sync(0xffffffff, qs_pair, sub_lane >> 1);
+                    uint8_t q_byte = (uint8_t)((sub_lane & 1) == 0 ? (fetched_pair & 0xFF) : (fetched_pair >> 8));
+
+                    size_t base_x = (size_t)b * 32;
+                    float w;
+                    if (lane_id < 16) {
+                        uint8_t bit = (uint8_t)((qh >> lane_id) & 1);
+                        int q = (int)((q_byte & 0x0F) | (bit << 4)) - 16;
+                        w = d * (float)q;
+                    } else {
+                        int j = lane_id - 16;
+                        uint8_t bit = (uint8_t)((qh >> (j + 16)) & 1);
+                        int q = (int)((q_byte >> 4) | (bit << 4)) - 16;
+                        w = d * (float)q;
+                    }
+
+                    #pragma unroll
+                    for (int m = 0; m < 4; ++m) {
+                        if (m < batch) {
+                            float xv = tok_acts[m][base_x + lane_id];
+                            thread_sum[m] += w * xv;
+                        }
+                    }
+                }
+
+                #pragma unroll
+                for (int m = 0; m < 4; ++m) {
+                    if (m < batch) {
+                        float row_sum = warp_reduce_sum(thread_sum[m]);
+                        if (lane_id == 0) {
+                            tok_outs[m][row] = row_sum;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+__global__ void moe_accumulate_scaled_sorted_kernel(
+    float *__restrict__ moe_accum,
+    const float *__restrict__ sorted_down_out,
+    const int *__restrict__ instance_to_sorted,
+    const float *__restrict__ top_weights,
+    int num_tokens,
+    int dim
+) {
+    int token_idx = blockIdx.y;
+    int d = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (token_idx < num_tokens && d < dim) {
+        float sum = 0.0f;
+        #pragma unroll
+        for (int e = 0; e < 8; ++e) {
+            int k = token_idx * 8 + e;
+            int sorted_k = instance_to_sorted[k];
+            float w = top_weights[k];
+            sum += sorted_down_out[(size_t)sorted_k * dim + d] * w;
+        }
+        moe_accum[(size_t)token_idx * dim + d] = sum;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // C ABI Host Entrypoints
 // ---------------------------------------------------------------------------
 
@@ -679,6 +1042,178 @@ int zeno_cuda_moe_accumulate_scaled_batched(
     moe_accumulate_scaled_batched_kernel<<<grid, block_size, 0, custream>>>(
         moe_accum,
         down_out,
+        top_weights,
+        num_tokens,
+        dim
+    );
+
+    cudaError_t err = cudaGetLastError();
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED : ZENO_CUDA_SUCCESS;
+    return restore_cuda_device(orig, op_rc);
+}
+
+int zeno_cuda_moe_build_expert_bins(
+    const int *top_indices,
+    int *expert_counts,
+    int *expert_offsets,
+    int *sorted_instances,
+    int *instance_to_sorted,
+    int num_tokens,
+    int device_id,
+    void *stream
+) {
+    if (!top_indices || !expert_counts || !expert_offsets || !sorted_instances || !instance_to_sorted) {
+        return ZENO_CUDA_ERR_INVALID_PARAM;
+    }
+    if (num_tokens <= 0) return ZENO_CUDA_ERR_INVALID_PARAM;
+
+    int orig = 0;
+    int rc = set_cuda_device(device_id, &orig);
+    if (rc != ZENO_CUDA_SUCCESS) return rc;
+
+    cudaStream_t custream = (cudaStream_t)stream;
+    moe_build_expert_bins_kernel<<<1, 128, 0, custream>>>(
+        top_indices,
+        expert_counts,
+        expert_offsets,
+        sorted_instances,
+        instance_to_sorted,
+        num_tokens
+    );
+
+    cudaError_t err = cudaGetLastError();
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED : ZENO_CUDA_SUCCESS;
+    return restore_cuda_device(orig, op_rc);
+}
+
+int zeno_cuda_moe_gemv_gate_up_sorted(
+    const uint8_t *all_expert_weights,
+    const float *tokens_in,
+    const int *expert_counts,
+    const int *expert_offsets,
+    const int *sorted_instances,
+    float *out_gate_up,
+    int num_tokens,
+    int in_dim,
+    int out_dim,
+    int device_id,
+    void *stream
+) {
+    if (!all_expert_weights || !tokens_in || !expert_counts || !expert_offsets || !sorted_instances || !out_gate_up) {
+        return ZENO_CUDA_ERR_INVALID_PARAM;
+    }
+    if (num_tokens <= 0 || in_dim <= 0 || out_dim <= 0 || in_dim % 256 != 0) return ZENO_CUDA_ERR_INVALID_PARAM;
+
+    int orig = 0;
+    int rc = set_cuda_device(device_id, &orig);
+    if (rc != ZENO_CUDA_SUCCESS) return rc;
+
+    int blocks_per_row = in_dim / 256;
+    size_t expert_bytes = (size_t)out_dim * (size_t)blocks_per_row * sizeof(BlockQ4_K);
+
+    const int block_size = 256;
+    unsigned int grid_x = (unsigned int)((out_dim + 31) / 32);
+    unsigned int grid_y = 128;
+    dim3 grid(grid_x, grid_y);
+    cudaStream_t custream = (cudaStream_t)stream;
+
+    moe_gemv_gate_up_sorted_kernel<<<grid, block_size, 0, custream>>>(
+        all_expert_weights,
+        tokens_in,
+        expert_counts,
+        expert_offsets,
+        sorted_instances,
+        out_gate_up,
+        in_dim,
+        out_dim,
+        blocks_per_row,
+        expert_bytes
+    );
+
+    cudaError_t err = cudaGetLastError();
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED : ZENO_CUDA_SUCCESS;
+    return restore_cuda_device(orig, op_rc);
+}
+
+int zeno_cuda_moe_gemv_down_sorted(
+    const uint8_t *all_expert_weights,
+    int expert_type,
+    const float *acts_in,
+    const int *expert_counts,
+    const int *expert_offsets,
+    const int *sorted_instances,
+    float *out_down,
+    int num_tokens,
+    int in_dim,
+    int out_dim,
+    int device_id,
+    void *stream
+) {
+    if (!all_expert_weights || !acts_in || !expert_counts || !expert_offsets || !sorted_instances || !out_down) {
+        return ZENO_CUDA_ERR_INVALID_PARAM;
+    }
+    if (num_tokens <= 0 || in_dim <= 0 || out_dim <= 0 || in_dim % 32 != 0) return ZENO_CUDA_ERR_INVALID_PARAM;
+    if (expert_type != 6 && expert_type != 8) return ZENO_CUDA_ERR_INVALID_PARAM;
+
+    int orig = 0;
+    int rc = set_cuda_device(device_id, &orig);
+    if (rc != ZENO_CUDA_SUCCESS) return rc;
+
+    int blocks_per_row = in_dim / 32;
+    size_t block_size_bytes = (expert_type == 6) ? sizeof(BlockQ5_0) : sizeof(BlockQ8_0);
+    size_t expert_bytes = (size_t)out_dim * (size_t)blocks_per_row * block_size_bytes;
+
+    const int block_size = 256;
+    unsigned int grid_x = (unsigned int)((out_dim + 31) / 32);
+    unsigned int grid_y = 128;
+    dim3 grid(grid_x, grid_y);
+    cudaStream_t custream = (cudaStream_t)stream;
+
+    moe_gemv_down_sorted_kernel<<<grid, block_size, 0, custream>>>(
+        all_expert_weights,
+        expert_type,
+        acts_in,
+        expert_counts,
+        expert_offsets,
+        sorted_instances,
+        out_down,
+        in_dim,
+        out_dim,
+        blocks_per_row,
+        expert_bytes
+    );
+
+    cudaError_t err = cudaGetLastError();
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED : ZENO_CUDA_SUCCESS;
+    return restore_cuda_device(orig, op_rc);
+}
+
+int zeno_cuda_moe_accumulate_scaled_sorted(
+    float *moe_accum,
+    const float *sorted_down_out,
+    const int *instance_to_sorted,
+    const float *top_weights,
+    int num_tokens,
+    int dim,
+    int device_id,
+    void *stream
+) {
+    if (!moe_accum || !sorted_down_out || !instance_to_sorted || !top_weights) return ZENO_CUDA_ERR_INVALID_PARAM;
+    if (num_tokens <= 0 || dim <= 0) return ZENO_CUDA_ERR_INVALID_PARAM;
+
+    int orig = 0;
+    int rc = set_cuda_device(device_id, &orig);
+    if (rc != ZENO_CUDA_SUCCESS) return rc;
+
+    const int block_size = 256;
+    unsigned int grid_x = (unsigned int)((dim + block_size - 1) / block_size);
+    dim3 grid(grid_x, (unsigned int)num_tokens);
+    cudaStream_t custream = (cudaStream_t)stream;
+
+    moe_accumulate_scaled_sorted_kernel<<<grid, block_size, 0, custream>>>(
+        moe_accum,
+        sorted_down_out,
+        instance_to_sorted,
         top_weights,
         num_tokens,
         dim

@@ -910,6 +910,93 @@ pub fn attention(
     if (rc != 0) return cuda.mapCudaErrorCode(rc);
 }
 
+/// Unified multi-head attention on GPU with cached prompt KV (Phase 7B):
+/// Q: [canvas_len, stride_q]
+/// prompt_k: ?DeviceSlice(f32) [prompt_len * stride_k] (optional if prompt_len == 0)
+/// prompt_v: ?DeviceSlice(f32) [prompt_len * stride_v] (optional if prompt_len == 0)
+/// canvas_k: [canvas_len, stride_k]
+/// canvas_v: [canvas_len, stride_v]
+/// out: [canvas_len, stride_out]
+pub fn attentionCached(
+    q: DeviceSlice(f32),
+    prompt_k: ?DeviceSlice(f32),
+    prompt_v: ?DeviceSlice(f32),
+    canvas_k: DeviceSlice(f32),
+    canvas_v: DeviceSlice(f32),
+    out: DeviceSlice(f32),
+    prompt_len: usize,
+    canvas_len: usize,
+    num_q_heads: usize,
+    num_kv_heads: usize,
+    head_dim: usize,
+    stride_q: usize,
+    stride_k: usize,
+    stride_v: usize,
+    stride_out: usize,
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (canvas_len == 0) return error.InvalidParam;
+    if (prompt_len + canvas_len > 512) return error.InvalidParam;
+    if (num_q_heads == 0 or num_kv_heads == 0) return error.InvalidParam;
+    if (num_q_heads % num_kv_heads != 0) return error.InvalidParam;
+    if (head_dim != 256 and head_dim != 512) return error.InvalidParam;
+
+    const dev = q.device_id;
+    if (canvas_k.device_id != dev or canvas_v.device_id != dev or out.device_id != dev) {
+        return error.DeviceMismatch;
+    }
+    if (prompt_len > 0) {
+        const pk = prompt_k orelse return error.InvalidParam;
+        const pv = prompt_v orelse return error.InvalidParam;
+        if (pk.device_id != dev or pv.device_id != dev) return error.DeviceMismatch;
+        const min_pk_len = std.math.mul(usize, prompt_len, stride_k) catch return error.InvalidParam;
+        const min_pv_len = std.math.mul(usize, prompt_len, stride_v) catch return error.InvalidParam;
+        if (pk.len < min_pk_len or pv.len < min_pv_len) return error.InvalidParam;
+    }
+    if (stream) |s| {
+        if (s.device_id != dev) return error.DeviceMismatch;
+    }
+
+    const min_q_len = std.math.mul(usize, canvas_len, stride_q) catch return error.InvalidParam;
+    const min_ck_len = std.math.mul(usize, canvas_len, stride_k) catch return error.InvalidParam;
+    const min_cv_len = std.math.mul(usize, canvas_len, stride_v) catch return error.InvalidParam;
+    const min_out_len = std.math.mul(usize, canvas_len, stride_out) catch return error.InvalidParam;
+
+    if (q.len < min_q_len or canvas_k.len < min_ck_len or canvas_v.len < min_cv_len or out.len < min_out_len) {
+        return error.InvalidParam;
+    }
+
+    const q_ptr = q.ptr orelse return error.InvalidParam;
+    const pk_ptr = if (prompt_k) |pk| pk.ptr else null;
+    const pv_ptr = if (prompt_v) |pv| pv.ptr else null;
+    const ck_ptr = canvas_k.ptr orelse return error.InvalidParam;
+    const cv_ptr = canvas_v.ptr orelse return error.InvalidParam;
+    const out_ptr = out.ptr orelse return error.InvalidParam;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_attention_cached(
+        q_ptr,
+        pk_ptr,
+        pv_ptr,
+        ck_ptr,
+        cv_ptr,
+        out_ptr,
+        @intCast(prompt_len),
+        @intCast(canvas_len),
+        @intCast(num_q_heads),
+        @intCast(num_kv_heads),
+        @intCast(head_dim),
+        @intCast(stride_q),
+        @intCast(stride_k),
+        @intCast(stride_v),
+        @intCast(stride_out),
+        dev,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
 /// Prepares MoE router input: r_in[t, dim] *= root_size * router_scale[dim]
 pub fn moeRouterPrep(
     r_in: DeviceSlice(f32),
@@ -1233,6 +1320,229 @@ pub fn moeAccumulateScaledBatched(
         @intCast(num_tokens),
         @intCast(dim),
         moe_accum.device_id,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
+/// Stage 7A: Builds expert bins from top_indices:
+/// - expert_counts: [128]i32 count of assigned instances per expert
+/// - expert_offsets: [128]i32 start offset per expert in sorted_instances
+/// - sorted_instances: [num_tokens * 8]i32 sorted mapping (sorted_idx -> orig_instance)
+/// - instance_to_sorted: [num_tokens * 8]i32 reverse mapping (orig_instance -> sorted_idx)
+pub fn moeBuildExpertBins(
+    top_indices: DeviceSlice(i32),
+    expert_counts: DeviceSlice(i32),
+    expert_offsets: DeviceSlice(i32),
+    sorted_instances: DeviceSlice(i32),
+    instance_to_sorted: DeviceSlice(i32),
+    num_tokens: usize,
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (num_tokens == 0) return error.InvalidParam;
+    const num_instances = std.math.mul(usize, num_tokens, 8) catch return error.InvalidParam;
+    if (top_indices.len < num_instances or sorted_instances.len < num_instances or instance_to_sorted.len < num_instances) {
+        return error.InvalidParam;
+    }
+    if (expert_counts.len < 128 or expert_offsets.len < 128) {
+        return error.InvalidParam;
+    }
+    const dev = top_indices.device_id;
+    if (expert_counts.device_id != dev or expert_offsets.device_id != dev or
+        sorted_instances.device_id != dev or instance_to_sorted.device_id != dev)
+    {
+        return error.DeviceMismatch;
+    }
+    if (stream) |s| {
+        if (s.device_id != dev) return error.DeviceMismatch;
+    }
+
+    const idx_ptr = top_indices.ptr orelse return error.InvalidParam;
+    const cnt_ptr = expert_counts.ptr orelse return error.InvalidParam;
+    const off_ptr = expert_offsets.ptr orelse return error.InvalidParam;
+    const sort_ptr = sorted_instances.ptr orelse return error.InvalidParam;
+    const rev_ptr = instance_to_sorted.ptr orelse return error.InvalidParam;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_moe_build_expert_bins(
+        @ptrCast(idx_ptr),
+        @ptrCast(cnt_ptr),
+        @ptrCast(off_ptr),
+        @ptrCast(sort_ptr),
+        @ptrCast(rev_ptr),
+        @intCast(num_tokens),
+        dev,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
+/// Stage 7A: Token-sorted expert gate/up projection on GPU:
+/// For each active expert, streams weights once and projects against all assigned tokens in parallel.
+pub fn moeGemvGateUpSorted(
+    all_expert_weights: DeviceSlice(u8),
+    tokens_in: DeviceSlice(f32),
+    expert_counts: DeviceSlice(i32),
+    expert_offsets: DeviceSlice(i32),
+    sorted_instances: DeviceSlice(i32),
+    out_gate_up: DeviceSlice(f32),
+    num_tokens: usize,
+    in_dim: usize,
+    out_dim: usize,
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (num_tokens == 0 or in_dim == 0 or out_dim == 0) return error.InvalidParam;
+    const dev = all_expert_weights.device_id;
+    if (tokens_in.device_id != dev or expert_counts.device_id != dev or
+        expert_offsets.device_id != dev or sorted_instances.device_id != dev or
+        out_gate_up.device_id != dev)
+    {
+        return error.DeviceMismatch;
+    }
+    if (stream) |s| {
+        if (s.device_id != dev) return error.DeviceMismatch;
+    }
+    const num_instances = std.math.mul(usize, num_tokens, 8) catch return error.InvalidParam;
+    const expected_in_len = std.math.mul(usize, num_tokens, in_dim) catch return error.InvalidParam;
+    const expected_out_len = std.math.mul(usize, num_instances, out_dim) catch return error.InvalidParam;
+    if (tokens_in.len < expected_in_len or sorted_instances.len < num_instances or out_gate_up.len < expected_out_len) {
+        return error.InvalidParam;
+    }
+    if (expert_counts.len < 128 or expert_offsets.len < 128) {
+        return error.InvalidParam;
+    }
+
+    const w_ptr = all_expert_weights.ptr orelse return error.InvalidParam;
+    const in_ptr = tokens_in.ptr orelse return error.InvalidParam;
+    const cnt_ptr = expert_counts.ptr orelse return error.InvalidParam;
+    const off_ptr = expert_offsets.ptr orelse return error.InvalidParam;
+    const sort_ptr = sorted_instances.ptr orelse return error.InvalidParam;
+    const out_ptr = out_gate_up.ptr orelse return error.InvalidParam;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_moe_gemv_gate_up_sorted(
+        w_ptr,
+        in_ptr,
+        @ptrCast(cnt_ptr),
+        @ptrCast(off_ptr),
+        @ptrCast(sort_ptr),
+        out_ptr,
+        @intCast(num_tokens),
+        @intCast(in_dim),
+        @intCast(out_dim),
+        dev,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
+/// Stage 7A: Token-sorted expert down projection on GPU:
+/// For each active expert, streams weights once and down-projects all assigned tokens in parallel.
+pub fn moeGemvDownSorted(
+    all_expert_weights: DeviceSlice(u8),
+    expert_type: u32,
+    acts_in: DeviceSlice(f32),
+    expert_counts: DeviceSlice(i32),
+    expert_offsets: DeviceSlice(i32),
+    sorted_instances: DeviceSlice(i32),
+    out_down: DeviceSlice(f32),
+    num_tokens: usize,
+    in_dim: usize,
+    out_dim: usize,
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (num_tokens == 0 or in_dim == 0 or out_dim == 0) return error.InvalidParam;
+    const dev = all_expert_weights.device_id;
+    if (acts_in.device_id != dev or expert_counts.device_id != dev or
+        expert_offsets.device_id != dev or sorted_instances.device_id != dev or
+        out_down.device_id != dev)
+    {
+        return error.DeviceMismatch;
+    }
+    if (stream) |s| {
+        if (s.device_id != dev) return error.DeviceMismatch;
+    }
+    const num_instances = std.math.mul(usize, num_tokens, 8) catch return error.InvalidParam;
+    const expected_in_len = std.math.mul(usize, num_instances, in_dim) catch return error.InvalidParam;
+    const expected_out_len = std.math.mul(usize, num_instances, out_dim) catch return error.InvalidParam;
+    if (acts_in.len < expected_in_len or sorted_instances.len < num_instances or out_down.len < expected_out_len) {
+        return error.InvalidParam;
+    }
+    if (expert_counts.len < 128 or expert_offsets.len < 128) {
+        return error.InvalidParam;
+    }
+
+    const w_ptr = all_expert_weights.ptr orelse return error.InvalidParam;
+    const in_ptr = acts_in.ptr orelse return error.InvalidParam;
+    const cnt_ptr = expert_counts.ptr orelse return error.InvalidParam;
+    const off_ptr = expert_offsets.ptr orelse return error.InvalidParam;
+    const sort_ptr = sorted_instances.ptr orelse return error.InvalidParam;
+    const out_ptr = out_down.ptr orelse return error.InvalidParam;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_moe_gemv_down_sorted(
+        w_ptr,
+        @intCast(expert_type),
+        in_ptr,
+        @ptrCast(cnt_ptr),
+        @ptrCast(off_ptr),
+        @ptrCast(sort_ptr),
+        out_ptr,
+        @intCast(num_tokens),
+        @intCast(in_dim),
+        @intCast(out_dim),
+        dev,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
+/// Stage 7A: Token-sorted MoE expert accumulation and scaling:
+/// moe_accum[t, d] = sum_{e=0..7} sorted_down_out[instance_to_sorted[t*8+e], d] * top_weights[t*8+e]
+pub fn moeAccumulateScaledSorted(
+    moe_accum: DeviceSlice(f32),
+    sorted_down_out: DeviceSlice(f32),
+    instance_to_sorted: DeviceSlice(i32),
+    top_weights: DeviceSlice(f32),
+    num_tokens: usize,
+    dim: usize,
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (num_tokens == 0 or dim == 0) return error.InvalidParam;
+    const dev = moe_accum.device_id;
+    if (sorted_down_out.device_id != dev or instance_to_sorted.device_id != dev or top_weights.device_id != dev) {
+        return error.DeviceMismatch;
+    }
+    if (stream) |s| {
+        if (s.device_id != dev) return error.DeviceMismatch;
+    }
+    const num_instances = std.math.mul(usize, num_tokens, 8) catch return error.InvalidParam;
+    const expected_accum_len = std.math.mul(usize, num_tokens, dim) catch return error.InvalidParam;
+    const expected_down_len = std.math.mul(usize, num_instances, dim) catch return error.InvalidParam;
+    if (moe_accum.len < expected_accum_len or top_weights.len < num_instances or
+        instance_to_sorted.len < num_instances or sorted_down_out.len < expected_down_len)
+    {
+        return error.InvalidParam;
+    }
+
+    const accum_ptr = moe_accum.ptr orelse return error.InvalidParam;
+    const down_ptr = sorted_down_out.ptr orelse return error.InvalidParam;
+    const rev_ptr = instance_to_sorted.ptr orelse return error.InvalidParam;
+    const w_ptr = top_weights.ptr orelse return error.InvalidParam;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_moe_accumulate_scaled_sorted(
+        accum_ptr,
+        down_ptr,
+        @ptrCast(rev_ptr),
+        w_ptr,
+        @intCast(num_tokens),
+        @intCast(dim),
+        dev,
         s_handle,
     );
     if (rc != 0) return cuda.mapCudaErrorCode(rc);
@@ -2545,6 +2855,119 @@ test "CUDA attention parity across SWA and Global heads" {
     }
 }
 
+test "CUDA Stage 7B cached attention parity against uncached full attention" {
+    if (!cuda.is_enabled) return;
+    const dev = requireHardwareDevice() catch |err| switch (err) {
+        error.SkipZigTest => return,
+        else => return err,
+    };
+
+    const allocator = std.testing.allocator;
+    var prng = std.Random.DefaultPrng.init(0x9988_7766);
+    const rand = prng.random();
+
+    const prompt_len: usize = 4;
+    const canvas_len: usize = 2;
+    const total_tokens = prompt_len + canvas_len;
+    const num_q_heads: usize = 8;
+    const num_kv_heads: usize = 2;
+    const head_dim: usize = 256;
+
+    const q_dim = num_q_heads * head_dim;
+    const k_dim = num_kv_heads * head_dim;
+
+    const host_q = try allocator.alloc(f32, total_tokens * q_dim);
+    defer allocator.free(host_q);
+    const host_k = try allocator.alloc(f32, total_tokens * k_dim);
+    defer allocator.free(host_k);
+    const host_v = try allocator.alloc(f32, total_tokens * k_dim);
+    defer allocator.free(host_v);
+
+    for (host_q) |*x| x.* = (rand.float(f32) * 2.0) - 1.0;
+    for (host_k) |*x| x.* = (rand.float(f32) * 2.0) - 1.0;
+    for (host_v) |*x| x.* = (rand.float(f32) * 2.0) - 1.0;
+
+    // 1. Full uncached attention across all 6 tokens
+    var d_full_q = try DeviceBuffer(f32).init(dev, host_q.len);
+    defer d_full_q.deinit();
+    try d_full_q.copyFromHost(host_q);
+
+    var d_full_k = try DeviceBuffer(f32).init(dev, host_k.len);
+    defer d_full_k.deinit();
+    try d_full_k.copyFromHost(host_k);
+
+    var d_full_v = try DeviceBuffer(f32).init(dev, host_v.len);
+    defer d_full_v.deinit();
+    try d_full_v.copyFromHost(host_v);
+
+    var d_full_out = try DeviceBuffer(f32).init(dev, total_tokens * q_dim);
+    defer d_full_out.deinit();
+
+    try attention(
+        d_full_q.slice(),
+        d_full_k.slice(),
+        d_full_v.slice(),
+        d_full_out.slice(),
+        total_tokens,
+        prompt_len,
+        num_q_heads,
+        num_kv_heads,
+        head_dim,
+        q_dim,
+        k_dim,
+        k_dim,
+        q_dim,
+        null,
+    );
+
+    const gpu_full_out = try allocator.alloc(f32, total_tokens * q_dim);
+    defer allocator.free(gpu_full_out);
+    try d_full_out.copyToHost(gpu_full_out);
+
+    // 2. Cached attention: prompt KV cached, only canvas Q, K, V evaluated
+    const prompt_k_slice = try d_full_k.slice().subslice(0, prompt_len * k_dim);
+    const prompt_v_slice = try d_full_v.slice().subslice(0, prompt_len * k_dim);
+    const canvas_q_slice = try d_full_q.slice().subslice(prompt_len * q_dim, canvas_len * q_dim);
+    const canvas_k_slice = try d_full_k.slice().subslice(prompt_len * k_dim, canvas_len * k_dim);
+    const canvas_v_slice = try d_full_v.slice().subslice(prompt_len * k_dim, canvas_len * k_dim);
+
+    var d_cached_out = try DeviceBuffer(f32).init(dev, canvas_len * q_dim);
+    defer d_cached_out.deinit();
+
+    try attentionCached(
+        canvas_q_slice,
+        prompt_k_slice,
+        prompt_v_slice,
+        canvas_k_slice,
+        canvas_v_slice,
+        d_cached_out.slice(),
+        prompt_len,
+        canvas_len,
+        num_q_heads,
+        num_kv_heads,
+        head_dim,
+        q_dim,
+        k_dim,
+        k_dim,
+        q_dim,
+        null,
+    );
+
+    const gpu_cached_out = try allocator.alloc(f32, canvas_len * q_dim);
+    defer allocator.free(gpu_cached_out);
+    try d_cached_out.copyToHost(gpu_cached_out);
+
+    // 3. Compare canvas tokens output from cached attention vs full attention
+    const expected_canvas_out = gpu_full_out[prompt_len * q_dim .. total_tokens * q_dim];
+    var max_cached_diff: f32 = 0.0;
+    for (expected_canvas_out, gpu_cached_out) |exp, act| {
+        const diff = @abs(exp - act);
+        if (diff > max_cached_diff) max_cached_diff = diff;
+        try std.testing.expect(diff <= 1e-6);
+    }
+    std.debug.print("[parity] Cached Attention vs Full Attention: max_diff = {e:.4}\n", .{max_cached_diff});
+}
+
 test "CUDA MoE router top-8 selection and softmax parity" {
     if (!cuda.is_enabled) return;
     const dev = requireHardwareDevice() catch |err| switch (err) {
@@ -2718,6 +3141,159 @@ test "CUDA MoE router prep and vector accumulation parity" {
         try std.testing.expect(diff <= 1e-6);
     }
     std.debug.print("[parity] Accumulate Scaled: max_diff = {e:.4}\n", .{max_acc_diff});
+}
+
+test "CUDA Stage 7A token-sorted MoE binning and accumulation parity" {
+    if (!cuda.is_enabled) return;
+    const dev = requireHardwareDevice() catch |err| switch (err) {
+        error.SkipZigTest => return,
+        else => return err,
+    };
+
+    const allocator = std.testing.allocator;
+    const num_tokens: usize = 4;
+    const num_instances: usize = num_tokens * 8;
+    const dim: usize = 64;
+
+    // Synthetic top_indices with repeated experts across tokens
+    const host_top_indices = try allocator.alloc(i32, num_instances);
+    defer allocator.free(host_top_indices);
+    const sample_experts = [_]i32{ 5, 12, 12, 42, 42, 42, 88, 103 };
+    for (0..num_tokens) |t| {
+        for (0..8) |s| {
+            // Shift slightly per token to test overlap and multi-token active experts
+            host_top_indices[t * 8 + s] = @mod(sample_experts[s] + @as(i32, @intCast(t * 3)), 128);
+        }
+    }
+
+    // Expected CPU histogram
+    var cpu_counts: [128]i32 = @splat(0);
+    for (host_top_indices) |exp| {
+        cpu_counts[@intCast(exp)] += 1;
+    }
+
+    var d_top_indices = try DeviceBuffer(i32).init(dev, num_instances);
+    defer d_top_indices.deinit();
+    try d_top_indices.copyFromHost(host_top_indices);
+
+    var d_expert_counts = try DeviceBuffer(i32).init(dev, 128);
+    defer d_expert_counts.deinit();
+    var d_expert_offsets = try DeviceBuffer(i32).init(dev, 128);
+    defer d_expert_offsets.deinit();
+    var d_sorted_instances = try DeviceBuffer(i32).init(dev, num_instances);
+    defer d_sorted_instances.deinit();
+    var d_instance_to_sorted = try DeviceBuffer(i32).init(dev, num_instances);
+    defer d_instance_to_sorted.deinit();
+
+    try moeBuildExpertBins(
+        d_top_indices.slice(),
+        d_expert_counts.slice(),
+        d_expert_offsets.slice(),
+        d_sorted_instances.slice(),
+        d_instance_to_sorted.slice(),
+        num_tokens,
+        null,
+    );
+
+    const gpu_counts = try allocator.alloc(i32, 128);
+    defer allocator.free(gpu_counts);
+    try d_expert_counts.copyToHost(gpu_counts);
+
+    const gpu_offsets = try allocator.alloc(i32, 128);
+    defer allocator.free(gpu_offsets);
+    try d_expert_offsets.copyToHost(gpu_offsets);
+
+    const gpu_sorted = try allocator.alloc(i32, num_instances);
+    defer allocator.free(gpu_sorted);
+    try d_sorted_instances.copyToHost(gpu_sorted);
+
+    const gpu_inst_to_sort = try allocator.alloc(i32, num_instances);
+    defer allocator.free(gpu_inst_to_sort);
+    try d_instance_to_sorted.copyToHost(gpu_inst_to_sort);
+
+    // 1. Verify histogram counts
+    for (0..128) |e| {
+        try std.testing.expectEqual(cpu_counts[e], gpu_counts[e]);
+    }
+
+    // 2. Verify bidirectional mapping consistency and expert groupings
+    for (0..num_instances) |orig_i| {
+        const sorted_idx = gpu_inst_to_sort[orig_i];
+        try std.testing.expect(sorted_idx >= 0 and sorted_idx < num_instances);
+        try std.testing.expectEqual(@as(i32, @intCast(orig_i)), gpu_sorted[@intCast(sorted_idx)]);
+
+        const exp_id = host_top_indices[orig_i];
+        const off = gpu_offsets[@intCast(exp_id)];
+        const cnt = gpu_counts[@intCast(exp_id)];
+        try std.testing.expect(sorted_idx >= off and sorted_idx < off + cnt);
+    }
+
+    // 3. Verify sorted accumulation parity
+    var prng = std.Random.DefaultPrng.init(0x5566_7788);
+    const rand = prng.random();
+
+    const host_down_out = try allocator.alloc(f32, num_instances * dim);
+    defer allocator.free(host_down_out);
+    for (host_down_out) |*x| x.* = (rand.float(f32) * 2.0) - 1.0;
+
+    const host_top_weights = try allocator.alloc(f32, num_instances);
+    defer allocator.free(host_top_weights);
+    for (host_top_weights) |*w| w.* = rand.float(f32) * 0.25;
+
+    // CPU reference accumulation
+    const cpu_accum = try allocator.alloc(f32, num_tokens * dim);
+    defer allocator.free(cpu_accum);
+    for (0..num_tokens) |t| {
+        for (0..dim) |d| {
+            var sum: f32 = 0.0;
+            for (0..8) |s| {
+                const k = t * 8 + s;
+                sum += host_down_out[k * dim + d] * host_top_weights[k];
+            }
+            cpu_accum[t * dim + d] = sum;
+        }
+    }
+
+    // Reorder host_down_out into sorted order
+    const sorted_down_out = try allocator.alloc(f32, num_instances * dim);
+    defer allocator.free(sorted_down_out);
+    for (0..num_instances) |orig_k| {
+        const sorted_k: usize = @intCast(gpu_inst_to_sort[orig_k]);
+        @memcpy(sorted_down_out[sorted_k * dim .. (sorted_k + 1) * dim], host_down_out[orig_k * dim .. (orig_k + 1) * dim]);
+    }
+
+    var d_sorted_down = try DeviceBuffer(f32).init(dev, num_instances * dim);
+    defer d_sorted_down.deinit();
+    try d_sorted_down.copyFromHost(sorted_down_out);
+
+    var d_top_weights = try DeviceBuffer(f32).init(dev, num_instances);
+    defer d_top_weights.deinit();
+    try d_top_weights.copyFromHost(host_top_weights);
+
+    var d_moe_accum = try DeviceBuffer(f32).init(dev, num_tokens * dim);
+    defer d_moe_accum.deinit();
+
+    try moeAccumulateScaledSorted(
+        d_moe_accum.slice(),
+        d_sorted_down.slice(),
+        d_instance_to_sorted.slice(),
+        d_top_weights.slice(),
+        num_tokens,
+        dim,
+        null,
+    );
+
+    const gpu_accum = try allocator.alloc(f32, num_tokens * dim);
+    defer allocator.free(gpu_accum);
+    try d_moe_accum.copyToHost(gpu_accum);
+
+    var max_accum_diff: f32 = 0.0;
+    for (cpu_accum, gpu_accum) |c, g| {
+        const diff = @abs(c - g);
+        if (diff > max_accum_diff) max_accum_diff = diff;
+        try std.testing.expect(diff <= 1e-6);
+    }
+    std.debug.print("[parity] Token-Sorted MoE Accumulate: max_diff = {e:.4}\n", .{max_accum_diff});
 }
 
 test "CUDA layerOutput dual-region scaling parity" {
