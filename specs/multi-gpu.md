@@ -103,13 +103,13 @@ In structured decision workloads, the input prompt frequently contains invariant
 
 ### Cache Lifetime Taxonomy
 
-1. **Intra-Query Lifetime (if multi-step execution is implemented)**:
-   - Intermediate activations and self-conditioning vectors ($H_{\text{sc}}$) remain resident in device memory across steps $1 \dots T$.
-   - **Goal to evaluate**: Keep reusable state on device where this preserves semantics and improves measured latency; transfers remain an implementation choice.
+1. **Intra-Query Lifetime (implemented candidate-restricted multi-step path)**:
+   - Transformer activations are processed on device during each forward pass. Between steps, the current candidate-weighted soft embedding is host-staged; the CUDA backend runs the self-conditioning MLP on device.
+   - This is an implementation detail of Zeno's experiment, not the reference's full-vocabulary, per-position self-conditioning contract. Do not describe all self-conditioning state as device-resident.
 
 2. **Inter-Query Lifetime (Prompt Prefix Caching)**:
-   - Reuse across requests is a hypothesis for this model's causal-prefill/bidirectional-decoder path; do not assume ordinary causal KV-prefix caching applies unchanged.
-   - Before implementation, specify cache keys, ownership, eviction, invalidation, concurrency, and a parity test against uncached execution.
+   - The CUDA backend has prompt KV cache buffers, but their presence does not establish safe reuse across requests. Reuse across requests remains a hypothesis for this model's causal-prefill/bidirectional-decoder path; do not assume ordinary causal KV-prefix caching applies unchanged.
+   - Before enabling cross-request reuse, specify cache keys, ownership, eviction, invalidation, concurrency, and a parity test against uncached execution.
 
 ---
 

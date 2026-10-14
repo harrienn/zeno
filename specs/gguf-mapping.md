@@ -29,7 +29,7 @@ All values, shapes, and quantization types documented here are directly extracte
 * **Invariants** — values a runtime must *validate on load* and reject the artifact if violated. Hardcoding a value the artifact contradicts produces silently wrong computation rather than a clean failure, so these belong in the loader's acceptance check.
 * **Descriptive** — values that document the artifact but are not yet contractually enforced.
 
-As of this revision the loader validates `block_count` and `embedding_length` only. The most consequential unvalidated invariant is **`diffusion-gemma.attention.causal`**, which must be `false` for Zeno's structured-read semantics to apply at all; it is currently unchecked, and every remaining `diffusion-gemma.*` structural key below is descriptive only.
+The loader validates `general.architecture`, `block_count`, `embedding_length`, and that **`diffusion-gemma.attention.causal` is `false`**. Other structural metadata in the table is descriptive rather than validated by the loader; keep this distinction in mind when extending support beyond the pinned artifact.
 
 | Parameter Key | Value | Description |
 | :--- | :--- | :--- |
@@ -45,7 +45,7 @@ As of this revision the loader validates `block_count` and `embedding_length` on
 | `diffusion-gemma.attention.value_length` | `512` | Head dimension for Global layers ($d_v$) |
 | `diffusion-gemma.attention.key_length_swa` | `256` | Head dimension for SWA layers ($d_{k,\text{swa}}$) |
 | `diffusion-gemma.attention.value_length_swa` | `256` | Head dimension for SWA layers ($d_{v,\text{swa}}$) |
-| `diffusion-gemma.attention.sliding_window` | `1024` | Sliding window attention horizon. Inoperative at `canvas_length = 256`; do not implement windowing for Phase 3 (U-20). |
+| `diffusion-gemma.attention.sliding_window` | `1024` | Sliding-window horizon. It does not truncate the supported maximum Phase 3 prompt-plus-canvas sequence (`768 + 256 = 1024`; U-20). |
 | `diffusion-gemma.rope.freq_base` | `1000000.0` | Global RoPE frequency base |
 | `diffusion-gemma.rope.freq_base_swa` | `10000.0` | SWA RoPE frequency base |
 | `diffusion-gemma.rope.dimension_count` | `512` | RoPE dimension for Global layers |
@@ -63,7 +63,7 @@ As of this revision the loader validates `block_count` and `embedding_length` on
 
 ---
 
-> **Phase scope**: the `self_cond_*` tensors below are Phase 4+ territory. U-18 resolves that the one-step read bypasses the self-conditioning MLP.
+> **Phase scope**: one-step reads bypass the self-conditioning MLP (U-18). Zeno's experimental multi-step decision adaptation requires all four `self_cond_*` tensors below; the loader records these as optional descriptors, but a missing or partial set does not support multi-step execution.
 
 ## 3. Global Tensors (7 Tensors)
 

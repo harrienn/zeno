@@ -2,7 +2,7 @@
 
 ## 1. Purpose & Scope
 
-This document separates reference DiffusionGemma denoising behavior from proposed experiments. It is not an implementation contract for Zeno until the behavior is reproduced against a pinned reference revision.
+This document separates the pinned reference sampler contract from Zeno's candidate-restricted experiment. Sections 2–5 describe reference behavior and parity requirements; §6 specifies the implemented Zeno experiment, which is not full sampler parity.
 
 Candidate-set entropy in a System One response measures dispersion among the requested choices. The model's denoising sampler uses per-canvas-position distributions and its own confidence/entropy controls; these quantities and thresholds are distinct.
 
@@ -49,11 +49,11 @@ The following are proposed experiments, not established DiffusionGemma mechanics
 
 ## 4. Reference Sampler Behavior (High-Level; Pin a Revision)
 
-The vLLM reference computes token-level statistics over model logits, applies an entropy-bound acceptance policy, re-noises positions that are not accepted, and tracks convergence before committing the resulting canvas. Its exact sampler configuration and stochastic choices must be copied from a pinned source revision and validated; a per-token confidence-threshold-and-argmax rule is not an equivalent substitute. See the [reference implementation](https://github.com/vllm-project/vllm/blob/main/vllm/model_executor/models/diffusion_gemma.py).
+The pinned vLLM reference computes per-canvas-position statistics over model logits, applies an entropy-bound acceptance policy, re-noises positions that are not accepted, and tracks convergence before committing the resulting canvas. Its exact sampler configuration and stochastic choices must be copied from the pinned [`diffusion_gemma.py` at `1b3b88ec`](https://github.com/vllm-project/vllm/blob/1b3b88ec2b7457aa030db4d0e7d8aaf04f6d0fb8/vllm/model_executor/models/diffusion_gemma.py) and validated; a per-candidate entropy threshold and argmax are not an equivalent substitute.
 
 ### 4.1 Self-Conditioning
 
-The reference derives soft embeddings from the previous step's token probability distributions and embedding weights, then passes them with the current input embeddings through a gated self-conditioning MLP. Pinned positions retain their seed token; the reference also zeros their self-conditioning soft embedding. This is not equivalent to projecting the final hidden state and adding that projection directly to token embeddings. The exact weight names, normalization, scaling, and dtype order must be verified against the model implementation and GGUF artifact.
+The reference derives soft embeddings from the previous step's per-position token probabilities and embedding weights, then passes them with the current input embeddings through a gated self-conditioning MLP. It zeroes the soft embedding for pinned positions and applies an unweighted post-norm after adding the MLP output to the current input embedding. This is not equivalent to projecting the final hidden state and adding that projection directly to token embeddings. Zeno's Phase 9 path uses only the requested candidate distribution at one answer position; that is a System One adaptation, not the reference sampler's full-canvas probability update.
 
 ### 4.2 Pinning and Read-Only Requests
 
@@ -63,14 +63,14 @@ The reference's pinned positions preserve their seeded token values through deno
 
 ## 5. Verification & Acceptance Criteria
 
-Before implementing multi-step behavior:
+Before claiming parity with the reference sampler:
 1. Pin model artifact and reference commits; capture the seed canvas, model outputs, per-token entropy, accepted positions, and self-conditioning inputs for a small fixture.
 2. Compare candidate follow-up strategies on the same labeled examples and report uncertainty intervals, accuracy, calibration, and latency. Do not require or claim an improvement until measured.
 3. Record RNG seeds, sampler parameters, dataset provenance, and whether each threshold is per-candidate or per-token entropy.
 
 ---
 
-## 6. Phase 9 Implementation: Adaptive Denoising & Gated Self-Conditioning
+## 6. Phase 9 Implementation: Adaptive Decision Readout & Gated Self-Conditioning
 
 > [!NOTE]
 > **Status: Experimental Decision Adaptation.** Phase 9 implements an experimental candidate-restricted decision adaptation tailored for System One classification queries, not full generative canvas sampler parity. Full reference sampler parity (vLLM PR #57250) requires multi-token canvas distributions, stochastic re-noising schedules, and token-acceptance gating across all canvas slots.
@@ -80,21 +80,20 @@ Before implementing multi-step behavior:
 In multi-step structured reads ($T \in [2, 4]$), subsequent forward passes inject a self-conditioning signal $D_{\text{sc}}$ into the canvas token embedding at answer position $p$:
 
 1. **Candidate-Weighted Soft Embedding**:
-   $$E_{\text{cand}} = \sum_{c=1}^{|C|} P(c) \cdot W_{\text{emb}}[t_c] \in \mathbb{R}^{d_{\text{model}}}$$
-   where $P(c)$ is the candidate softmax probability distribution from step $t-1$, and $W_{\text{emb}}[t_c]$ is the dequantized token embedding vector of candidate token $t_c$.
+   $$E_{\text{sc}} = s_{\text{emb}} \sum_{c=1}^{|C|} P_{t-1}(c) \cdot W_{\text{emb}}[t_c] \in \mathbb{R}^{d_{\text{model}}}, \qquad s_{\text{emb}} = \sqrt{d_{\text{model}}}$$
+   where $P_{t-1}(c)$ is Zeno's candidate-restricted softmax from the previous read and $W_{\text{emb}}[t_c]$ is the dequantized embedding row. The scale follows the model's embedding normalizer. The reference uses a full per-position vocabulary distribution; restricting it to the API candidates is specific to this experiment.
 2. **Pre-Layer Normalization**:
-   $$\tilde{E} = \text{RMSNorm}(E_{\text{cand}}, w_{\text{sc\_pre\_norm}})$$
+   $$\tilde{E} = \text{RMSNorm}(E_{\text{sc}}, w_{\text{sc\_pre\_norm}})$$
 3. **Gated Intermediate Projection & GeGLU Activation**:
    $$G = \tilde{E} \cdot W_{\text{sc\_gate}}, \quad U = \tilde{E} \cdot W_{\text{sc\_up}} \quad \in \mathbb{R}^{d_{\text{inter}}}$$
-   $$M = \text{GeGLU}(G, U) = G \odot \text{GELU}_{\text{tanh}}(U)$$
+   $$M = \text{GELU}_{\text{tanh}}(G) \odot U$$
    where $d_{\text{inter}} = 2112$.
 4. **Down Projection**:
    $$D_{\text{sc}} = M \cdot W_{\text{sc\_down}} \in \mathbb{R}^{d_{\text{model}}}$$
 5. **Canvas Answer Slot Injection & Post-Norm**:
-   Following `vllm@1b3b88ec:diffusion_gemma.py:103,951`, canvas embeddings receive the down-projected signal prior to the shared unweighted canvas post-norm:
-   $$E_{\text{canvas}}[p] \leftarrow E_{\text{canvas}}[p] + D_{\text{sc}}$$
-   $$E_{\text{canvas}}[i] \leftarrow \text{RMSNorm}_{\text{unweighted}}(E_{\text{canvas}}[i]) \quad \forall i \in [0, \text{canvas\_len})$$
-   (At step 1 / zero-SC, $D_{\text{sc}} = 0$, yielding standard unweighted RMSNorm of initial canvas embeddings).
+   Following `vllm@1b3b88ec:vllm/model_executor/models/diffusion_gemma.py` (self-conditioning module), add the MLP output to the current canvas input and apply the unweighted post-norm. In this candidate-restricted adaptation, only answer slot $p$ receives a nonzero signal:
+   $$\Delta[i] = \begin{cases}D_{\text{sc}} & i = p \\ 0 & i \ne p\end{cases}, \qquad E'_{\text{canvas}}[i] = \text{RMSNorm}_{\text{unweighted}}(E_{\text{canvas}}[i] + \Delta[i])$$
+   The same unweighted post-norm is applied to every canvas row. On the first read, self-conditioning is bypassed and $\Delta[i]=0$ for every row.
 
 ### 6.2 Adaptive Early-Stopping Dynamics
 
@@ -106,11 +105,11 @@ The decision engine loops over steps $t \in [1, \text{step\_cap}]$:
    - If $t = \text{step\_cap}$ and $H_{\text{norm}}(P_t) \ge \tau$: terminate loop with `uncertain: true` and `steps_executed: step_cap`.
 4. If $t < \text{step\_cap}$ and $H_{\text{norm}}(P_t) \ge \tau$: compute $D_{\text{sc}}$ from $P_t$ and propagate to step $t+1$.
 
-### 6.3 Empirical Evaluation & Parity Parity (`maintenance_priority_uncertain.json`)
+### 6.3 CPU/CUDA Backend Comparison (`maintenance_priority_uncertain.json`)
 
-On the high-entropy query `specs/fixtures/maintenance_priority_uncertain.json` with 3 candidates (Low, Medium, High), candidate entropy was evaluated across CPU and dual-GPU CUDA backends:
+On `specs/fixtures/maintenance_priority_uncertain.json` with 3 candidates (Low, Medium, High), the candidate-restricted experiment was evaluated on the CPU and dual-GPU CUDA backends. This is one-fixture backend agreement evidence; it does not establish agreement with vLLM or llama.cpp, sampler parity, classification accuracy, or calibration.
 
-| Metric | Step 1 ($T=1$) Baseline | Step 2 ($T=2$) CPU Reference | Step 2 ($T=2$) Dual RTX 3060 CUDA | $\Delta_{\text{CPU-CUDA}}$ |
+| Metric | Step 1 ($T=1$) CPU | Step 2 ($T=2$) CPU | Step 2 ($T=2$) Dual RTX 3060 CUDA | $\Delta_{\text{CPU-CUDA}}$ |
 | :--- | :--- | :--- | :--- | :--- |
 | **P(Low)** | 0.6546 | 0.9643 | 0.9645 | +0.0002 |
 | **P(Medium)** | 0.3437 | 0.0357 | 0.0355 | -0.0002 |
@@ -123,7 +122,7 @@ On the high-entropy query `specs/fixtures/maintenance_priority_uncertain.json` w
 | **Steps Executed** | 1 | 2 | 2 | `exact` |
 
 **Empirical Observations**:
-1. **Entropy Collapse**: Self-conditioning collapsed normalized candidate entropy by **76.6%** (from 0.5964 down to 0.1398–0.1404), resolving the classification ambiguity in favor of `Low`.
-2. **CPU-CUDA Parity**: Logit divergence between CPU FP32 reference and dual RTX 3060 CUDA execution remained $< 0.01$, and candidate probabilities agreed to within $0.0002$.
-3. **Adaptive Early Stopping**: When executed with `step_cap=3` and `entropy_threshold=0.5`, the engine automatically terminated at `steps_executed: 2`, avoiding the latency cost of step 3 while ensuring decision decisiveness.
+1. **Observed entropy change**: Candidate entropy fell by **76.6%** between the one-step and two-step CPU/CUDA results on this fixture. This records the experiment's output; it does not show that the initial ambiguity was resolved correctly.
+2. **CPU/CUDA agreement on this fixture**: Logit differences were $< 0.01$, and candidate probabilities differed by at most $0.0002$. This is a narrow backend comparison, not reference parity.
+3. **Threshold behavior**: With `step_cap=3` and `entropy_threshold=0.5`, the engine stopped at `steps_executed: 2` because the candidate entropy fell below the configured threshold. That rule does not establish that the answer is correct or calibrated.
 

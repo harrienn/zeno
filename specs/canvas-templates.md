@@ -2,11 +2,11 @@
 
 ## 1. Purpose & Scope
 
-This document records the resolved canvas layout for the configured 256-token width. Prompt serialization is governed by the Direct Canvas Decision Contract documented in §3.1 below (resolved under U-05), distinguishing Zeno's direct structured decision execution from vLLM's multi-step server template.
+This document records Zeno's direct structured-decision canvas contract and distinguishes it from vLLM's structured-read sampler. The model artifact's default canvas width is 256 tokens; Zeno evaluates a configurable prefix of that canvas, with `canvas_length` in `[16, 256]` and divisible by 16. Prompt serialization is governed by §3.1 below.
 
 In structured-reads mode, a seeded canvas contains prompt tokens and answer positions whose logits are read. In [vLLM PR #57250](https://github.com/vllm-project/vllm/pull/57250), pinning holds a selected position at its seeded token value across denoising steps. Pinning is an update rule; it does not by itself mean that the seed token must be `MASK` (`4`).
 
-**Resolved canvas behavior:** the Phase 3 read seeds the answer position with `MASK` (4), places `TURN_CLOSE` (106) immediately after it, then fills later canvas positions with `PAD` (0). The full configured canvas length is 256 (`ModelConfig.canvas_length`). The option to evaluate a shortened prefix rounded up to a 16-token multiple is an open latency optimization tracked under U-03. See U-01 through U-03 in [`UNRESOLVED.md`](UNRESOLVED.md). The implementation preserves the 256-token canvas layout.
+**Resolved Zeno behavior:** a read seeds canvas position 0 with `MASK` (4), places `TURN_CLOSE` (106) at position 1, and fills the remaining backing canvas with `PAD` (0). The default evaluated width is 256; callers may select a shorter evaluated prefix in 16-token increments. This width override is a Zeno execution option. For a reference comparison, record and use the same canvas width and token arrays on both sides. See U-01 through U-03 in [`UNRESOLVED.md`](UNRESOLVED.md).
 
 ---
 
@@ -14,7 +14,7 @@ In structured-reads mode, a seeded canvas contains prompt tokens and answer posi
 
 The canvas is a fixed-width array of token identifiers:
 
-* **Default Canvas Length ($L$)**: `256` tokens (matching `diffusion.canvas_length` in [`gguf-mapping.md`](gguf-mapping.md)). In v0, all 256 tokens are evaluated ($N = P + 256$). Shortening the evaluated canvas prefix to a 16-token multiple remains a prospective latency lever (U-03).
+* **Maximum / Default Canvas Length ($C_{\max}$)**: `256` tokens (matching `diffusion.canvas_length` in [`gguf-mapping.md`](gguf-mapping.md)). The evaluated width $C$ defaults to 256 and may be set from 16 through 256 in multiples of 16. The total evaluated sequence length is $N=P+C$.
 * **Token Identifier Type**: 32-bit unsigned integer (`u32`).
 * **Special Token IDs**:
   - `BOS` (Beginning of Sequence): `2`
@@ -26,18 +26,18 @@ The canvas is a fixed-width array of token identifiers:
 
 ## 3. Dual-Region Memory Layout & Canvas Geometry
 
-DiffusionGemma operates on a **dual-region sequence** $[0 \dots P + 255]$:
+DiffusionGemma operates on a **dual-region sequence** $[0 \dots P + C - 1]$:
 - **Prompt Region** ($0 \dots P-1$): Causal prefix containing the tokenized prompt and model prefix cue (`Answer: `).
-- **Canvas Region** ($P \dots P + 255$): Fixed 256-token canvas evaluated under bidirectional non-causal attention.
+- **Canvas Region** ($P \dots P + C - 1$): Evaluated canvas prefix of width $C$ under the decoder's bidirectional attention path. The GGUF default/maximum is 256; Zeno's API can request a shorter width.
 
 ```text
 ┌───────────────────────────────────────────────┬───────────────────────────────────────────────┐
-│              Prompt Region (0..P-1)           │             Canvas Region (P..P+255)          │
+│              Prompt Region (0..P-1)           │             Canvas Region (P..P+C-1)          │
 ├─────────┬──────────────────────┬──────────────┼─────────────┬─────────────┬───────────────────┤
 │ BOS (2) │ User Turn Context    │ Model Prefix │ Answer Slot │ TURN_CLOSE  │ PAD Tail          │
 │         │ Question & Choices   │ "Answer: "   │ MASK (4)    │ (106)       │ (0)               │
 └─────────┴──────────────────────┴──────────────┴─────────────┴─────────────┴───────────────────┘
-0         1                      P-1            P (slot 0)    P+1           P+2           P+255
+0         1                      P-1            P (slot 0)    P+1           P+2           P+C-1
 ```
 
 ### 3.1 Contract Comparison: Zeno vs vLLM `structured_server.py`
@@ -46,11 +46,11 @@ In [vLLM PR #57250](https://github.com/vllm-project/vllm/pull/57250) (`examples/
 
 In contrast, **Zeno's Direct Canvas Decision Contract**:
 1. Formats the full user context and assistant prefix (`<start_of_turn>user\n...<end_of_turn>\n<start_of_turn>model\nAnswer: `) into the causal **prompt region** ($0 \dots P-1$).
-2. Pins the target decision slot directly at **canvas index 0** ($P+0$), seeded with `MASK` (`4`).
-3. Appends `TURN_CLOSE` (`106`) at canvas index 1 ($P+1$), and fills trailing canvas positions with `PAD` (`0`) to canvas length 256.
-4. Reads candidate logits directly from canvas index 0 in a single forward pass without sampling draws or device KV caching.
+2. Designates **canvas index 0** ($P+0$) as the answer/read position and seeds it with `MASK` (`4`). Zeno reads its logits without applying the reference sampler's iterative pin/accept/re-noise updates.
+3. Appends `TURN_CLOSE` (`106`) at canvas index 1 ($P+1$), and fills the remaining backing canvas with `PAD` (`0`). The evaluated prefix has width $C$; only positions $0 \dots C-1$ participate in that request.
+4. Reads candidate logits directly from canvas index 0 in one logical read, without iterative sampling draws. CUDA may use prompt KV prefix caching internally; that cache is an execution optimization and does not change the input-token contract.
 
-This decoupled layout eliminates wasted prefix positions in the 256-token canvas, avoids template re-tokenization during denoising, and minimizes latency for single-step classification. When asserting parity against external references (`llama-diffusion-gemma-eval` or `structured_server.py`), both sides must be supplied with the exact same token arrays (matching $P$ prompt tokens and 256 canvas tokens).
+This decoupled layout places the decision answer at canvas index 0 instead of embedding the assistant template inside the canvas as the vLLM example does. When asserting parity against an external reference (`llama-diffusion-gemma-eval` or `structured_server.py`), supply the exact same prompt tokens, canvas tokens, answer position, and evaluated canvas width $C$ to both sides. A matching candidate decision with a different layout is not a token-level parity comparison.
 
 ---
 
@@ -136,7 +136,7 @@ The exact continuation procedure must be tested against the model tokenizer and 
 
 ### 6.1 Motivation & Mechanics
 
-In DiffusionGemma's dual-region architecture, prompt tokens ($0 \dots P-1$) attend causally while canvas tokens ($P \dots P+C-1$) attend bidirectionally to all prompt tokens and all canvas tokens. When the full 256-token canvas is evaluated, 254 trailing positions are filled with `PAD` (0) tokens. Because `PAD` tokens are unmasked in bidirectional attention and evaluated through all 30 transformer layers (including top-8 MoE expert routing across 128 experts), short prompts spend over 80% of total CPU FLOPs evaluating non-informative padding tokens.
+In DiffusionGemma's dual-region architecture, prompt tokens ($0 \dots P-1$) attend causally while canvas tokens ($P \dots P+C-1$) use the decoder's bidirectional attention path. At the default 256-token width, positions after answer and `TURN_CLOSE` are filled with `PAD` (0). These positions are still evaluated through the transformer and MoE; shorter widths reduce that work but also change the evaluated sequence and can change logits.
 
 In [vLLM PR #57250](https://github.com/vllm-project/vllm/pull/57250) (`examples/features/structured_diffusion/structured_server.py:399`), single-step requests are dynamically rounded to the smallest multiple of `CANVAS_STEP = 16`:
 $$\text{canvas\_width} = \min(C_{\text{len}}, \lceil (|\text{template}| + 1) / 16 \rceil \times 16)$$
@@ -161,4 +161,4 @@ The table below records empirical latency (ms) and discrete decision agreement a
 
 1. **Decision Parity at $C=16$ on Fixture Suite**: Across the 5 golden fixtures evaluated, $C=16$ produces **100% discrete decision agreement** with the local $C=256$ CPU run while achieving a **$3.2\times$ to $6.4\times$ latency reduction** on CPU. Broader decision and numerical stability across larger evaluation datasets remain unestablished.
 2. **Intermediate Instability**: Canvas widths $C \in \{32, 64, 128\}$ exhibit representation drift due to intermediate ratios of unmasked `PAD` tokens in bidirectional attention. Intermediate canvas widths should not be used arbitrarily.
-3. **API Contract**: The default canvas width remains $C = 256$ to preserve exact fixture regression parity. Applications requiring low-latency CPU System One decisions may supply `canvas_length: 16` in `DecisionRequest`, `options.canvas_length: 16` in POST `/v1/systemone`, or `--canvas 16` via CLI.
+3. **API Contract**: The default remains $C = 256$. Applications may request `canvas_length` from 16 through 256 in multiples of 16 via `DecisionRequest`, `options.canvas_length` in POST `/v1/systemone`, or `--canvas` via CLI. Fixtures must record their width; the existing $C=256$ fixtures do not establish parity at other widths.

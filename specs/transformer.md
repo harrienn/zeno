@@ -48,10 +48,10 @@ Each block $l$ applies RMSNorm at distinct stages:
 
 DiffusionGemma has distinct execution modes: causal prompt prefill/encoder execution and bidirectional decoder/denoising execution. The decoder reads KV state established by prefill and uses self-conditioning on later denoising steps. Attention behavior therefore depends on the execution phase; “bidirectional attention over the canvas” is not a complete forward-pass specification.
 
-> **Windowing is inoperative at Phase 3.** `sliding_window = 1024` against `canvas_length = 256`
-> ([`gguf-mapping.md`](gguf-mapping.md) §2): the window never binds. Do not implement sliding-window
-> bookkeeping for Phase 3, and do not treat its absence as a parity gap. Recorded as U-20 in
-> [`UNRESOLVED.md`](UNRESOLVED.md).
+> **Window truncation is inoperative within the supported Phase 3 sequence bound.** The artifact's
+> `sliding_window = 1024` ([`gguf-mapping.md`](gguf-mapping.md) §2) is at least as large as the
+> maximum supported prompt-plus-canvas sequence ($768 + 256 = 1024$). Do not treat the absence of
+> window truncation in this bounded path as a parity gap. Recorded as U-20 in [`UNRESOLVED.md`](UNRESOLVED.md).
 
 ### 3.1 Layer Specialization: SWA vs. Global
 
@@ -175,4 +175,4 @@ The exact sequence was established from [`vllm/model_executor/models/gemma4.py`]
 
 For multi-step discrete diffusion passes, self-conditioning uses the previous step's token probability distributions to form probability-weighted soft embeddings from the token embedding table (with the model normalizer). A gated MLP combines those soft embeddings with the current input embeddings. This is not a projection of the final hidden state directly into the next input embeddings. Follow the reference's normalization, activation, dtype, pin masking, and residual order.
 
-The exact equation and per-layer tensor mapping must be established from the artifact and compared against a reference step before Zeno implements multi-step execution.
+The candidate-restricted multi-step experiment is implemented and specified in [`denoising.md`](denoising.md) §6. Its CPU/CUDA comparison does not establish reference sampler parity. Before making that claim, compare the full-vocabulary, per-position soft embeddings and self-conditioning path against a pinned reference step, including normalization, activation, dtype, pin masking, and residual order.
