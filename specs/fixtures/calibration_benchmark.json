@@ -1,0 +1,1171 @@
+{
+  "schema": "zeno.dataset/v1",
+  "name": "system_one_decisions_v1",
+  "description": "50-example diverse labeled benchmark for System One decision calibration, ECE, and adaptive step dynamics",
+  "examples": [
+    {
+      "id": "bool_01",
+      "category": "infra_health",
+      "query": "Is the database service healthy?",
+      "context": "All replica nodes report 0 replication lag. Heartbeat latency is 1.2ms. CPU utilization is 22%.",
+      "schema_type": "boolean",
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes"
+        },
+        {
+          "token": "No",
+          "label": "No"
+        }
+      ],
+      "ground_truth": "Yes"
+    },
+    {
+      "id": "bool_02",
+      "category": "security_auth",
+      "query": "Did this login attempt originate from a suspicious location?",
+      "context": "User alice logged in from an IP address in Pyongyang 10 minutes after logging in from Chicago.",
+      "schema_type": "boolean",
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes"
+        },
+        {
+          "token": "No",
+          "label": "No"
+        }
+      ],
+      "ground_truth": "Yes"
+    },
+    {
+      "id": "bool_03",
+      "category": "payment_fraud",
+      "query": "Should this credit card transaction be flagged for immediate manual review?",
+      "context": "A brand new user account attempted to purchase five $1,000 gift cards at 03:14 UTC with a proxy IP.",
+      "schema_type": "boolean",
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes"
+        },
+        {
+          "token": "No",
+          "label": "No"
+        }
+      ],
+      "ground_truth": "Yes"
+    },
+    {
+      "id": "bool_04",
+      "category": "incident_detection",
+      "query": "Does this log indicate an active service outage?",
+      "context": "HTTP 500 error rate spiked to 98.4% across all payment gateway endpoints for the last 5 minutes.",
+      "schema_type": "boolean",
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes"
+        },
+        {
+          "token": "No",
+          "label": "No"
+        }
+      ],
+      "ground_truth": "Yes"
+    },
+    {
+      "id": "bool_05",
+      "category": "capacity_planning",
+      "query": "Is the storage volume exceeding the critical capacity threshold of 90%?",
+      "context": "Volume /dev/nvme0n1p1 reports 482 GB used out of 500 GB total capacity (96.4% utilization).",
+      "schema_type": "boolean",
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes"
+        },
+        {
+          "token": "No",
+          "label": "No"
+        }
+      ],
+      "ground_truth": "Yes"
+    },
+    {
+      "id": "bool_06",
+      "category": "network_connectivity",
+      "query": "Is there a network packet loss issue between region us-east and us-west?",
+      "context": "Ping probes report 42% packet loss and round-trip time jitter exceeding 850ms.",
+      "schema_type": "boolean",
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes"
+        },
+        {
+          "token": "No",
+          "label": "No"
+        }
+      ],
+      "ground_truth": "Yes"
+    },
+    {
+      "id": "bool_07",
+      "category": "sla_monitoring",
+      "query": "Did the service breach the customer 99.9% uptime SLA this month?",
+      "context": "Total service downtime recorded during the calendar month was 142 minutes (99.67% uptime).",
+      "schema_type": "boolean",
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes"
+        },
+        {
+          "token": "No",
+          "label": "No"
+        }
+      ],
+      "ground_truth": "Yes"
+    },
+    {
+      "id": "bool_08",
+      "category": "deployment_gate",
+      "query": "Should the automated canary deployment be rolled back?",
+      "context": "Canary version v2.4.1 has an uncaught NullPointerException rate of 14% on customer requests.",
+      "schema_type": "boolean",
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes"
+        },
+        {
+          "token": "No",
+          "label": "No"
+        }
+      ],
+      "ground_truth": "Yes"
+    },
+    {
+      "id": "bool_09",
+      "category": "data_integrity",
+      "query": "Does this database table have orphan foreign key records?",
+      "context": "SELECT COUNT(*) FROM order_items WHERE order_id NOT IN (SELECT id FROM orders) returned 1,428.",
+      "schema_type": "boolean",
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes"
+        },
+        {
+          "token": "No",
+          "label": "No"
+        }
+      ],
+      "ground_truth": "Yes"
+    },
+    {
+      "id": "bool_10",
+      "category": "resource_leak",
+      "query": "Is this worker process exhibiting signs of a memory leak?",
+      "context": "Resident set size (RSS) has monotonically increased from 200MB to 7.8GB over 48 hours without releasing.",
+      "schema_type": "boolean",
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes"
+        },
+        {
+          "token": "No",
+          "label": "No"
+        }
+      ],
+      "ground_truth": "Yes"
+    },
+    {
+      "id": "bool_11",
+      "category": "infra_health",
+      "query": "Is the web server fleet experiencing an outage?",
+      "context": "All 48 web instances are responding to health checks with HTTP 200 OK. P95 latency is 18ms.",
+      "schema_type": "boolean",
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes"
+        },
+        {
+          "token": "No",
+          "label": "No"
+        }
+      ],
+      "ground_truth": "No"
+    },
+    {
+      "id": "bool_12",
+      "category": "security_auth",
+      "query": "Is this SSH session unauthorized?",
+      "context": "Session authenticated via hardware YubiKey FIDO2 token matching on-call engineer Bob's public key.",
+      "schema_type": "boolean",
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes"
+        },
+        {
+          "token": "No",
+          "label": "No"
+        }
+      ],
+      "ground_truth": "No"
+    },
+    {
+      "id": "bool_13",
+      "category": "payment_fraud",
+      "query": "Is this routine monthly subscription payment fraudulent?",
+      "context": "Regular recurring billing of $14.99 for user account active for 4 years from home ISP address.",
+      "schema_type": "boolean",
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes"
+        },
+        {
+          "token": "No",
+          "label": "No"
+        }
+      ],
+      "ground_truth": "No"
+    },
+    {
+      "id": "bool_14",
+      "category": "incident_detection",
+      "query": "Does this single timeout warning require waking up the on-call engineer?",
+      "context": "One background analytics batch query timed out after 60 seconds. User traffic is completely unaffected.",
+      "schema_type": "boolean",
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes"
+        },
+        {
+          "token": "No",
+          "label": "No"
+        }
+      ],
+      "ground_truth": "No"
+    },
+    {
+      "id": "bool_15",
+      "category": "capacity_planning",
+      "query": "Is the Redis memory cache out of memory?",
+      "context": "Redis reports 1.2GB used out of 16GB allocated (7.5% memory usage, 0 evictions).",
+      "schema_type": "boolean",
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes"
+        },
+        {
+          "token": "No",
+          "label": "No"
+        }
+      ],
+      "ground_truth": "No"
+    },
+    {
+      "id": "bool_16",
+      "category": "network_connectivity",
+      "query": "Is DNS resolution failing in the production cluster?",
+      "context": "Internal CoreDNS latency is 0.4ms across 100,000 queries with 0 SERVFAIL errors.",
+      "schema_type": "boolean",
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes"
+        },
+        {
+          "token": "No",
+          "label": "No"
+        }
+      ],
+      "ground_truth": "No"
+    },
+    {
+      "id": "bool_17",
+      "category": "sla_monitoring",
+      "query": "Did the batch invoicing pipeline miss its midnight deadline?",
+      "context": "Daily invoicing batch job completed successfully at 23:41 UTC, 19 minutes ahead of schedule.",
+      "schema_type": "boolean",
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes"
+        },
+        {
+          "token": "No",
+          "label": "No"
+        }
+      ],
+      "ground_truth": "No"
+    },
+    {
+      "id": "bool_18",
+      "category": "deployment_gate",
+      "query": "Is the release binary corrupted?",
+      "context": "SHA-256 checksum of downloaded artifact exactly matches release registry signature.",
+      "schema_type": "boolean",
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes"
+        },
+        {
+          "token": "No",
+          "label": "No"
+        }
+      ],
+      "ground_truth": "No"
+    },
+    {
+      "id": "bool_19",
+      "category": "data_integrity",
+      "query": "Are there corrupted rows in the audit log partition?",
+      "context": "Cryptographic HMAC verification passed on all 4,500,000 audit log rows.",
+      "schema_type": "boolean",
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes"
+        },
+        {
+          "token": "No",
+          "label": "No"
+        }
+      ],
+      "ground_truth": "No"
+    },
+    {
+      "id": "bool_20",
+      "category": "resource_leak",
+      "query": "Are file descriptors being leaked by the connection pool?",
+      "context": "Open file descriptor count is steady at 64 out of 65,536 allowed over 7 days.",
+      "schema_type": "boolean",
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes"
+        },
+        {
+          "token": "No",
+          "label": "No"
+        }
+      ],
+      "ground_truth": "No"
+    },
+    {
+      "id": "choice_01",
+      "category": "incident_severity",
+      "query": "What is the severity of this production incident?",
+      "context": "Customer login is completely down globally. Authentication database master has crashed with disk corruption.",
+      "schema_type": "choice",
+      "candidates": [
+        {
+          "token": "Low",
+          "label": "Low"
+        },
+        {
+          "token": "Medium",
+          "label": "Medium"
+        },
+        {
+          "token": "High",
+          "label": "High"
+        },
+        {
+          "token": "Critical",
+          "label": "Critical"
+        }
+      ],
+      "ground_truth": "Critical"
+    },
+    {
+      "id": "choice_02",
+      "category": "incident_severity",
+      "query": "What is the severity of this production incident?",
+      "context": "Secondary search autocomplete results are delayed by 2 seconds in one regional zone. Main search works fine.",
+      "schema_type": "choice",
+      "candidates": [
+        {
+          "token": "Low",
+          "label": "Low"
+        },
+        {
+          "token": "Medium",
+          "label": "Medium"
+        },
+        {
+          "token": "High",
+          "label": "High"
+        },
+        {
+          "token": "Critical",
+          "label": "Critical"
+        }
+      ],
+      "ground_truth": "Low"
+    },
+    {
+      "id": "choice_03",
+      "category": "incident_severity",
+      "query": "What is the severity of this production incident?",
+      "context": "Checkout flow error rate is 25% for customers paying with PayPal. Credit card and debit payments work normally.",
+      "schema_type": "choice",
+      "candidates": [
+        {
+          "token": "Low",
+          "label": "Low"
+        },
+        {
+          "token": "Medium",
+          "label": "Medium"
+        },
+        {
+          "token": "High",
+          "label": "High"
+        },
+        {
+          "token": "Critical",
+          "label": "Critical"
+        }
+      ],
+      "ground_truth": "High"
+    },
+    {
+      "id": "choice_04",
+      "category": "incident_severity",
+      "query": "What is the severity of this production incident?",
+      "context": "Internal admin dashboard for metric viewing is rendering charts slowly. No customer impact.",
+      "schema_type": "choice",
+      "candidates": [
+        {
+          "token": "Low",
+          "label": "Low"
+        },
+        {
+          "token": "Medium",
+          "label": "Medium"
+        },
+        {
+          "token": "High",
+          "label": "High"
+        },
+        {
+          "token": "Critical",
+          "label": "Critical"
+        }
+      ],
+      "ground_truth": "Medium"
+    },
+    {
+      "id": "choice_05",
+      "category": "incident_severity",
+      "query": "What is the severity of this production incident?",
+      "context": "A minor typo was noticed in the footer copyright year of the public documentation site.",
+      "schema_type": "choice",
+      "candidates": [
+        {
+          "token": "Low",
+          "label": "Low"
+        },
+        {
+          "token": "Medium",
+          "label": "Medium"
+        },
+        {
+          "token": "High",
+          "label": "High"
+        },
+        {
+          "token": "Critical",
+          "label": "Critical"
+        }
+      ],
+      "ground_truth": "Low"
+    },
+    {
+      "id": "choice_06",
+      "category": "incident_severity",
+      "query": "What is the severity of this production incident?",
+      "context": "All API traffic to European region is dropping 100% of packets due to fiber cut at Frankfurt datacenter.",
+      "schema_type": "choice",
+      "candidates": [
+        {
+          "token": "Low",
+          "label": "Low"
+        },
+        {
+          "token": "Medium",
+          "label": "Medium"
+        },
+        {
+          "token": "High",
+          "label": "High"
+        },
+        {
+          "token": "Critical",
+          "label": "Critical"
+        }
+      ],
+      "ground_truth": "Critical"
+    },
+    {
+      "id": "choice_07",
+      "category": "maintenance_priority",
+      "query": "Assign maintenance priority for this hardware alert.",
+      "context": "Server rack fan unit 3 is running at 70% speed. Temperature is normal at 24C.",
+      "schema_type": "choice",
+      "candidates": [
+        {
+          "token": "Low",
+          "label": "Low"
+        },
+        {
+          "token": "Medium",
+          "label": "Medium"
+        },
+        {
+          "token": "High",
+          "label": "High"
+        }
+      ],
+      "ground_truth": "Low"
+    },
+    {
+      "id": "choice_08",
+      "category": "maintenance_priority",
+      "query": "Assign maintenance priority for this hardware alert.",
+      "context": "Core switch primary power supply failed. Redundant secondary power supply is active and carrying full load.",
+      "schema_type": "choice",
+      "candidates": [
+        {
+          "token": "Low",
+          "label": "Low"
+        },
+        {
+          "token": "Medium",
+          "label": "Medium"
+        },
+        {
+          "token": "High",
+          "label": "High"
+        }
+      ],
+      "ground_truth": "Medium"
+    },
+    {
+      "id": "choice_09",
+      "category": "maintenance_priority",
+      "query": "Assign maintenance priority for this hardware alert.",
+      "context": "RAID controller reports 2 out of 3 parity disks have sustained unrecoverable read errors.",
+      "schema_type": "choice",
+      "candidates": [
+        {
+          "token": "Low",
+          "label": "Low"
+        },
+        {
+          "token": "Medium",
+          "label": "Medium"
+        },
+        {
+          "token": "High",
+          "label": "High"
+        }
+      ],
+      "ground_truth": "High"
+    },
+    {
+      "id": "choice_10",
+      "category": "maintenance_priority",
+      "query": "Assign maintenance priority for this hardware alert.",
+      "context": "Routine air filter replacement scheduled for cooling intake in server hall B.",
+      "schema_type": "choice",
+      "candidates": [
+        {
+          "token": "Low",
+          "label": "Low"
+        },
+        {
+          "token": "Medium",
+          "label": "Medium"
+        },
+        {
+          "token": "High",
+          "label": "High"
+        }
+      ],
+      "ground_truth": "Low"
+    },
+    {
+      "id": "choice_11",
+      "category": "maintenance_priority",
+      "query": "Assign maintenance priority for this hardware alert.",
+      "context": "Chiller coolant loop pressure dropping rapidly; core temperature rising 2 degrees per minute.",
+      "schema_type": "choice",
+      "candidates": [
+        {
+          "token": "Low",
+          "label": "Low"
+        },
+        {
+          "token": "Medium",
+          "label": "Medium"
+        },
+        {
+          "token": "High",
+          "label": "High"
+        }
+      ],
+      "ground_truth": "High"
+    },
+    {
+      "id": "choice_12",
+      "category": "failure_domain",
+      "query": "Which subsystem is the root cause of this failure?",
+      "context": "Queries: SELECT * FROM users WHERE id=? timed out after 30s. Connection pool exhausted with 500 active locks.",
+      "schema_type": "choice",
+      "candidates": [
+        {
+          "token": "A",
+          "label": "A"
+        },
+        {
+          "token": "B",
+          "label": "B"
+        },
+        {
+          "token": "C",
+          "label": "C"
+        }
+      ],
+      "ground_truth": "A"
+    },
+    {
+      "id": "choice_13",
+      "category": "failure_domain",
+      "query": "Which subsystem is the root cause of this failure?",
+      "context": "BGP route flap between autonomous systems AS15169 and AS3356 causing 80ms route loop and packet drop.",
+      "schema_type": "choice",
+      "candidates": [
+        {
+          "token": "A",
+          "label": "A"
+        },
+        {
+          "token": "B",
+          "label": "B"
+        },
+        {
+          "token": "C",
+          "label": "C"
+        }
+      ],
+      "ground_truth": "B"
+    },
+    {
+      "id": "choice_14",
+      "category": "support_routing",
+      "query": "Which team should this support ticket be routed to?",
+      "context": "Invoice #9921 charged customer $450 instead of contracted $350 monthly tier.",
+      "schema_type": "choice",
+      "candidates": [
+        {
+          "token": "A",
+          "label": "A"
+        },
+        {
+          "token": "B",
+          "label": "B"
+        },
+        {
+          "token": "C",
+          "label": "C"
+        }
+      ],
+      "ground_truth": "C"
+    },
+    {
+      "id": "choice_15",
+      "category": "support_routing",
+      "query": "Which team should this support ticket be routed to?",
+      "context": "Customer cannot reset password because OTP SMS is not arriving on international phone numbers.",
+      "schema_type": "choice",
+      "candidates": [
+        {
+          "token": "A",
+          "label": "A"
+        },
+        {
+          "token": "B",
+          "label": "B"
+        },
+        {
+          "token": "C",
+          "label": "C"
+        }
+      ],
+      "ground_truth": "A"
+    },
+    {
+      "id": "score_01",
+      "category": "customer_satisfaction",
+      "query": "Rate customer satisfaction on a scale from 1 to 5.",
+      "context": "The customer said: 'Absolute perfection! Everything worked seamlessly, support answered in 10 seconds. Best software experience ever.'",
+      "schema_type": "score",
+      "candidates": [
+        {
+          "token": "1",
+          "label": "1"
+        },
+        {
+          "token": "2",
+          "label": "2"
+        },
+        {
+          "token": "3",
+          "label": "3"
+        },
+        {
+          "token": "4",
+          "label": "4"
+        },
+        {
+          "token": "5",
+          "label": "5"
+        }
+      ],
+      "ground_truth": "5"
+    },
+    {
+      "id": "score_02",
+      "category": "customer_satisfaction",
+      "query": "Rate customer satisfaction on a scale from 1 to 5.",
+      "context": "The customer said: 'Terrible! Total disaster. System deleted my project files and support refused to help. Demanding an immediate full refund!'",
+      "schema_type": "score",
+      "candidates": [
+        {
+          "token": "1",
+          "label": "1"
+        },
+        {
+          "token": "2",
+          "label": "2"
+        },
+        {
+          "token": "3",
+          "label": "3"
+        },
+        {
+          "token": "4",
+          "label": "4"
+        },
+        {
+          "token": "5",
+          "label": "5"
+        }
+      ],
+      "ground_truth": "1"
+    },
+    {
+      "id": "score_03",
+      "category": "customer_satisfaction",
+      "query": "Rate customer satisfaction on a scale from 1 to 5.",
+      "context": "The customer said: 'Product is good overall and does the job. A few minor UI quirks on mobile, but desktop experience is solid.'",
+      "schema_type": "score",
+      "candidates": [
+        {
+          "token": "1",
+          "label": "1"
+        },
+        {
+          "token": "2",
+          "label": "2"
+        },
+        {
+          "token": "3",
+          "label": "3"
+        },
+        {
+          "token": "4",
+          "label": "4"
+        },
+        {
+          "token": "5",
+          "label": "5"
+        }
+      ],
+      "ground_truth": "4"
+    },
+    {
+      "id": "score_04",
+      "category": "customer_satisfaction",
+      "query": "Rate customer satisfaction on a scale from 1 to 5.",
+      "context": "The customer said: 'Average service. Neither impressive nor broken. Just okay.'",
+      "schema_type": "score",
+      "candidates": [
+        {
+          "token": "1",
+          "label": "1"
+        },
+        {
+          "token": "2",
+          "label": "2"
+        },
+        {
+          "token": "3",
+          "label": "3"
+        },
+        {
+          "token": "4",
+          "label": "4"
+        },
+        {
+          "token": "5",
+          "label": "5"
+        }
+      ],
+      "ground_truth": "3"
+    },
+    {
+      "id": "score_05",
+      "category": "customer_satisfaction",
+      "query": "Rate customer satisfaction on a scale from 1 to 5.",
+      "context": "The customer said: 'Quite frustrating experience. Multiple crashes during export, had to restart 3 times before it worked.'",
+      "schema_type": "score",
+      "candidates": [
+        {
+          "token": "1",
+          "label": "1"
+        },
+        {
+          "token": "2",
+          "label": "2"
+        },
+        {
+          "token": "3",
+          "label": "3"
+        },
+        {
+          "token": "4",
+          "label": "4"
+        },
+        {
+          "token": "5",
+          "label": "5"
+        }
+      ],
+      "ground_truth": "2"
+    },
+    {
+      "id": "score_06",
+      "category": "customer_satisfaction",
+      "query": "Rate customer satisfaction on a scale from 1 to 5.",
+      "context": "The customer said: 'Exceeded all my expectations. Fast, intuitive, elegant design, 10/10 would recommend to everyone.'",
+      "schema_type": "score",
+      "candidates": [
+        {
+          "token": "1",
+          "label": "1"
+        },
+        {
+          "token": "2",
+          "label": "2"
+        },
+        {
+          "token": "3",
+          "label": "3"
+        },
+        {
+          "token": "4",
+          "label": "4"
+        },
+        {
+          "token": "5",
+          "label": "5"
+        }
+      ],
+      "ground_truth": "5"
+    },
+    {
+      "id": "score_07",
+      "category": "customer_satisfaction",
+      "query": "Rate customer satisfaction on a scale from 1 to 5.",
+      "context": "The customer said: 'Unusable garbage. Does not open on Linux at all despite documentation claiming full support.'",
+      "schema_type": "score",
+      "candidates": [
+        {
+          "token": "1",
+          "label": "1"
+        },
+        {
+          "token": "2",
+          "label": "2"
+        },
+        {
+          "token": "3",
+          "label": "3"
+        },
+        {
+          "token": "4",
+          "label": "4"
+        },
+        {
+          "token": "5",
+          "label": "5"
+        }
+      ],
+      "ground_truth": "1"
+    },
+    {
+      "id": "score_08",
+      "category": "urgency_rating",
+      "query": "Rate the urgency of this infrastructure alert from 1 (lowest) to 5 (highest).",
+      "context": "Routine weekly backup completed successfully with 0 warnings.",
+      "schema_type": "score",
+      "candidates": [
+        {
+          "token": "1",
+          "label": "1"
+        },
+        {
+          "token": "2",
+          "label": "2"
+        },
+        {
+          "token": "3",
+          "label": "3"
+        },
+        {
+          "token": "4",
+          "label": "4"
+        },
+        {
+          "token": "5",
+          "label": "5"
+        }
+      ],
+      "ground_truth": "1"
+    },
+    {
+      "id": "score_09",
+      "category": "urgency_rating",
+      "query": "Rate the urgency of this infrastructure alert from 1 (lowest) to 5 (highest).",
+      "context": "Production primary database disk is at 99.8% capacity with 200MB remaining and write failures beginning.",
+      "schema_type": "score",
+      "candidates": [
+        {
+          "token": "1",
+          "label": "1"
+        },
+        {
+          "token": "2",
+          "label": "2"
+        },
+        {
+          "token": "3",
+          "label": "3"
+        },
+        {
+          "token": "4",
+          "label": "4"
+        },
+        {
+          "token": "5",
+          "label": "5"
+        }
+      ],
+      "ground_truth": "5"
+    },
+    {
+      "id": "score_10",
+      "category": "urgency_rating",
+      "query": "Rate the urgency of this infrastructure alert from 1 (lowest) to 5 (highest).",
+      "context": "TLS certificate for primary domain will expire in 2 days and automatic renewal failed.",
+      "schema_type": "score",
+      "candidates": [
+        {
+          "token": "1",
+          "label": "1"
+        },
+        {
+          "token": "2",
+          "label": "2"
+        },
+        {
+          "token": "3",
+          "label": "3"
+        },
+        {
+          "token": "4",
+          "label": "4"
+        },
+        {
+          "token": "5",
+          "label": "5"
+        }
+      ],
+      "ground_truth": "4"
+    },
+    {
+      "id": "score_11",
+      "category": "urgency_rating",
+      "query": "Rate the urgency of this infrastructure alert from 1 (lowest) to 5 (highest).",
+      "context": "Non-critical dev environment nightly snapshot took 45 minutes instead of typical 30 minutes.",
+      "schema_type": "score",
+      "candidates": [
+        {
+          "token": "1",
+          "label": "1"
+        },
+        {
+          "token": "2",
+          "label": "2"
+        },
+        {
+          "token": "3",
+          "label": "3"
+        },
+        {
+          "token": "4",
+          "label": "4"
+        },
+        {
+          "token": "5",
+          "label": "5"
+        }
+      ],
+      "ground_truth": "2"
+    },
+    {
+      "id": "score_12",
+      "category": "urgency_rating",
+      "query": "Rate the urgency of this infrastructure alert from 1 (lowest) to 5 (highest).",
+      "context": "Staging environment API gateway has elevated 502 Bad Gateway responses.",
+      "schema_type": "score",
+      "candidates": [
+        {
+          "token": "1",
+          "label": "1"
+        },
+        {
+          "token": "2",
+          "label": "2"
+        },
+        {
+          "token": "3",
+          "label": "3"
+        },
+        {
+          "token": "4",
+          "label": "4"
+        },
+        {
+          "token": "5",
+          "label": "5"
+        }
+      ],
+      "ground_truth": "3"
+    },
+    {
+      "id": "score_13",
+      "category": "quality_rating",
+      "query": "Rate the quality of this code snippet from 1 (poor) to 5 (excellent).",
+      "context": "Functions are well-documented, clean error handling, 100% unit test coverage, zero memory leaks.",
+      "schema_type": "score",
+      "candidates": [
+        {
+          "token": "1",
+          "label": "1"
+        },
+        {
+          "token": "2",
+          "label": "2"
+        },
+        {
+          "token": "3",
+          "label": "3"
+        },
+        {
+          "token": "4",
+          "label": "4"
+        },
+        {
+          "token": "5",
+          "label": "5"
+        }
+      ],
+      "ground_truth": "5"
+    },
+    {
+      "id": "score_14",
+      "category": "quality_rating",
+      "query": "Rate the quality of this code snippet from 1 (poor) to 5 (excellent).",
+      "context": "All variables named a, b, c; nested loops with complexity O(N^4); hardcoded passwords in plaintext.",
+      "schema_type": "score",
+      "candidates": [
+        {
+          "token": "1",
+          "label": "1"
+        },
+        {
+          "token": "2",
+          "label": "2"
+        },
+        {
+          "token": "3",
+          "label": "3"
+        },
+        {
+          "token": "4",
+          "label": "4"
+        },
+        {
+          "token": "5",
+          "label": "5"
+        }
+      ],
+      "ground_truth": "1"
+    },
+    {
+      "id": "score_15",
+      "category": "quality_rating",
+      "query": "Rate the quality of this code snippet from 1 (poor) to 5 (excellent).",
+      "context": "Reasonable modular structure, passes basic tests, but lacks docstrings and edge-case boundary checks.",
+      "schema_type": "score",
+      "candidates": [
+        {
+          "token": "1",
+          "label": "1"
+        },
+        {
+          "token": "2",
+          "label": "2"
+        },
+        {
+          "token": "3",
+          "label": "3"
+        },
+        {
+          "token": "4",
+          "label": "4"
+        },
+        {
+          "token": "5",
+          "label": "5"
+        }
+      ],
+      "ground_truth": "3"
+    }
+  ]
+}

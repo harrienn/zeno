@@ -457,6 +457,217 @@ pub fn main(init: std.process.Init) !void {
             try writeDecisionResponseJson(arena, p, resp);
         }
         return;
+    } else if (args.len > 1 and std.mem.eql(u8, args[1], "evaluate-dataset")) {
+        if (args.len < 4) {
+            try stdout_writer.print("Usage: zeno evaluate-dataset <model.gguf> <dataset.json> [--cuda] [--steps <N>] [--threshold <tau>] [--canvas <N>] [--out <results.json>]\n", .{});
+            try stdout_writer.flush();
+            return;
+        }
+        const model_path = args[2];
+        const dataset_path = args[3];
+
+        var canvas_override: ?usize = null;
+        var step_cap: u32 = 1;
+        var entropy_threshold: ?f32 = null;
+        var out_json_path: ?[]const u8 = null;
+        var use_cuda = false;
+        var arg_i: usize = 4;
+        while (arg_i < args.len) : (arg_i += 1) {
+            if (std.mem.eql(u8, args[arg_i], "--cuda")) {
+                use_cuda = true;
+            } else if (std.mem.eql(u8, args[arg_i], "--steps")) {
+                if (arg_i + 1 < args.len) {
+                    arg_i += 1;
+                    step_cap = std.fmt.parseInt(u32, args[arg_i], 10) catch 1;
+                }
+            } else if (std.mem.eql(u8, args[arg_i], "--threshold")) {
+                if (arg_i + 1 < args.len) {
+                    arg_i += 1;
+                    entropy_threshold = std.fmt.parseFloat(f32, args[arg_i]) catch null;
+                }
+            } else if (std.mem.eql(u8, args[arg_i], "--canvas")) {
+                if (arg_i + 1 < args.len) {
+                    arg_i += 1;
+                    canvas_override = std.fmt.parseInt(usize, args[arg_i], 10) catch null;
+                }
+            } else if (std.mem.eql(u8, args[arg_i], "--out")) {
+                if (arg_i + 1 < args.len) {
+                    arg_i += 1;
+                    out_json_path = args[arg_i];
+                }
+            } else {
+                out_json_path = args[arg_i];
+            }
+        }
+
+        const parsed = try zeno.dataset.loadDataset(arena, dataset_path);
+        defer parsed.deinit();
+        const ds = parsed.value;
+
+        if (use_cuda and !zeno.cuda.is_enabled) {
+            try stdout_writer.print("Error: CUDA support was disabled at build time (-Dcuda=false)\n", .{});
+            try stdout_writer.flush();
+            return;
+        }
+
+        try stdout_writer.print("Initializing decision engine with model: {s} (backend: {s})...\n", .{
+            model_path,
+            if (use_cuda) "CUDA" else "CPU",
+        });
+        try stdout_writer.flush();
+
+        var engine = try zeno.DecisionEngine.initWithOptions(arena, model_path, .{
+            .backend = if (use_cuda) .cuda else .cpu,
+        });
+        defer engine.deinit();
+
+        const eff_canvas = canvas_override orelse 256;
+        try stdout_writer.print("Evaluating dataset '{s}' ({d} examples, step_cap={d}, canvas={d})\n\n", .{
+            ds.name,
+            ds.examples.len,
+            step_cap,
+            eff_canvas,
+        });
+        try stdout_writer.flush();
+
+        // Warmup query using first example
+        if (ds.examples.len > 0) {
+            const first = ds.examples[0];
+            var warmup_cands = try arena.alloc(zeno.CandidateSpec, first.candidates.len);
+            for (first.candidates, 0..) |c, i| {
+                warmup_cands[i] = .{ .token = c.token, .label = c.label };
+            }
+            const warmup_req = zeno.DecisionRequest{
+                .query = first.query,
+                .context = first.context,
+                .schema_type = parseSchemaType(first.schema_type) catch .boolean,
+                .candidates = warmup_cands,
+                .step_cap = step_cap,
+                .temperature = 1.0,
+                .entropy_threshold = entropy_threshold,
+                .canvas_length = canvas_override,
+            };
+            _ = try engine.decide(arena, warmup_req);
+        }
+
+        var results = try arena.alloc(zeno.dataset.EvaluationResult, ds.examples.len);
+        var correct_count: usize = 0;
+        var step_counts = [_]usize{ 0, 0, 0, 0, 0 };
+        var total_latency_ms: f64 = 0.0;
+        var latencies = try arena.alloc(f64, ds.examples.len);
+        var sum_norm_entropy: f64 = 0.0;
+        var uncertain_count: usize = 0;
+
+        for (ds.examples, 0..) |ex, idx| {
+            var cands = try arena.alloc(zeno.CandidateSpec, ex.candidates.len);
+            for (ex.candidates, 0..) |c, i| {
+                cands[i] = .{ .token = c.token, .label = c.label };
+            }
+            const schema_t = try parseSchemaType(ex.schema_type);
+
+            const req = zeno.DecisionRequest{
+                .query = ex.query,
+                .context = ex.context,
+                .schema_type = schema_t,
+                .candidates = cands,
+                .step_cap = step_cap,
+                .temperature = 1.0,
+                .entropy_threshold = entropy_threshold,
+                .canvas_length = canvas_override,
+            };
+
+            const t_start = getMonotonicMs();
+            const resp = try engine.decide(arena, req);
+            const latency = getMonotonicMs() - t_start;
+
+            latencies[idx] = latency;
+            total_latency_ms += latency;
+            sum_norm_entropy += resp.normalized_entropy;
+
+            const is_correct = std.mem.eql(u8, resp.decision, ex.ground_truth);
+            if (is_correct) correct_count += 1;
+            if (resp.uncertain) uncertain_count += 1;
+
+            if (resp.steps_executed <= 4) {
+                step_counts[resp.steps_executed] += 1;
+            }
+
+            results[idx] = .{
+                .id = ex.id,
+                .category = ex.category,
+                .ground_truth = ex.ground_truth,
+                .decision = resp.decision,
+                .is_correct = is_correct,
+                .decision_probability = resp.decision_probability,
+                .entropy_nats = resp.entropy_nats,
+                .normalized_entropy = resp.normalized_entropy,
+                .uncertain = resp.uncertain,
+                .steps_executed = resp.steps_executed,
+                .latency_ms = latency,
+                .candidates = resp.candidates,
+            };
+
+            try stdout_writer.print("[{d:>2}/{d}] ({s:<10}) Pred: '{s:<8}' | Truth: '{s:<8}' | Match: {s} | Prob: {d:.4} | H_norm: {d:.4} | Steps: {d} | {d:6.1}ms\n", .{
+                idx + 1,
+                ds.examples.len,
+                ex.id,
+                resp.decision,
+                ex.ground_truth,
+                if (is_correct) "YES" else "NO ",
+                resp.decision_probability,
+                resp.normalized_entropy,
+                resp.steps_executed,
+                latency,
+            });
+            try stdout_writer.flush();
+        }
+
+        const stats = calculateStats(latencies);
+        const accuracy = if (ds.examples.len > 0) @as(f64, @floatFromInt(correct_count)) / @as(f64, @floatFromInt(ds.examples.len)) else 0.0;
+        const mean_latency = if (ds.examples.len > 0) total_latency_ms / @as(f64, @floatFromInt(ds.examples.len)) else 0.0;
+        const mean_norm_ent = if (ds.examples.len > 0) sum_norm_entropy / @as(f64, @floatFromInt(ds.examples.len)) else 0.0;
+
+        const summary = zeno.dataset.EvaluationSummary{
+            .total_examples = ds.examples.len,
+            .correct_count = correct_count,
+            .accuracy = accuracy,
+            .mean_latency_ms = mean_latency,
+            .median_latency_ms = stats.median,
+            .mean_normalized_entropy = mean_norm_ent,
+            .step_counts = step_counts,
+            .uncertain_count = uncertain_count,
+        };
+
+        try stdout_writer.print("\n=== Dataset Evaluation Summary ===\n", .{});
+        try stdout_writer.print("Total Examples:        {d}\n", .{summary.total_examples});
+        try stdout_writer.print("Correct Decisions:     {d} ({d:.2}% accuracy)\n", .{ summary.correct_count, summary.accuracy * 100.0 });
+        try stdout_writer.print("Latency:               Mean: {d:.2}ms | Median: {d:.2}ms | Spread: {d:.2}ms\n", .{ summary.mean_latency_ms, summary.median_latency_ms, stats.spread });
+        try stdout_writer.print("Mean Norm Entropy:     {d:.4}\n", .{summary.mean_normalized_entropy});
+        try stdout_writer.print("Uncertain Queries:     {d} / {d}\n", .{ summary.uncertain_count, summary.total_examples });
+        try stdout_writer.print("Step Distribution:     T=1: {d} | T=2: {d} | T=3: {d} | T=4: {d}\n", .{
+            summary.step_counts[1],
+            summary.step_counts[2],
+            summary.step_counts[3],
+            summary.step_counts[4],
+        });
+        try stdout_writer.print("==================================\n", .{});
+        try stdout_writer.flush();
+
+        if (out_json_path) |p| {
+            try zeno.dataset.writeEvaluationResultsJson(
+                arena,
+                p,
+                if (use_cuda) "cuda" else "cpu",
+                step_cap,
+                entropy_threshold,
+                eff_canvas,
+                results,
+                summary,
+            );
+            try stdout_writer.print("Saved detailed results JSON to: {s}\n", .{p});
+            try stdout_writer.flush();
+        }
+        return;
     } else if (args.len > 1 and (std.mem.eql(u8, args[1], "benchmark-canvas") or std.mem.eql(u8, args[1], "benchmark"))) {
         if (args.len < 3) {
             try stdout_writer.print("Usage: zeno benchmark <model.gguf> [--cuda] [--samples N] [fixture.json]\n", .{});
@@ -700,6 +911,7 @@ pub fn main(init: std.process.Init) !void {
         try stdout_writer.print("  zeno [info] <path/to/model.gguf>\n", .{});
         try stdout_writer.print("  zeno decide <path/to/model.gguf> \"<query>\" [--cuda] [--canvas <N>] [cand1] [cand2] ...\n", .{});
         try stdout_writer.print("  zeno decide-fixture <path/to/model.gguf> <fixture.json> [--cuda] [--canvas <N>] [out.json]\n", .{});
+        try stdout_writer.print("  zeno evaluate-dataset <path/to/model.gguf> <dataset.json> [--cuda] [--steps <N>] [--threshold <tau>] [--canvas <N>] [--out <results.json>]\n", .{});
         try stdout_writer.print("  zeno benchmark <path/to/model.gguf> [--cuda] [fixture.json]\n", .{});
         try stdout_writer.print("  zeno serve <path/to/model.gguf> [--cuda] [--host <ip>] [--port <port>]\n", .{});
         try stdout_writer.print("  zeno cuda-info\n", .{});

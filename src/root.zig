@@ -15,6 +15,7 @@ pub const infer = @import("infer.zig");
 pub const engine = @import("engine.zig");
 pub const fixture = @import("fixture.zig");
 pub const server = @import("server.zig");
+pub const dataset = @import("dataset.zig");
 pub const cuda = @import("cuda.zig");
 pub const cuda_mem = @import("cuda_mem.zig");
 pub const infer_cuda = @import("infer_cuda.zig");
@@ -103,6 +104,7 @@ test {
     _ = engine;
     _ = fixture;
     _ = server;
+    _ = dataset;
     _ = cuda;
     _ = cuda_mem;
     _ = infer_cuda;

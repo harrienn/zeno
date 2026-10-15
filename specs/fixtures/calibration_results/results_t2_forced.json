@@ -1,0 +1,1938 @@
+{
+  "schema": "zeno.evaluation/v1",
+  "config": {
+    "backend": "cuda",
+    "step_cap": 2,
+    "entropy_threshold": 0.0000,
+    "canvas_length": 16
+  },
+  "summary": {
+    "total_examples": 50,
+    "correct_count": 39,
+    "accuracy": 0.7800,
+    "mean_latency_ms": 1014.72,
+    "median_latency_ms": 1011.46,
+    "mean_normalized_entropy": 0.1585,
+    "uncertain_count": 50,
+    "step_distribution": {
+      "step_1": 0,
+      "step_2": 50,
+      "step_3": 0,
+      "step_4": 0
+    }
+  },
+  "results": [
+    {
+      "id": "bool_01",
+      "category": "infra_health",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.901314,
+      "entropy_nats": 0.322186,
+      "normalized_entropy": 0.464816,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 366.91,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 18.807983,
+          "softcapped_logit": 16.678097,
+          "probability": 0.901314
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 15.775644,
+          "softcapped_logit": 14.466184,
+          "probability": 0.098686
+        }
+      ]
+    },
+    {
+      "id": "bool_02",
+      "category": "security_auth",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.915153,
+      "entropy_nats": 0.290452,
+      "normalized_entropy": 0.419033,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 983.92,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 14.873394,
+          "softcapped_logit": 13.763752,
+          "probability": 0.915153
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 11.984865,
+          "softcapped_logit": 11.385516,
+          "probability": 0.084847
+        }
+      ]
+    },
+    {
+      "id": "bool_03",
+      "category": "payment_fraud",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.993169,
+      "entropy_nats": 0.040868,
+      "normalized_entropy": 0.058960,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1071.43,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 13.754378,
+          "softcapped_logit": 12.865319,
+          "probability": 0.993169
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 8.075418,
+          "softcapped_logit": 7.885867,
+          "probability": 0.006831
+        }
+      ]
+    },
+    {
+      "id": "bool_04",
+      "category": "incident_detection",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.976988,
+      "entropy_nats": 0.109541,
+      "normalized_entropy": 0.158034,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 962.98,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 13.850264,
+          "softcapped_logit": 12.943462,
+          "probability": 0.976988
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 9.500348,
+          "softcapped_logit": 9.195008,
+          "probability": 0.023012
+        }
+      ]
+    },
+    {
+      "id": "bool_05",
+      "category": "capacity_planning",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.921905,
+      "entropy_nats": 0.274092,
+      "normalized_entropy": 0.395432,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1117.33,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 16.070919,
+          "softcapped_logit": 14.691722,
+          "probability": 0.921905
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 12.976145,
+          "softcapped_logit": 12.223208,
+          "probability": 0.078095
+        }
+      ]
+    },
+    {
+      "id": "bool_06",
+      "category": "network_connectivity",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.909788,
+      "entropy_nats": 0.303027,
+      "normalized_entropy": 0.437176,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 970.83,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 14.784311,
+          "softcapped_logit": 13.693324,
+          "probability": 0.909788
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 11.981073,
+          "softcapped_logit": 11.382272,
+          "probability": 0.090212
+        }
+      ]
+    },
+    {
+      "id": "bool_07",
+      "category": "sla_monitoring",
+      "ground_truth": "Yes",
+      "decision": "No",
+      "is_correct": false,
+      "decision_probability": 0.999946,
+      "entropy_nats": 0.000590,
+      "normalized_entropy": 0.000850,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1010.91,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 10.116867,
+          "softcapped_logit": 9.750037,
+          "probability": 0.000054
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 23.375835,
+          "softcapped_logit": 19.567324,
+          "probability": 0.999946
+        }
+      ]
+    },
+    {
+      "id": "bool_08",
+      "category": "deployment_gate",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.990777,
+      "entropy_nats": 0.052398,
+      "normalized_entropy": 0.075595,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 978.07,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 16.837715,
+          "softcapped_logit": 15.267287,
+          "probability": 0.990777
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 11.066529,
+          "softcapped_logit": 10.590464,
+          "probability": 0.009223
+        }
+      ]
+    },
+    {
+      "id": "bool_09",
+      "category": "data_integrity",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.973751,
+      "entropy_nats": 0.121451,
+      "normalized_entropy": 0.175216,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1013.45,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 15.620159,
+          "softcapped_logit": 14.346554,
+          "probability": 0.973751
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 11.229694,
+          "softcapped_logit": 10.733021,
+          "probability": 0.026249
+        }
+      ]
+    },
+    {
+      "id": "bool_10",
+      "category": "resource_leak",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.994965,
+      "entropy_nats": 0.031666,
+      "normalized_entropy": 0.045684,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1049.68,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 18.636469,
+          "softcapped_logit": 16.559216,
+          "probability": 0.994965
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 11.853617,
+          "softcapped_logit": 11.272985,
+          "probability": 0.005035
+        }
+      ]
+    },
+    {
+      "id": "bool_11",
+      "category": "infra_health",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 1.000000,
+      "entropy_nats": 0.000006,
+      "normalized_entropy": 0.000009,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1038.51,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 4.778959,
+          "softcapped_logit": 4.738941,
+          "probability": 0.000000
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 23.261744,
+          "softcapped_logit": 19.501606,
+          "probability": 1.000000
+        }
+      ]
+    },
+    {
+      "id": "bool_12",
+      "category": "security_auth",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.999995,
+      "entropy_nats": 0.000072,
+      "normalized_entropy": 0.000104,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 940.75,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 10.353569,
+          "softcapped_logit": 9.961191,
+          "probability": 0.000005
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 28.242315,
+          "softcapped_logit": 22.076090,
+          "probability": 0.999995
+        }
+      ]
+    },
+    {
+      "id": "bool_13",
+      "category": "payment_fraud",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.999998,
+      "entropy_nats": 0.000022,
+      "normalized_entropy": 0.000032,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 975.07,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 9.288366,
+          "softcapped_logit": 9.002529,
+          "probability": 0.000002
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 28.944012,
+          "softcapped_logit": 22.392315,
+          "probability": 0.999998
+        }
+      ]
+    },
+    {
+      "id": "bool_14",
+      "category": "incident_detection",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.999999,
+      "entropy_nats": 0.000011,
+      "normalized_entropy": 0.000015,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 999.97,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 4.605129,
+          "softcapped_logit": 4.569296,
+          "probability": 0.000001
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 21.989855,
+          "softcapped_logit": 18.746832,
+          "probability": 0.999999
+        }
+      ]
+    },
+    {
+      "id": "bool_15",
+      "category": "capacity_planning",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.999999,
+      "entropy_nats": 0.000018,
+      "normalized_entropy": 0.000025,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1048.09,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 8.290935,
+          "softcapped_logit": 8.086110,
+          "probability": 0.000001
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 27.476604,
+          "softcapped_logit": 21.718372,
+          "probability": 0.999999
+        }
+      ]
+    },
+    {
+      "id": "bool_16",
+      "category": "network_connectivity",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.999999,
+      "entropy_nats": 0.000013,
+      "normalized_entropy": 0.000019,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1041.99,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 8.215939,
+          "softcapped_logit": 8.016516,
+          "probability": 0.000001
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 27.990780,
+          "softcapped_logit": 21.960049,
+          "probability": 0.999999
+        }
+      ]
+    },
+    {
+      "id": "bool_17",
+      "category": "sla_monitoring",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.999996,
+      "entropy_nats": 0.000049,
+      "normalized_entropy": 0.000071,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 981.34,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 9.181884,
+          "softcapped_logit": 8.905531,
+          "probability": 0.000004
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 26.882729,
+          "softcapped_logit": 21.431675,
+          "probability": 0.999996
+        }
+      ]
+    },
+    {
+      "id": "bool_18",
+      "category": "deployment_gate",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 1.000000,
+      "entropy_nats": 0.000003,
+      "normalized_entropy": 0.000005,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 892.11,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 6.780669,
+          "softcapped_logit": 6.667515,
+          "probability": 0.000000
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 28.312610,
+          "softcapped_logit": 22.108263,
+          "probability": 1.000000
+        }
+      ]
+    },
+    {
+      "id": "bool_19",
+      "category": "data_integrity",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.999998,
+      "entropy_nats": 0.000024,
+      "normalized_entropy": 0.000035,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 906.08,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 7.851553,
+          "softcapped_logit": 7.677064,
+          "probability": 0.000002
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 25.975798,
+          "softcapped_logit": 20.977936,
+          "probability": 0.999998
+        }
+      ]
+    },
+    {
+      "id": "bool_20",
+      "category": "resource_leak",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.999973,
+      "entropy_nats": 0.000310,
+      "normalized_entropy": 0.000447,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 976.02,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 9.549521,
+          "softcapped_logit": 9.239541,
+          "probability": 0.000027
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 23.720364,
+          "softcapped_logit": 19.763802,
+          "probability": 0.999973
+        }
+      ]
+    },
+    {
+      "id": "choice_01",
+      "category": "incident_severity",
+      "ground_truth": "Critical",
+      "decision": "Critical",
+      "is_correct": true,
+      "decision_probability": 0.999766,
+      "entropy_nats": 0.002352,
+      "normalized_entropy": 0.001697,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 922.11,
+      "candidates": [
+        {
+          "label": "Low",
+          "token_id": 26834,
+          "raw_logit": 4.001869,
+          "softcapped_logit": 3.978300,
+          "probability": 0.000157
+        },
+        {
+          "label": "Medium",
+          "token_id": 49074,
+          "raw_logit": 3.250040,
+          "softcapped_logit": 3.237385,
+          "probability": 0.000075
+        },
+        {
+          "label": "High",
+          "token_id": 13238,
+          "raw_logit": -0.294809,
+          "softcapped_logit": -0.294800,
+          "probability": 0.000002
+        },
+        {
+          "label": "Critical",
+          "token_id": 89740,
+          "raw_logit": 13.595798,
+          "softcapped_logit": 12.735609,
+          "probability": 0.999766
+        }
+      ]
+    },
+    {
+      "id": "choice_02",
+      "category": "incident_severity",
+      "ground_truth": "Low",
+      "decision": "High",
+      "is_correct": false,
+      "decision_probability": 0.575630,
+      "entropy_nats": 1.007890,
+      "normalized_entropy": 0.727039,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1012.03,
+      "candidates": [
+        {
+          "label": "Low",
+          "token_id": 26834,
+          "raw_logit": 18.458359,
+          "softcapped_logit": 16.434965,
+          "probability": 0.144711
+        },
+        {
+          "label": "Medium",
+          "token_id": 49074,
+          "raw_logit": 19.343674,
+          "softcapped_logit": 17.044548,
+          "probability": 0.266219
+        },
+        {
+          "label": "High",
+          "token_id": 13238,
+          "raw_logit": 20.508076,
+          "softcapped_logit": 17.815693,
+          "probability": 0.575630
+        },
+        {
+          "label": "Critical",
+          "token_id": 89740,
+          "raw_logit": 15.248922,
+          "softcapped_logit": 14.058527,
+          "probability": 0.013441
+        }
+      ]
+    },
+    {
+      "id": "choice_03",
+      "category": "incident_severity",
+      "ground_truth": "High",
+      "decision": "Critical",
+      "is_correct": false,
+      "decision_probability": 0.830169,
+      "entropy_nats": 0.625684,
+      "normalized_entropy": 0.451335,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1011.59,
+      "candidates": [
+        {
+          "label": "Low",
+          "token_id": 26834,
+          "raw_logit": 12.741655,
+          "softcapped_logit": 12.027026,
+          "probability": 0.029734
+        },
+        {
+          "label": "Medium",
+          "token_id": 49074,
+          "raw_logit": 13.366173,
+          "softcapped_logit": 12.546757,
+          "probability": 0.050000
+        },
+        {
+          "label": "High",
+          "token_id": 13238,
+          "raw_logit": 14.087169,
+          "softcapped_logit": 13.135610,
+          "probability": 0.090097
+        },
+        {
+          "label": "Critical",
+          "token_id": 89740,
+          "raw_logit": 16.958160,
+          "softcapped_logit": 15.356357,
+          "probability": 0.830169
+        }
+      ]
+    },
+    {
+      "id": "choice_04",
+      "category": "incident_severity",
+      "ground_truth": "Medium",
+      "decision": "Low",
+      "is_correct": false,
+      "decision_probability": 0.975580,
+      "entropy_nats": 0.114794,
+      "normalized_entropy": 0.082807,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 932.23,
+      "candidates": [
+        {
+          "label": "Low",
+          "token_id": 26834,
+          "raw_logit": 19.214370,
+          "softcapped_logit": 16.956768,
+          "probability": 0.975580
+        },
+        {
+          "label": "Medium",
+          "token_id": 49074,
+          "raw_logit": 14.252714,
+          "softcapped_logit": 13.269094,
+          "probability": 0.024419
+        },
+        {
+          "label": "High",
+          "token_id": 13238,
+          "raw_logit": 1.039653,
+          "softcapped_logit": 1.039237,
+          "probability": 0.000000
+        },
+        {
+          "label": "Critical",
+          "token_id": 89740,
+          "raw_logit": 3.572539,
+          "softcapped_logit": 3.555747,
+          "probability": 0.000001
+        }
+      ]
+    },
+    {
+      "id": "choice_05",
+      "category": "incident_severity",
+      "ground_truth": "Low",
+      "decision": "Low",
+      "is_correct": true,
+      "decision_probability": 0.999825,
+      "entropy_nats": 0.001692,
+      "normalized_entropy": 0.001220,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 946.06,
+      "candidates": [
+        {
+          "label": "Low",
+          "token_id": 26834,
+          "raw_logit": 17.727806,
+          "softcapped_logit": 15.916858,
+          "probability": 0.999825
+        },
+        {
+          "label": "Medium",
+          "token_id": 49074,
+          "raw_logit": 7.415361,
+          "softcapped_logit": 7.267944,
+          "probability": 0.000175
+        },
+        {
+          "label": "High",
+          "token_id": 13238,
+          "raw_logit": -4.162770,
+          "softcapped_logit": -4.136257,
+          "probability": 0.000000
+        },
+        {
+          "label": "Critical",
+          "token_id": 89740,
+          "raw_logit": -1.956995,
+          "softcapped_logit": -1.954224,
+          "probability": 0.000000
+        }
+      ]
+    },
+    {
+      "id": "choice_06",
+      "category": "incident_severity",
+      "ground_truth": "Critical",
+      "decision": "Critical",
+      "is_correct": true,
+      "decision_probability": 0.995925,
+      "entropy_nats": 0.029708,
+      "normalized_entropy": 0.021430,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 976.40,
+      "candidates": [
+        {
+          "label": "Low",
+          "token_id": 26834,
+          "raw_logit": 9.440281,
+          "softcapped_logit": 9.140552,
+          "probability": 0.002368
+        },
+        {
+          "label": "Medium",
+          "token_id": 49074,
+          "raw_logit": 8.998528,
+          "softcapped_logit": 8.738030,
+          "probability": 0.001584
+        },
+        {
+          "label": "High",
+          "token_id": 13238,
+          "raw_logit": 6.278660,
+          "softcapped_logit": 6.188567,
+          "probability": 0.000124
+        },
+        {
+          "label": "Critical",
+          "token_id": 89740,
+          "raw_logit": 16.722927,
+          "softcapped_logit": 15.182063,
+          "probability": 0.995925
+        }
+      ]
+    },
+    {
+      "id": "choice_07",
+      "category": "maintenance_priority",
+      "ground_truth": "Low",
+      "decision": "Low",
+      "is_correct": true,
+      "decision_probability": 0.998559,
+      "entropy_nats": 0.010870,
+      "normalized_entropy": 0.009894,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 964.47,
+      "candidates": [
+        {
+          "label": "Low",
+          "token_id": 26834,
+          "raw_logit": 25.724411,
+          "softcapped_logit": 20.848717,
+          "probability": 0.998559
+        },
+        {
+          "label": "Medium",
+          "token_id": 49074,
+          "raw_logit": 15.569989,
+          "softcapped_logit": 14.307826,
+          "probability": 0.001441
+        },
+        {
+          "label": "High",
+          "token_id": 13238,
+          "raw_logit": 4.751330,
+          "softcapped_logit": 4.711999,
+          "probability": 0.000000
+        }
+      ]
+    },
+    {
+      "id": "choice_08",
+      "category": "maintenance_priority",
+      "ground_truth": "Medium",
+      "decision": "Medium",
+      "is_correct": true,
+      "decision_probability": 0.920952,
+      "entropy_nats": 0.318231,
+      "normalized_entropy": 0.289666,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 942.90,
+      "candidates": [
+        {
+          "label": "Low",
+          "token_id": 26834,
+          "raw_logit": 16.039684,
+          "softcapped_logit": 14.667967,
+          "probability": 0.017502
+        },
+        {
+          "label": "Medium",
+          "token_id": 49074,
+          "raw_logit": 21.800650,
+          "softcapped_logit": 18.631054,
+          "probability": 0.920952
+        },
+        {
+          "label": "High",
+          "token_id": 13238,
+          "raw_logit": 17.739748,
+          "softcapped_logit": 15.925434,
+          "probability": 0.061546
+        }
+      ]
+    },
+    {
+      "id": "choice_09",
+      "category": "maintenance_priority",
+      "ground_truth": "High",
+      "decision": "High",
+      "is_correct": true,
+      "decision_probability": 0.894674,
+      "entropy_nats": 0.389156,
+      "normalized_entropy": 0.354225,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 937.02,
+      "candidates": [
+        {
+          "label": "Low",
+          "token_id": 26834,
+          "raw_logit": 15.215921,
+          "softcapped_logit": 14.032760,
+          "probability": 0.084390
+        },
+        {
+          "label": "Medium",
+          "token_id": 49074,
+          "raw_logit": 13.477884,
+          "softcapped_logit": 12.638785,
+          "probability": 0.020936
+        },
+        {
+          "label": "High",
+          "token_id": 13238,
+          "raw_logit": 18.399565,
+          "softcapped_logit": 16.393772,
+          "probability": 0.894674
+        }
+      ]
+    },
+    {
+      "id": "choice_10",
+      "category": "maintenance_priority",
+      "ground_truth": "Low",
+      "decision": "Medium",
+      "is_correct": false,
+      "decision_probability": 0.956033,
+      "entropy_nats": 0.180408,
+      "normalized_entropy": 0.164214,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 910.70,
+      "candidates": [
+        {
+          "label": "Low",
+          "token_id": 26834,
+          "raw_logit": 16.026386,
+          "softcapped_logit": 14.657845,
+          "probability": 0.043961
+        },
+        {
+          "label": "Medium",
+          "token_id": 49074,
+          "raw_logit": 20.387299,
+          "softcapped_logit": 17.737324,
+          "probability": 0.956033
+        },
+        {
+          "label": "High",
+          "token_id": 13238,
+          "raw_logit": 5.740990,
+          "softcapped_logit": 5.671921,
+          "probability": 0.000006
+        }
+      ]
+    },
+    {
+      "id": "choice_11",
+      "category": "maintenance_priority",
+      "ground_truth": "High",
+      "decision": "High",
+      "is_correct": true,
+      "decision_probability": 0.525638,
+      "entropy_nats": 0.777609,
+      "normalized_entropy": 0.707810,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 930.20,
+      "candidates": [
+        {
+          "label": "Low",
+          "token_id": 26834,
+          "raw_logit": 10.313842,
+          "softcapped_logit": 9.925828,
+          "probability": 0.020929
+        },
+        {
+          "label": "Medium",
+          "token_id": 49074,
+          "raw_logit": 13.921678,
+          "softcapped_logit": 13.001524,
+          "probability": 0.453433
+        },
+        {
+          "label": "High",
+          "token_id": 13238,
+          "raw_logit": 14.104097,
+          "softcapped_logit": 13.149290,
+          "probability": 0.525638
+        }
+      ]
+    },
+    {
+      "id": "choice_12",
+      "category": "failure_domain",
+      "ground_truth": "A",
+      "decision": "B",
+      "is_correct": false,
+      "decision_probability": 0.750790,
+      "entropy_nats": 0.595942,
+      "normalized_entropy": 0.542449,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1014.51,
+      "candidates": [
+        {
+          "label": "A",
+          "token_id": 236776,
+          "raw_logit": 21.602528,
+          "softcapped_logit": 18.508844,
+          "probability": 0.007736
+        },
+        {
+          "label": "B",
+          "token_id": 236799,
+          "raw_logit": 30.570889,
+          "softcapped_logit": 23.084130,
+          "probability": 0.750790
+        },
+        {
+          "label": "C",
+          "token_id": 236780,
+          "raw_logit": 27.968641,
+          "softcapped_logit": 21.949766,
+          "probability": 0.241474
+        }
+      ]
+    },
+    {
+      "id": "choice_13",
+      "category": "failure_domain",
+      "ground_truth": "B",
+      "decision": "B",
+      "is_correct": true,
+      "decision_probability": 0.943691,
+      "entropy_nats": 0.245956,
+      "normalized_entropy": 0.223878,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1011.33,
+      "candidates": [
+        {
+          "label": "A",
+          "token_id": 236776,
+          "raw_logit": 24.131838,
+          "softcapped_logit": 19.994593,
+          "probability": 0.012073
+        },
+        {
+          "label": "B",
+          "token_id": 236799,
+          "raw_logit": 33.966827,
+          "softcapped_logit": 24.353407,
+          "probability": 0.943691
+        },
+        {
+          "label": "C",
+          "token_id": 236780,
+          "raw_logit": 26.601715,
+          "softcapped_logit": 21.293152,
+          "probability": 0.044236
+        }
+      ]
+    },
+    {
+      "id": "choice_14",
+      "category": "support_routing",
+      "ground_truth": "C",
+      "decision": "A",
+      "is_correct": false,
+      "decision_probability": 0.404440,
+      "entropy_nats": 1.086810,
+      "normalized_entropy": 0.989257,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1003.37,
+      "candidates": [
+        {
+          "label": "A",
+          "token_id": 236776,
+          "raw_logit": 29.257029,
+          "softcapped_logit": 22.529863,
+          "probability": 0.404440
+        },
+        {
+          "label": "B",
+          "token_id": 236799,
+          "raw_logit": 28.451418,
+          "softcapped_logit": 22.171473,
+          "probability": 0.282622
+        },
+        {
+          "label": "C",
+          "token_id": 236780,
+          "raw_logit": 28.677208,
+          "softcapped_logit": 22.273367,
+          "probability": 0.312938
+        }
+      ]
+    },
+    {
+      "id": "choice_15",
+      "category": "support_routing",
+      "ground_truth": "A",
+      "decision": "C",
+      "is_correct": false,
+      "decision_probability": 0.879672,
+      "entropy_nats": 0.442967,
+      "normalized_entropy": 0.403206,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 896.20,
+      "candidates": [
+        {
+          "label": "A",
+          "token_id": 236776,
+          "raw_logit": 24.557222,
+          "softcapped_logit": 20.228790,
+          "probability": 0.038451
+        },
+        {
+          "label": "B",
+          "token_id": 236799,
+          "raw_logit": 25.988857,
+          "softcapped_logit": 20.984610,
+          "probability": 0.081876
+        },
+        {
+          "label": "C",
+          "token_id": 236780,
+          "raw_logit": 31.256565,
+          "softcapped_logit": 23.358948,
+          "probability": 0.879672
+        }
+      ]
+    },
+    {
+      "id": "score_01",
+      "category": "customer_satisfaction",
+      "ground_truth": "5",
+      "decision": "5",
+      "is_correct": true,
+      "decision_probability": 0.992847,
+      "entropy_nats": 0.050749,
+      "normalized_entropy": 0.031532,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1150.40,
+      "candidates": [
+        {
+          "label": "1",
+          "token_id": 236770,
+          "raw_logit": 17.117111,
+          "softcapped_logit": 15.473342,
+          "probability": 0.002520
+        },
+        {
+          "label": "2",
+          "token_id": 236778,
+          "raw_logit": 17.454128,
+          "softcapped_logit": 15.719269,
+          "probability": 0.003223
+        },
+        {
+          "label": "3",
+          "token_id": 236800,
+          "raw_logit": 14.567880,
+          "softcapped_logit": 13.521421,
+          "probability": 0.000358
+        },
+        {
+          "label": "4",
+          "token_id": 236812,
+          "raw_logit": 15.950117,
+          "softcapped_logit": 14.599711,
+          "probability": 0.001052
+        },
+        {
+          "label": "5",
+          "token_id": 236810,
+          "raw_logit": 26.919430,
+          "softcapped_logit": 21.449629,
+          "probability": 0.992847
+        }
+      ]
+    },
+    {
+      "id": "score_02",
+      "category": "customer_satisfaction",
+      "ground_truth": "1",
+      "decision": "1",
+      "is_correct": true,
+      "decision_probability": 0.998488,
+      "entropy_nats": 0.013027,
+      "normalized_entropy": 0.008094,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1180.68,
+      "candidates": [
+        {
+          "label": "1",
+          "token_id": 236770,
+          "raw_logit": 35.846912,
+          "softcapped_logit": 24.962744,
+          "probability": 0.998488
+        },
+        {
+          "label": "2",
+          "token_id": 236778,
+          "raw_logit": 20.447340,
+          "softcapped_logit": 17.776329,
+          "probability": 0.000756
+        },
+        {
+          "label": "3",
+          "token_id": 236800,
+          "raw_logit": 16.503605,
+          "softcapped_logit": 15.018307,
+          "probability": 0.000048
+        },
+        {
+          "label": "4",
+          "token_id": 236812,
+          "raw_logit": 18.863626,
+          "softcapped_logit": 16.716505,
+          "probability": 0.000262
+        },
+        {
+          "label": "5",
+          "token_id": 236810,
+          "raw_logit": 19.650917,
+          "softcapped_logit": 17.251404,
+          "probability": 0.000447
+        }
+      ]
+    },
+    {
+      "id": "score_03",
+      "category": "customer_satisfaction",
+      "ground_truth": "4",
+      "decision": "4",
+      "is_correct": true,
+      "decision_probability": 0.999288,
+      "entropy_nats": 0.006808,
+      "normalized_entropy": 0.004230,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1156.85,
+      "candidates": [
+        {
+          "label": "1",
+          "token_id": 236770,
+          "raw_logit": 16.589130,
+          "softcapped_logit": 15.082308,
+          "probability": 0.000189
+        },
+        {
+          "label": "2",
+          "token_id": 236778,
+          "raw_logit": 17.014893,
+          "softcapped_logit": 15.398183,
+          "probability": 0.000259
+        },
+        {
+          "label": "3",
+          "token_id": 236800,
+          "raw_logit": 15.394740,
+          "softcapped_logit": 14.172064,
+          "probability": 0.000076
+        },
+        {
+          "label": "4",
+          "token_id": 236812,
+          "raw_logit": 32.027225,
+          "softcapped_logit": 23.656364,
+          "probability": 0.999288
+        },
+        {
+          "label": "5",
+          "token_id": 236810,
+          "raw_logit": 16.587955,
+          "softcapped_logit": 15.081432,
+          "probability": 0.000189
+        }
+      ]
+    },
+    {
+      "id": "score_04",
+      "category": "customer_satisfaction",
+      "ground_truth": "3",
+      "decision": "3",
+      "is_correct": true,
+      "decision_probability": 0.999763,
+      "entropy_nats": 0.002510,
+      "normalized_entropy": 0.001559,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1012.53,
+      "candidates": [
+        {
+          "label": "1",
+          "token_id": 236770,
+          "raw_logit": 11.413178,
+          "softcapped_logit": 10.892666,
+          "probability": 0.000033
+        },
+        {
+          "label": "2",
+          "token_id": 236778,
+          "raw_logit": 12.879016,
+          "softcapped_logit": 12.142097,
+          "probability": 0.000114
+        },
+        {
+          "label": "3",
+          "token_id": 236800,
+          "raw_logit": 26.451448,
+          "softcapped_logit": 21.218323,
+          "probability": 0.999763
+        },
+        {
+          "label": "4",
+          "token_id": 236812,
+          "raw_logit": 11.733260,
+          "softcapped_logit": 11.169469,
+          "probability": 0.000043
+        },
+        {
+          "label": "5",
+          "token_id": 236810,
+          "raw_logit": 11.814831,
+          "softcapped_logit": 11.239661,
+          "probability": 0.000046
+        }
+      ]
+    },
+    {
+      "id": "score_05",
+      "category": "customer_satisfaction",
+      "ground_truth": "2",
+      "decision": "1",
+      "is_correct": false,
+      "decision_probability": 0.997069,
+      "entropy_nats": 0.021999,
+      "normalized_entropy": 0.013669,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1105.46,
+      "candidates": [
+        {
+          "label": "1",
+          "token_id": 236770,
+          "raw_logit": 32.763313,
+          "softcapped_logit": 23.929413,
+          "probability": 0.997069
+        },
+        {
+          "label": "2",
+          "token_id": 236778,
+          "raw_logit": 20.623165,
+          "softcapped_logit": 17.890022,
+          "probability": 0.002376
+        },
+        {
+          "label": "3",
+          "token_id": 236800,
+          "raw_logit": 16.036926,
+          "softcapped_logit": 14.665869,
+          "probability": 0.000095
+        },
+        {
+          "label": "4",
+          "token_id": 236812,
+          "raw_logit": 16.847347,
+          "softcapped_logit": 15.274424,
+          "probability": 0.000174
+        },
+        {
+          "label": "5",
+          "token_id": 236810,
+          "raw_logit": 17.529734,
+          "softcapped_logit": 15.774044,
+          "probability": 0.000286
+        }
+      ]
+    },
+    {
+      "id": "score_06",
+      "category": "customer_satisfaction",
+      "ground_truth": "5",
+      "decision": "5",
+      "is_correct": true,
+      "decision_probability": 0.998183,
+      "entropy_nats": 0.015411,
+      "normalized_entropy": 0.009576,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1184.73,
+      "candidates": [
+        {
+          "label": "1",
+          "token_id": 236770,
+          "raw_logit": 17.962635,
+          "softcapped_logit": 16.084883,
+          "probability": 0.000667
+        },
+        {
+          "label": "2",
+          "token_id": 236778,
+          "raw_logit": 18.150654,
+          "softcapped_logit": 16.218401,
+          "probability": 0.000762
+        },
+        {
+          "label": "3",
+          "token_id": 236800,
+          "raw_logit": 15.166620,
+          "softcapped_logit": 13.994217,
+          "probability": 0.000082
+        },
+        {
+          "label": "4",
+          "token_id": 236812,
+          "raw_logit": 16.888523,
+          "softcapped_logit": 15.304907,
+          "probability": 0.000306
+        },
+        {
+          "label": "5",
+          "token_id": 236810,
+          "raw_logit": 31.351140,
+          "softcapped_logit": 23.396091,
+          "probability": 0.998183
+        }
+      ]
+    },
+    {
+      "id": "score_07",
+      "category": "customer_satisfaction",
+      "ground_truth": "1",
+      "decision": "1",
+      "is_correct": true,
+      "decision_probability": 0.998984,
+      "entropy_nats": 0.008943,
+      "normalized_entropy": 0.005557,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1204.74,
+      "candidates": [
+        {
+          "label": "1",
+          "token_id": 236770,
+          "raw_logit": 29.282576,
+          "softcapped_logit": 22.540995,
+          "probability": 0.998984
+        },
+        {
+          "label": "2",
+          "token_id": 236778,
+          "raw_logit": 16.838710,
+          "softcapped_logit": 15.268026,
+          "probability": 0.000693
+        },
+        {
+          "label": "3",
+          "token_id": 236800,
+          "raw_logit": 12.577426,
+          "softcapped_logit": 11.888889,
+          "probability": 0.000024
+        },
+        {
+          "label": "4",
+          "token_id": 236812,
+          "raw_logit": 14.557019,
+          "softcapped_logit": 13.512765,
+          "probability": 0.000120
+        },
+        {
+          "label": "5",
+          "token_id": 236810,
+          "raw_logit": 15.069433,
+          "softcapped_logit": 13.918062,
+          "probability": 0.000180
+        }
+      ]
+    },
+    {
+      "id": "score_08",
+      "category": "urgency_rating",
+      "ground_truth": "1",
+      "decision": "1",
+      "is_correct": true,
+      "decision_probability": 0.967383,
+      "entropy_nats": 0.164686,
+      "normalized_entropy": 0.102325,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1034.80,
+      "candidates": [
+        {
+          "label": "1",
+          "token_id": 236770,
+          "raw_logit": 25.009352,
+          "softcapped_logit": 20.472850,
+          "probability": 0.967383
+        },
+        {
+          "label": "2",
+          "token_id": 236778,
+          "raw_logit": 19.067163,
+          "softcapped_logit": 16.856314,
+          "probability": 0.025999
+        },
+        {
+          "label": "3",
+          "token_id": 236800,
+          "raw_logit": 13.460082,
+          "softcapped_logit": 12.624140,
+          "probability": 0.000378
+        },
+        {
+          "label": "4",
+          "token_id": 236812,
+          "raw_logit": 14.900262,
+          "softcapped_logit": 13.784955,
+          "probability": 0.001205
+        },
+        {
+          "label": "5",
+          "token_id": 236810,
+          "raw_logit": 16.766830,
+          "softcapped_logit": 15.214699,
+          "probability": 0.005035
+        }
+      ]
+    },
+    {
+      "id": "score_09",
+      "category": "urgency_rating",
+      "ground_truth": "5",
+      "decision": "5",
+      "is_correct": true,
+      "decision_probability": 0.988311,
+      "entropy_nats": 0.075724,
+      "normalized_entropy": 0.047050,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1162.38,
+      "candidates": [
+        {
+          "label": "1",
+          "token_id": 236770,
+          "raw_logit": 16.726380,
+          "softcapped_logit": 15.184630,
+          "probability": 0.002569
+        },
+        {
+          "label": "2",
+          "token_id": 236778,
+          "raw_logit": 18.112406,
+          "softcapped_logit": 16.191310,
+          "probability": 0.007030
+        },
+        {
+          "label": "3",
+          "token_id": 236800,
+          "raw_logit": 14.351204,
+          "softcapped_logit": 13.348201,
+          "probability": 0.000409
+        },
+        {
+          "label": "4",
+          "token_id": 236812,
+          "raw_logit": 16.160543,
+          "softcapped_logit": 14.759752,
+          "probability": 0.001680
+        },
+        {
+          "label": "5",
+          "token_id": 236810,
+          "raw_logit": 26.289444,
+          "softcapped_logit": 21.137050,
+          "probability": 0.988311
+        }
+      ]
+    },
+    {
+      "id": "score_10",
+      "category": "urgency_rating",
+      "ground_truth": "4",
+      "decision": "5",
+      "is_correct": false,
+      "decision_probability": 0.996035,
+      "entropy_nats": 0.029498,
+      "normalized_entropy": 0.018328,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1083.84,
+      "candidates": [
+        {
+          "label": "1",
+          "token_id": 236770,
+          "raw_logit": 15.449978,
+          "softcapped_logit": 14.214937,
+          "probability": 0.000167
+        },
+        {
+          "label": "2",
+          "token_id": 236778,
+          "raw_logit": 18.128498,
+          "softcapped_logit": 16.202713,
+          "probability": 0.001222
+        },
+        {
+          "label": "3",
+          "token_id": 236800,
+          "raw_logit": 15.186113,
+          "softcapped_logit": 14.009463,
+          "probability": 0.000136
+        },
+        {
+          "label": "4",
+          "token_id": 236812,
+          "raw_logit": 19.122810,
+          "softcapped_logit": 16.894356,
+          "probability": 0.002440
+        },
+        {
+          "label": "5",
+          "token_id": 236810,
+          "raw_logit": 30.139515,
+          "softcapped_logit": 22.906210,
+          "probability": 0.996035
+        }
+      ]
+    },
+    {
+      "id": "score_11",
+      "category": "urgency_rating",
+      "ground_truth": "2",
+      "decision": "2",
+      "is_correct": true,
+      "decision_probability": 0.992265,
+      "entropy_nats": 0.054162,
+      "normalized_entropy": 0.033653,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1124.12,
+      "candidates": [
+        {
+          "label": "1",
+          "token_id": 236770,
+          "raw_logit": 20.849798,
+          "softcapped_logit": 18.035406,
+          "probability": 0.003115
+        },
+        {
+          "label": "2",
+          "token_id": 236778,
+          "raw_logit": 32.408790,
+          "softcapped_logit": 23.799232,
+          "probability": 0.992265
+        },
+        {
+          "label": "3",
+          "token_id": 236800,
+          "raw_logit": 20.912310,
+          "softcapped_logit": 18.075274,
+          "probability": 0.003241
+        },
+        {
+          "label": "4",
+          "token_id": 236812,
+          "raw_logit": 17.784332,
+          "softcapped_logit": 15.957431,
+          "probability": 0.000390
+        },
+        {
+          "label": "5",
+          "token_id": 236810,
+          "raw_logit": 19.113094,
+          "softcapped_logit": 16.887718,
+          "probability": 0.000989
+        }
+      ]
+    },
+    {
+      "id": "score_12",
+      "category": "urgency_rating",
+      "ground_truth": "3",
+      "decision": "2",
+      "is_correct": false,
+      "decision_probability": 0.810285,
+      "entropy_nats": 0.579553,
+      "normalized_entropy": 0.360096,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1110.69,
+      "candidates": [
+        {
+          "label": "1",
+          "token_id": 236770,
+          "raw_logit": 17.490183,
+          "softcapped_logit": 15.745407,
+          "probability": 0.000120
+        },
+        {
+          "label": "2",
+          "token_id": 236778,
+          "raw_logit": 34.585396,
+          "softcapped_logit": 24.560846,
+          "probability": 0.810285
+        },
+        {
+          "label": "3",
+          "token_id": 236800,
+          "raw_logit": 30.219646,
+          "softcapped_logit": 22.939558,
+          "probability": 0.160148
+        },
+        {
+          "label": "4",
+          "token_id": 236812,
+          "raw_logit": 26.249664,
+          "softcapped_logit": 21.116999,
+          "probability": 0.025882
+        },
+        {
+          "label": "5",
+          "token_id": 236810,
+          "raw_logit": 22.634747,
+          "softcapped_logit": 19.134626,
+          "probability": 0.003565
+        }
+      ]
+    },
+    {
+      "id": "score_13",
+      "category": "quality_rating",
+      "ground_truth": "5",
+      "decision": "5",
+      "is_correct": true,
+      "decision_probability": 0.983551,
+      "entropy_nats": 0.102983,
+      "normalized_entropy": 0.063987,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1163.14,
+      "candidates": [
+        {
+          "label": "1",
+          "token_id": 236770,
+          "raw_logit": 17.861126,
+          "softcapped_logit": 16.012423,
+          "probability": 0.005837
+        },
+        {
+          "label": "2",
+          "token_id": 236778,
+          "raw_logit": 18.088810,
+          "softcapped_logit": 16.174582,
+          "probability": 0.006865
+        },
+        {
+          "label": "3",
+          "token_id": 236800,
+          "raw_logit": 14.673061,
+          "softcapped_logit": 13.605103,
+          "probability": 0.000526
+        },
+        {
+          "label": "4",
+          "token_id": 236812,
+          "raw_logit": 17.041471,
+          "softcapped_logit": 15.417752,
+          "probability": 0.003221
+        },
+        {
+          "label": "5",
+          "token_id": 236810,
+          "raw_logit": 26.293972,
+          "softcapped_logit": 21.139330,
+          "probability": 0.983551
+        }
+      ]
+    },
+    {
+      "id": "score_14",
+      "category": "quality_rating",
+      "ground_truth": "1",
+      "decision": "1",
+      "is_correct": true,
+      "decision_probability": 0.995170,
+      "entropy_nats": 0.032474,
+      "normalized_entropy": 0.020177,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1164.57,
+      "candidates": [
+        {
+          "label": "1",
+          "token_id": 236770,
+          "raw_logit": 27.440670,
+          "softcapped_logit": 21.701256,
+          "probability": 0.995170
+        },
+        {
+          "label": "2",
+          "token_id": 236778,
+          "raw_logit": 18.229670,
+          "softcapped_logit": 16.274242,
+          "probability": 0.004375
+        },
+        {
+          "label": "3",
+          "token_id": 236800,
+          "raw_logit": 12.329850,
+          "softcapped_logit": 11.679517,
+          "probability": 0.000044
+        },
+        {
+          "label": "4",
+          "token_id": 236812,
+          "raw_logit": 14.628160,
+          "softcapped_logit": 13.569413,
+          "probability": 0.000293
+        },
+        {
+          "label": "5",
+          "token_id": 236810,
+          "raw_logit": 13.505309,
+          "softcapped_logit": 12.661334,
+          "probability": 0.000118
+        }
+      ]
+    },
+    {
+      "id": "score_15",
+      "category": "quality_rating",
+      "ground_truth": "3",
+      "decision": "3",
+      "is_correct": true,
+      "decision_probability": 0.998967,
+      "entropy_nats": 0.008692,
+      "normalized_entropy": 0.005401,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1160.60,
+      "candidates": [
+        {
+          "label": "1",
+          "token_id": 236770,
+          "raw_logit": 12.889084,
+          "softcapped_logit": 12.150515,
+          "probability": 0.000003
+        },
+        {
+          "label": "2",
+          "token_id": 236778,
+          "raw_logit": 17.382265,
+          "softcapped_logit": 15.667069,
+          "probability": 0.000102
+        },
+        {
+          "label": "3",
+          "token_id": 236800,
+          "raw_logit": 35.506687,
+          "softcapped_logit": 24.857090,
+          "probability": 0.998967
+        },
+        {
+          "label": "4",
+          "token_id": 236812,
+          "raw_logit": 20.509820,
+          "softcapped_logit": 17.816824,
+          "probability": 0.000875
+        },
+        {
+          "label": "5",
+          "token_id": 236810,
+          "raw_logit": 16.498976,
+          "softcapped_logit": 15.014838,
+          "probability": 0.000053
+        }
+      ]
+    }
+  ]
+}
