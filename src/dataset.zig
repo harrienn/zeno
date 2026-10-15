@@ -76,6 +76,26 @@ pub fn loadDataset(allocator: std.mem.Allocator, path: []const u8) !std.json.Par
     });
 }
 
+fn escapeJsonString(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
+    var list: std.ArrayList(u8) = .empty;
+    for (input) |byte| {
+        switch (byte) {
+            '"' => try list.appendSlice(allocator, "\\\""),
+            '\\' => try list.appendSlice(allocator, "\\\\"),
+            '\n' => try list.appendSlice(allocator, "\\n"),
+            '\r' => try list.appendSlice(allocator, "\\r"),
+            '\t' => try list.appendSlice(allocator, "\\t"),
+            0x00...0x08, 0x0B, 0x0C, 0x0E...0x1F => {
+                const hex = try std.fmt.allocPrint(allocator, "\\u00{x:0>2}", .{byte});
+                defer allocator.free(hex);
+                try list.appendSlice(allocator, hex);
+            },
+            else => try list.append(allocator, byte),
+        }
+    }
+    return list.toOwnedSlice(allocator);
+}
+
 /// Serializes evaluation results and summary statistics to a structured JSON file.
 pub fn writeEvaluationResultsJson(
     allocator: std.mem.Allocator,
@@ -138,6 +158,11 @@ pub fn writeEvaluationResultsJson(
 
     for (results, 0..) |res, r_i| {
         const comma_res = if (r_i + 1 < results.len) "," else "";
+        const esc_id = try escapeJsonString(allocator, res.id);
+        const esc_cat = try escapeJsonString(allocator, res.category);
+        const esc_gt = try escapeJsonString(allocator, res.ground_truth);
+        const esc_dec = try escapeJsonString(allocator, res.decision);
+
         const item_hdr = try std.fmt.allocPrint(allocator,
             \\    {{
             \\      "id": "{s}",
@@ -154,10 +179,10 @@ pub fn writeEvaluationResultsJson(
             \\      "candidates": [
             \\
         , .{
-            res.id,
-            res.category,
-            res.ground_truth,
-            res.decision,
+            esc_id,
+            esc_cat,
+            esc_gt,
+            esc_dec,
             res.is_correct,
             res.decision_probability,
             res.entropy_nats,
@@ -171,6 +196,7 @@ pub fn writeEvaluationResultsJson(
         for (res.candidates, 0..) |c, c_i| {
             const sc = root.ops.logitSoftcap(c.raw_logit, root.ModelConfig.logit_softcap);
             const comma_c = if (c_i + 1 < res.candidates.len) "," else "";
+            const esc_lbl = try escapeJsonString(allocator, c.label);
             const cand_str = try std.fmt.allocPrint(allocator,
                 \\        {{
                 \\          "label": "{s}",
@@ -181,7 +207,7 @@ pub fn writeEvaluationResultsJson(
                 \\        }}{s}
                 \\
             , .{
-                c.label,
+                esc_lbl,
                 c.token_id,
                 c.raw_logit,
                 sc,
@@ -205,9 +231,11 @@ pub fn writeEvaluationResultsJson(
     defer _ = std.os.linux.close(out_fd);
     var written: usize = 0;
     while (written < json_list.items.len) {
-        const n = std.os.linux.write(out_fd, json_list.items.ptr + written, json_list.items.len - written);
-        if (n <= 0) break;
-        written += @as(usize, @intCast(n));
+        const rc = std.os.linux.write(out_fd, json_list.items.ptr + written, json_list.items.len - written);
+        const signed_rc: isize = @bitCast(rc);
+        if (signed_rc < 0) return error.WriteFailed;
+        if (rc == 0) return error.WriteFailed;
+        written += rc;
     }
 }
 

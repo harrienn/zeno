@@ -633,7 +633,7 @@
       "id": "choice_12",
       "category": "failure_domain",
       "query": "Which subsystem is the root cause of this failure?",
-      "context": "Queries: SELECT * FROM users WHERE id=? timed out after 30s. Connection pool exhausted with 500 active locks.",
+      "context": "Queries: SELECT * FROM users WHERE id=? timed out after 30s. Connection pool exhausted with 500 active locks. Options: A) Database, B) Network, C) Compute.",
       "schema_type": "choice",
       "candidates": [
         {
@@ -655,7 +655,7 @@
       "id": "choice_13",
       "category": "failure_domain",
       "query": "Which subsystem is the root cause of this failure?",
-      "context": "BGP route flap between autonomous systems AS15169 and AS3356 causing 80ms route loop and packet drop.",
+      "context": "BGP route flap between autonomous systems AS15169 and AS3356 causing 80ms route loop and packet drop. Options: A) Database, B) Network, C) Compute.",
       "schema_type": "choice",
       "candidates": [
         {
@@ -677,7 +677,7 @@
       "id": "choice_14",
       "category": "support_routing",
       "query": "Which team should this support ticket be routed to?",
-      "context": "Invoice #9921 charged customer $450 instead of contracted $350 monthly tier.",
+      "context": "Invoice #9921 charged customer $450 instead of contracted $350 monthly tier. Options: A) Authentication, B) Infrastructure, C) Billing.",
       "schema_type": "choice",
       "candidates": [
         {
@@ -699,7 +699,7 @@
       "id": "choice_15",
       "category": "support_routing",
       "query": "Which team should this support ticket be routed to?",
-      "context": "Customer cannot reset password because OTP SMS is not arriving on international phone numbers.",
+      "context": "Customer cannot reset password because OTP SMS is not arriving on international phone numbers. Options: A) Authentication, B) Infrastructure, C) Billing.",
       "schema_type": "choice",
       "candidates": [
         {

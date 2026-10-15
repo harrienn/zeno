@@ -57,8 +57,9 @@ def compute_ece_and_bins(results: List[Dict[str, Any]], num_bins: int = NUM_BINS
             avg_acc = 0.0
             gap = 0.0
             
+        bin_label = f"[{b_low:.1f}, {b_high:.1f}]" if b_idx == num_bins - 1 else f"[{b_low:.1f}, {b_high:.1f})"
         bin_stats.append({
-            "bin": f"({b_low:.1f}, {b_high:.1f}]" if b_idx > 0 else f"[{b_low:.1f}, {b_high:.1f}]",
+            "bin": bin_label,
             "count": count,
             "avg_conf": avg_conf,
             "avg_acc": avg_acc,
@@ -210,8 +211,8 @@ def print_comparison_table(analyses: List[Dict[str, Any]]):
     print("\n" + "=" * 90)
     print(" Comparative Step Dynamics Evaluation Matrix")
     print("=" * 90)
-    print("| Run Name / Config | Mode | Steps | Acc (%) | ECE (Gap) | Brier | NLL   | Mean Latency | Resolv Rate |")
-    print("|:-------------------|:-----|:-----:|:-------:|:---------:|:-----:|:-----:|:------------:|:-----------:|")
+    print("| Run Name / Config | Mode | Steps | Acc (%) | ECE (Gap) | Brier | NLL   | Mean Latency | Multi-Step Rate |")
+    print("|:-------------------|:-----|:-----:|:-------:|:---------:|:-----:|:-----:|:------------:|:---------------:|")
     for a in analyses:
         cfg = a["config"]
         name = Path(a["file"]).stem
@@ -223,12 +224,12 @@ def print_comparison_table(analyses: List[Dict[str, Any]]):
         nll = f"{a['nll']:.4f}"
         lat = f"{a['mean_latency']:.1f}ms"
         
-        # Ambiguity resolution rate: fraction that needed extra steps
+        # Multi-step rate: fraction that needed extra steps (steps_executed > 1)
         s_dist = a.get("step_dist", {})
         t2 = s_dist.get("step_2", 0) + s_dist.get("step_3", 0) + s_dist.get("step_4", 0)
-        res_rate = f"{t2}/{a['results_count']} ({t2/a['results_count']*100:.1f}%)" if a['results_count'] > 0 else "N/A"
+        multi_step_rate = f"{t2}/{a['results_count']} ({t2/a['results_count']*100:.1f}%)" if a['results_count'] > 0 else "N/A"
         
-        print(f"| {name:<18} | {mode:<20} | {steps:<5} | {acc:>7} | {ece:>9} | {brier:>5} | {nll:>5} | {lat:>12} | {res_rate:>11} |")
+        print(f"| {name:<18} | {mode:<20} | {steps:<5} | {acc:>7} | {ece:>9} | {brier:>5} | {nll:>5} | {lat:>12} | {multi_step_rate:>15} |")
     print("=" * 90 + "\n")
 
 def main():

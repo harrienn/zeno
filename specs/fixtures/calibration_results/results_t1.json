@@ -8,11 +8,11 @@
   },
   "summary": {
     "total_examples": 50,
-    "correct_count": 39,
-    "accuracy": 0.7800,
-    "mean_latency_ms": 857.91,
-    "median_latency_ms": 845.55,
-    "mean_normalized_entropy": 0.3121,
+    "correct_count": 40,
+    "accuracy": 0.8000,
+    "mean_latency_ms": 841.54,
+    "median_latency_ms": 830.72,
+    "mean_normalized_entropy": 0.2990,
     "uncertain_count": 0,
     "step_distribution": {
       "step_1": 50,
@@ -33,7 +33,7 @@
       "normalized_entropy": 0.912472,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 187.58,
+      "latency_ms": 183.05,
       "candidates": [
         {
           "label": "Yes",
@@ -62,7 +62,7 @@
       "normalized_entropy": 0.417364,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 836.53,
+      "latency_ms": 817.28,
       "candidates": [
         {
           "label": "Yes",
@@ -91,7 +91,7 @@
       "normalized_entropy": 0.003287,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 929.00,
+      "latency_ms": 893.35,
       "candidates": [
         {
           "label": "Yes",
@@ -120,7 +120,7 @@
       "normalized_entropy": 0.042518,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 805.09,
+      "latency_ms": 782.96,
       "candidates": [
         {
           "label": "Yes",
@@ -149,7 +149,7 @@
       "normalized_entropy": 0.815323,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 984.50,
+      "latency_ms": 952.69,
       "candidates": [
         {
           "label": "Yes",
@@ -178,7 +178,7 @@
       "normalized_entropy": 0.250456,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 833.96,
+      "latency_ms": 801.63,
       "candidates": [
         {
           "label": "Yes",
@@ -207,7 +207,7 @@
       "normalized_entropy": 0.180040,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 874.86,
+      "latency_ms": 830.39,
       "candidates": [
         {
           "label": "Yes",
@@ -236,7 +236,7 @@
       "normalized_entropy": 0.364028,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 833.49,
+      "latency_ms": 788.94,
       "candidates": [
         {
           "label": "Yes",
@@ -265,7 +265,7 @@
       "normalized_entropy": 0.660206,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 880.08,
+      "latency_ms": 831.04,
       "candidates": [
         {
           "label": "Yes",
@@ -294,7 +294,7 @@
       "normalized_entropy": 0.311631,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 919.33,
+      "latency_ms": 866.35,
       "candidates": [
         {
           "label": "Yes",
@@ -323,7 +323,7 @@
       "normalized_entropy": 0.000594,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 911.63,
+      "latency_ms": 856.10,
       "candidates": [
         {
           "label": "Yes",
@@ -352,7 +352,7 @@
       "normalized_entropy": 0.005703,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 802.60,
+      "latency_ms": 755.83,
       "candidates": [
         {
           "label": "Yes",
@@ -381,7 +381,7 @@
       "normalized_entropy": 0.052990,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 831.13,
+      "latency_ms": 784.92,
       "candidates": [
         {
           "label": "Yes",
@@ -410,7 +410,7 @@
       "normalized_entropy": 0.005202,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 858.17,
+      "latency_ms": 818.18,
       "candidates": [
         {
           "label": "Yes",
@@ -439,7 +439,7 @@
       "normalized_entropy": 0.017926,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 910.26,
+      "latency_ms": 858.90,
       "candidates": [
         {
           "label": "Yes",
@@ -468,7 +468,7 @@
       "normalized_entropy": 0.001441,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 922.53,
+      "latency_ms": 861.53,
       "candidates": [
         {
           "label": "Yes",
@@ -497,7 +497,7 @@
       "normalized_entropy": 0.005748,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 847.14,
+      "latency_ms": 795.00,
       "candidates": [
         {
           "label": "Yes",
@@ -526,7 +526,7 @@
       "normalized_entropy": 0.000809,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 758.84,
+      "latency_ms": 707.33,
       "candidates": [
         {
           "label": "Yes",
@@ -555,7 +555,7 @@
       "normalized_entropy": 0.001025,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 745.63,
+      "latency_ms": 718.17,
       "candidates": [
         {
           "label": "Yes",
@@ -584,7 +584,7 @@
       "normalized_entropy": 0.441156,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 795.19,
+      "latency_ms": 792.49,
       "candidates": [
         {
           "label": "Yes",
@@ -613,7 +613,7 @@
       "normalized_entropy": 0.072967,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 750.83,
+      "latency_ms": 741.07,
       "candidates": [
         {
           "label": "Low",
@@ -656,7 +656,7 @@
       "normalized_entropy": 0.729892,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 844.93,
+      "latency_ms": 825.67,
       "candidates": [
         {
           "label": "Low",
@@ -699,7 +699,7 @@
       "normalized_entropy": 0.857104,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 840.75,
+      "latency_ms": 824.22,
       "candidates": [
         {
           "label": "Low",
@@ -742,7 +742,7 @@
       "normalized_entropy": 0.498506,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 766.78,
+      "latency_ms": 751.13,
       "candidates": [
         {
           "label": "Low",
@@ -785,7 +785,7 @@
       "normalized_entropy": 0.504332,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 783.88,
+      "latency_ms": 764.69,
       "candidates": [
         {
           "label": "Low",
@@ -828,7 +828,7 @@
       "normalized_entropy": 0.100160,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 811.03,
+      "latency_ms": 790.35,
       "candidates": [
         {
           "label": "Low",
@@ -871,7 +871,7 @@
       "normalized_entropy": 0.614388,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 812.18,
+      "latency_ms": 780.82,
       "candidates": [
         {
           "label": "Low",
@@ -907,7 +907,7 @@
       "normalized_entropy": 0.188310,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 778.99,
+      "latency_ms": 759.39,
       "candidates": [
         {
           "label": "Low",
@@ -943,7 +943,7 @@
       "normalized_entropy": 0.392745,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 765.94,
+      "latency_ms": 748.12,
       "candidates": [
         {
           "label": "Low",
@@ -979,7 +979,7 @@
       "normalized_entropy": 0.205041,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 745.43,
+      "latency_ms": 727.97,
       "candidates": [
         {
           "label": "Low",
@@ -1015,7 +1015,7 @@
       "normalized_entropy": 0.418213,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 763.88,
+      "latency_ms": 741.35,
       "candidates": [
         {
           "label": "Low",
@@ -1046,33 +1046,33 @@
       "ground_truth": "A",
       "decision": "B",
       "is_correct": false,
-      "decision_probability": 0.790025,
-      "entropy_nats": 0.546116,
-      "normalized_entropy": 0.497097,
+      "decision_probability": 0.609120,
+      "entropy_nats": 0.860833,
+      "normalized_entropy": 0.783564,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 843.35,
+      "latency_ms": 963.17,
       "candidates": [
         {
           "label": "A",
           "token_id": 236776,
-          "raw_logit": 21.144960,
-          "softcapped_logit": 18.222778,
-          "probability": 0.007451
+          "raw_logit": 13.601177,
+          "softcapped_logit": 12.740019,
+          "probability": 0.075404
         },
         {
           "label": "B",
           "token_id": 236799,
-          "raw_logit": 30.092339,
-          "softcapped_logit": 22.886513,
-          "probability": 0.790025
+          "raw_logit": 16.252270,
+          "softcapped_logit": 14.829172,
+          "probability": 0.609120
         },
         {
           "label": "C",
           "token_id": 236780,
-          "raw_logit": 27.074830,
-          "softcapped_logit": 21.525307,
-          "probability": 0.202524
+          "raw_logit": 15.393684,
+          "softcapped_logit": 14.171242,
+          "probability": 0.315476
         }
       ]
     },
@@ -1082,33 +1082,33 @@
       "ground_truth": "B",
       "decision": "B",
       "is_correct": true,
-      "decision_probability": 0.943945,
-      "entropy_nats": 0.222083,
-      "normalized_entropy": 0.202149,
+      "decision_probability": 0.959986,
+      "entropy_nats": 0.169192,
+      "normalized_entropy": 0.154005,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 846.15,
+      "latency_ms": 957.03,
       "candidates": [
         {
           "label": "A",
           "token_id": 236776,
-          "raw_logit": 14.263067,
-          "softcapped_logit": 13.277421,
-          "probability": 0.001282
+          "raw_logit": 8.428366,
+          "softcapped_logit": 8.213399,
+          "probability": 0.000190
         },
         {
           "label": "B",
           "token_id": 236799,
-          "raw_logit": 23.924612,
-          "softcapped_logit": 19.878887,
-          "probability": 0.943945
+          "raw_logit": 18.900670,
+          "softcapped_logit": 16.742027,
+          "probability": 0.959986
         },
         {
           "label": "C",
           "token_id": 236780,
-          "raw_logit": 19.325169,
-          "softcapped_logit": 17.032011,
-          "probability": 0.054773
+          "raw_logit": 14.615789,
+          "softcapped_logit": 13.559570,
+          "probability": 0.039824
         }
       ]
     },
@@ -1116,35 +1116,35 @@
       "id": "choice_14",
       "category": "support_routing",
       "ground_truth": "C",
-      "decision": "B",
-      "is_correct": false,
-      "decision_probability": 0.587434,
-      "entropy_nats": 0.725702,
-      "normalized_entropy": 0.660563,
+      "decision": "C",
+      "is_correct": true,
+      "decision_probability": 0.949517,
+      "entropy_nats": 0.204324,
+      "normalized_entropy": 0.185984,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 842.20,
+      "latency_ms": 965.97,
       "candidates": [
         {
           "label": "A",
           "token_id": 236776,
-          "raw_logit": 11.102341,
-          "softcapped_logit": 10.621799,
-          "probability": 0.010230
+          "raw_logit": 12.578795,
+          "softcapped_logit": 11.890043,
+          "probability": 0.000869
         },
         {
           "label": "B",
           "token_id": 236799,
-          "raw_logit": 16.045282,
-          "softcapped_logit": 14.672226,
-          "probability": 0.587434
+          "raw_logit": 17.753248,
+          "softcapped_logit": 15.935129,
+          "probability": 0.049614
         },
         {
           "label": "C",
           "token_id": 236780,
-          "raw_logit": 15.551769,
-          "softcapped_logit": 14.293748,
-          "probability": 0.402336
+          "raw_logit": 22.220623,
+          "softcapped_logit": 18.886810,
+          "probability": 0.949517
         }
       ]
     },
@@ -1152,35 +1152,35 @@
       "id": "choice_15",
       "category": "support_routing",
       "ground_truth": "A",
-      "decision": "C",
+      "decision": "B",
       "is_correct": false,
-      "decision_probability": 0.539531,
-      "entropy_nats": 0.734194,
-      "normalized_entropy": 0.668292,
+      "decision_probability": 0.931651,
+      "entropy_nats": 0.276756,
+      "normalized_entropy": 0.251914,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 737.58,
+      "latency_ms": 853.52,
       "candidates": [
         {
           "label": "A",
           "token_id": 236776,
-          "raw_logit": 14.239614,
-          "softcapped_logit": 13.258554,
-          "probability": 0.008961
+          "raw_logit": 12.150574,
+          "softcapped_logit": 11.527059,
+          "probability": 0.009420
         },
         {
           "label": "B",
           "token_id": 236799,
-          "raw_logit": 19.541798,
-          "softcapped_logit": 17.178215,
-          "probability": 0.451508
+          "raw_logit": 18.013554,
+          "softcapped_logit": 16.121130,
+          "probability": 0.931651
         },
         {
           "label": "C",
           "token_id": 236780,
-          "raw_logit": 19.808144,
-          "softcapped_logit": 17.356321,
-          "probability": 0.539531
+          "raw_logit": 14.366546,
+          "softcapped_logit": 13.360502,
+          "probability": 0.058929
         }
       ]
     },
@@ -1195,7 +1195,7 @@
       "normalized_entropy": 0.067134,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 966.53,
+      "latency_ms": 962.56,
       "candidates": [
         {
           "label": "1",
@@ -1245,7 +1245,7 @@
       "normalized_entropy": 0.280929,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1000.80,
+      "latency_ms": 993.35,
       "candidates": [
         {
           "label": "1",
@@ -1295,7 +1295,7 @@
       "normalized_entropy": 0.434193,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 995.89,
+      "latency_ms": 969.86,
       "candidates": [
         {
           "label": "1",
@@ -1345,7 +1345,7 @@
       "normalized_entropy": 0.013939,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 844.96,
+      "latency_ms": 824.27,
       "candidates": [
         {
           "label": "1",
@@ -1395,7 +1395,7 @@
       "normalized_entropy": 0.230571,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 940.82,
+      "latency_ms": 916.49,
       "candidates": [
         {
           "label": "1",
@@ -1445,7 +1445,7 @@
       "normalized_entropy": 0.232368,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1023.60,
+      "latency_ms": 996.40,
       "candidates": [
         {
           "label": "1",
@@ -1495,7 +1495,7 @@
       "normalized_entropy": 0.112321,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1039.93,
+      "latency_ms": 1016.18,
       "candidates": [
         {
           "label": "1",
@@ -1545,7 +1545,7 @@
       "normalized_entropy": 0.658022,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 871.22,
+      "latency_ms": 851.47,
       "candidates": [
         {
           "label": "1",
@@ -1595,7 +1595,7 @@
       "normalized_entropy": 0.163594,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1005.37,
+      "latency_ms": 977.83,
       "candidates": [
         {
           "label": "1",
@@ -1645,7 +1645,7 @@
       "normalized_entropy": 0.564923,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 919.08,
+      "latency_ms": 898.21,
       "candidates": [
         {
           "label": "1",
@@ -1695,7 +1695,7 @@
       "normalized_entropy": 0.560025,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 955.46,
+      "latency_ms": 933.15,
       "candidates": [
         {
           "label": "1",
@@ -1745,7 +1745,7 @@
       "normalized_entropy": 0.507995,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 941.14,
+      "latency_ms": 925.49,
       "candidates": [
         {
           "label": "1",
@@ -1795,7 +1795,7 @@
       "normalized_entropy": 0.146015,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 997.42,
+      "latency_ms": 975.95,
       "candidates": [
         {
           "label": "1",
@@ -1845,7 +1845,7 @@
       "normalized_entropy": 0.340472,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 998.96,
+      "latency_ms": 971.90,
       "candidates": [
         {
           "label": "1",
@@ -1895,7 +1895,7 @@
       "normalized_entropy": 0.190650,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 993.10,
+      "latency_ms": 973.12,
       "candidates": [
         {
           "label": "1",

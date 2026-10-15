@@ -117,18 +117,18 @@ choice_cases = [
      "Chiller coolant loop pressure dropping rapidly; core temperature rising 2 degrees per minute.",
      [{"token": "Low", "label": "Low"}, {"token": "Medium", "label": "Medium"}, {"token": "High", "label": "High"}], "High"),
 
-    # Single-token choice letter: A, B, C, D
+    # Single-token choice letter: A, B, C with explicit option mapping in context
     ("choice_12", "failure_domain", "Which subsystem is the root cause of this failure?",
-     "Queries: SELECT * FROM users WHERE id=? timed out after 30s. Connection pool exhausted with 500 active locks.",
+     "Queries: SELECT * FROM users WHERE id=? timed out after 30s. Connection pool exhausted with 500 active locks. Options: A) Database, B) Network, C) Compute.",
      [{"token": "A", "label": "A"}, {"token": "B", "label": "B"}, {"token": "C", "label": "C"}], "A"),
     ("choice_13", "failure_domain", "Which subsystem is the root cause of this failure?",
-     "BGP route flap between autonomous systems AS15169 and AS3356 causing 80ms route loop and packet drop.",
+     "BGP route flap between autonomous systems AS15169 and AS3356 causing 80ms route loop and packet drop. Options: A) Database, B) Network, C) Compute.",
      [{"token": "A", "label": "A"}, {"token": "B", "label": "B"}, {"token": "C", "label": "C"}], "B"),
     ("choice_14", "support_routing", "Which team should this support ticket be routed to?",
-     "Invoice #9921 charged customer $450 instead of contracted $350 monthly tier.",
+     "Invoice #9921 charged customer $450 instead of contracted $350 monthly tier. Options: A) Authentication, B) Infrastructure, C) Billing.",
      [{"token": "A", "label": "A"}, {"token": "B", "label": "B"}, {"token": "C", "label": "C"}], "C"),
     ("choice_15", "support_routing", "Which team should this support ticket be routed to?",
-     "Customer cannot reset password because OTP SMS is not arriving on international phone numbers.",
+     "Customer cannot reset password because OTP SMS is not arriving on international phone numbers. Options: A) Authentication, B) Infrastructure, C) Billing.",
      [{"token": "A", "label": "A"}, {"token": "B", "label": "B"}, {"token": "C", "label": "C"}], "A")
 ]
 
