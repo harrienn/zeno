@@ -165,18 +165,29 @@ pub const DecisionEngine = struct {
         const raw_prompt_tokens = try self.tokenizer.encode(request_allocator, formatted_prompt);
         defer request_allocator.free(raw_prompt_tokens);
 
-        if (raw_prompt_tokens.len + 1 > root.ModelConfig.max_prompt_tokens) {
+        const canvas_len = req.canvas_length orelse root.ModelConfig.canvas_length;
+        const total_prompt_tokens = raw_prompt_tokens.len + 1; // +1 for bos
+        const total_seq_len = total_prompt_tokens + canvas_len;
+
+        // Sequence length preflight: validate against backend capabilities and workspace capacity
+        // before allocating candidate logits, probabilities, or seeding canvas (R30-01).
+        const max_ws_seq_len = switch (self.backend) {
+            .cpu => if (self.cpu_workspace) |ws| ws.max_seq_len else root.ModelConfig.max_seq_len,
+            .cuda => if (self.cuda_workspace) |ws| ws.dev0.max_seq_len else 512,
+        };
+        try validateSequenceLength(self.backend, total_seq_len, max_ws_seq_len);
+
+        if (total_prompt_tokens > root.ModelConfig.max_prompt_tokens) {
             return error.CanvasOverflow;
         }
 
-        const prompt_tokens = try request_allocator.alloc(u32, raw_prompt_tokens.len + 1);
+        const prompt_tokens = try request_allocator.alloc(u32, total_prompt_tokens);
         defer request_allocator.free(prompt_tokens);
         prompt_tokens[0] = root.SpecialTokens.bos;
         @memcpy(prompt_tokens[1..], raw_prompt_tokens);
 
         const canvas = try Canvas.seedSingleStep(prompt_tokens, root.SpecialTokens.mask);
 
-        // 4. Execute structured read over canvas for candidate tokens
         // 4. Adaptive multi-step forward evaluation loop (Phase 9)
         const raw_logits = try request_allocator.alloc(f32, cand_count);
         defer request_allocator.free(raw_logits);
@@ -186,9 +197,6 @@ pub const DecisionEngine = struct {
 
         const probs = try request_allocator.alloc(f32, cand_count);
         defer request_allocator.free(probs);
-
-        const canvas_len = req.canvas_length orelse root.ModelConfig.canvas_length;
-        const total_seq_len = prompt_tokens.len + canvas_len;
 
         var prev_probs: ?[]f32 = null;
         if (req.step_cap > 1) {
@@ -215,7 +223,6 @@ pub const DecisionEngine = struct {
             switch (self.backend) {
                 .cpu => {
                     const ws = self.cpu_workspace orelse return error.InvalidEngineState;
-                    try validateSequenceLength(.cpu, total_seq_len, ws.max_seq_len);
                     try infer.executeStructuredReadSlice(
                         ws,
                         self.model,
@@ -231,7 +238,6 @@ pub const DecisionEngine = struct {
                 .cuda => {
                     const ws = self.cuda_workspace orelse return error.InvalidEngineState;
                     const cm = self.cuda_model orelse return error.InvalidEngineState;
-                    try validateSequenceLength(.cuda, total_seq_len, ws.dev0.max_seq_len);
                     try infer_cuda.executeStructuredReadCuda(
                         ws,
                         cm,
@@ -525,6 +531,16 @@ pub fn validateSequenceLength(backend: BackendType, total_seq_len: usize, worksp
     }
 }
 
+/// Returns the effective maximum allowed prompt token count (including BOS) for a given backend, canvas length, and workspace capacity (R30-01).
+pub fn maxPromptTokensForBackend(backend: BackendType, canvas_len: usize, workspace_max_seq_len: usize) usize {
+    const max_seq = switch (backend) {
+        .cpu => workspace_max_seq_len,
+        .cuda => @min(workspace_max_seq_len, 512),
+    };
+    if (canvas_len >= max_seq) return 0;
+    return @min(max_seq - canvas_len, root.ModelConfig.max_prompt_tokens);
+}
+
 test "DecisionEngine: sequence length bounds validation for CPU and CUDA (R24-05)" {
     // 1. CPU allows sequence lengths > 512 when workspace capacity allows it
     try validateSequenceLength(.cpu, 513, 1024);
@@ -546,4 +562,23 @@ test "DecisionEngine: sequence length bounds validation for CPU and CUDA (R24-05
 
     // 5. CUDA rejects sequences exceeding workspace capacity even if <= 512
     try std.testing.expectError(error.CanvasOverflow, validateSequenceLength(.cuda, 400, 256));
+}
+
+test "DecisionEngine: maxPromptTokensForBackend calculates effective prompt limits (R30-01)" {
+    // CPU with 1024 workspace and 256 canvas -> 768 tokens
+    try std.testing.expectEqual(@as(usize, 768), maxPromptTokensForBackend(.cpu, 256, 1024));
+    // CPU with 1024 workspace and 16 canvas -> capped at ModelConfig.max_prompt_tokens (768)
+    try std.testing.expectEqual(@as(usize, 768), maxPromptTokensForBackend(.cpu, 16, 1024));
+    // CPU with smaller workspace (512) and 256 canvas -> 256 tokens
+    try std.testing.expectEqual(@as(usize, 256), maxPromptTokensForBackend(.cpu, 256, 512));
+
+    // CUDA with 512 workspace and 256 canvas -> 256 tokens (512 - 256)
+    try std.testing.expectEqual(@as(usize, 256), maxPromptTokensForBackend(.cuda, 256, 512));
+    // CUDA with 1024 configured workspace -> still clamped to 512 ceiling -> 256 tokens with 256 canvas
+    try std.testing.expectEqual(@as(usize, 256), maxPromptTokensForBackend(.cuda, 256, 1024));
+    // CUDA with 16 canvas -> 512 - 16 = 496 tokens
+    try std.testing.expectEqual(@as(usize, 496), maxPromptTokensForBackend(.cuda, 16, 512));
+    // Canvas length exceeding workspace -> 0 tokens
+    try std.testing.expectEqual(@as(usize, 0), maxPromptTokensForBackend(.cuda, 512, 512));
+    try std.testing.expectEqual(@as(usize, 0), maxPromptTokensForBackend(.cpu, 1024, 1024));
 }

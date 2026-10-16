@@ -76,7 +76,9 @@ pub const ModelConfig = struct {
     pub const sliding_window: usize = 1024;
     /// Maximum evaluated sequence length (sliding window capacity).
     pub const max_seq_len: usize = sliding_window;
-    /// Maximum prompt tokens permitted before canvas overflow.
+    /// Maximum prompt tokens permitted before canvas overflow on CPU reference (1024 - 256 = 768).
+    /// On CUDA, the attention kernel sequence ceiling is 512, capping total sequence (prompt + canvas) to 512
+    /// with effective prompt token limit at most (512 - canvas_length) tokens (R30-01).
     pub const max_prompt_tokens: usize = max_seq_len - canvas_length;
     /// Maximum prompt byte length permitted before tokenization (16 KiB protects against formatting/tokenization DOS).
     pub const max_prompt_bytes: usize = 16 * 1024;

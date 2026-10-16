@@ -153,9 +153,10 @@ Evaluated with canvas length $C=16$ sequentially on dual RTX 3060 GPUs (CUDA bac
 
 ### 7.3 Key Empirical Findings
 
-1. **Self-Conditioning Acts as Probability Sharpening**:
-   - Multi-step self-conditioning systematically concentrates probability mass onto the leading candidate token, monotonically driving down mean normalized entropy:
-     $$H_{\text{norm}}(T=1) = 0.2990 \;\longrightarrow\; H_{\text{norm}}(T=2_{\text{adapt}}) = 0.2044 \;\longrightarrow\; H_{\text{norm}}(T=3_{\text{adapt}}) = 0.1597 \;\longrightarrow\; H_{\text{norm}}(T=2_{\text{forced}}) = 0.1402$$
+1. **Self-Conditioning Probability Sharpening Trend**:
+   - Across the evaluated configurations, mean normalized entropy decreases as stepping is extended or thresholds are tightened:
+     $$H_{\text{norm}}(T=1) = 0.2990 \;\longrightarrow\; H_{\text{norm}}(T=2_{\text{adapt}}, \tau=0.5) = 0.2044 \;\longrightarrow\; H_{\text{norm}}(T=3_{\text{adapt}}, \tau=0.4) = 0.1597 \;\longrightarrow\; H_{\text{norm}}(T=2_{\text{forced}}, \tau=0.0) = 0.1402$$
+   - *Note on causal attribution*: This progression represents an observed empirical trend across these specific experimental runs, which vary both the allowed step cap ($T \in \{1, 2, 3\}$) and the entropy early-exit threshold ($\tau \in \{\text{None}, 0.5, 0.4, 0.0\}$), rather than a controlled comparison isolating step count alone. While self-conditioning generally concentrates probability mass on leading candidates on the queries that execute additional steps, a strictly controlled causal comparison would hold $\tau$ fixed while varying $T$.
 2. **Metric-Specific Calibration Dynamics**:
    - In adaptive two-step ($T=2, \tau=0.5$), Negative Log-Likelihood improves from $0.6723$ to $0.6131$ and Brier score improves from $0.3313$ to $0.3072$, while resolving one ambiguous query (`choice_12`) from an incorrect initial prediction to correct, raising accuracy from 80% to 82%.
    - Concurrently, Expected Calibration Error (ECE) increases from **7.67%** to **13.56%** (and up to **14.15%** under forced stepping). Because self-conditioning sharpens probabilities across both correct and incorrect classifications, confident errors widen the calibration gap in the highest bin ($[0.9, 1.0]$).

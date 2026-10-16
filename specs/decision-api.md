@@ -133,7 +133,7 @@ All non-200 responses return a standard RFC 8259-compliant JSON error object:
 | `400 Bad Request` | `invalid_canvas_length` | `options.canvas_length` is not a multiple of 16 in `[16, 256]`. |
 | `400 Bad Request` | `invalid_temperature` | Temperature is non-finite, $\le 0.0$, or NaN. |
 | `400 Bad Request` | `invalid_entropy_threshold` | Threshold is non-finite, $< 0.0$, or $> 1.0$. |
-| `400 Bad Request` | `canvas_overflow` | Rendered prompt exceeds maximum allowed prompt bytes (16 KiB) or prompt tokens (768 tokens, capping total sequence to 1024). |
+| `400 Bad Request` | `canvas_overflow` | Rendered prompt exceeds maximum allowed prompt bytes (16 KiB) or prompt tokens for the active backend (up to 768 tokens on CPU, capping total sequence to 1024; up to $512 - \text{canvas\_length}$ tokens on CUDA, i.e. 256 tokens under default 256-token canvas, capping total sequence to 512). |
 | `400 Bad Request` | `read_error` / `incomplete_body` | Socket read failure or client disconnected prematurely during body transmission. |
 | `404 Not Found` | `not_found` | Request path is not `/health` or `/v1/systemone`. |
 | `405 Method Not Allowed` | `method_not_allowed` | Method other than GET or HEAD for `/health`, or other than POST for `/v1/systemone`. |
@@ -153,8 +153,8 @@ All non-200 responses return a standard RFC 8259-compliant JSON error object:
 
 - **Framing Invariants**: HTTP request lines must contain exactly three tokens (`METHOD PATH HTTP/VERSION`). Paths must start with `/`. Repeated or conflicting `Content-Length` headers are rejected with HTTP 400 Bad Request to prevent HTTP request smuggling. Both `GET` and `HEAD` methods are accepted on `/health` (with `HEAD` omitting the response body per RFC 7231).
 - **Socket Idle Timeouts & Request Deadlines**: Accepted connections enforce a 15-second socket idle timeout and a strict, un-overrunnable 30-second request read deadline implemented via `poll` capped to the remaining deadline. Read deadline expiration returns HTTP 408 Request Timeout (`request_timeout`), while idle client connections during header reading close silently. Rejected requests (such as 400, 404, 405, 408, 411, 413, 501, 505) immediately close the connection without draining unread client bodies.
-- **Sequence & Workspace Bounding**: Request payloads are capped at 64 KiB (`payload_too_large`). Query, context, and candidate labels are preflight-bounded at 16 KiB total prompt bytes (`max_prompt_bytes`) before template formatting, and tokenized prompts are bounded at 768 tokens (`max_prompt_tokens`), preventing both tokenization/allocation CPU DOS and activation tensor reallocation beyond 1024 tokens (`max_seq_len`).
-- **Serial Execution & Trust Boundary**: The server is a single-threaded synchronous local decision engine without authentication or transport encryption (TLS). In-flight model evaluations on `/v1/systemone` execute synchronously on CPU; concurrent incoming requests (including `/health`) are queued in the OS TCP socket listen backlog until the current forward pass completes. It is intended for loopback operation (`127.0.0.1`). If exposed to external network interfaces (`--host 0.0.0.0`), it must be placed behind an authenticated reverse proxy (e.g. Envoy, Nginx, Caddy).
+- **Sequence & Workspace Bounding**: Request payloads are capped at 64 KiB (`payload_too_large`). Query, context, and candidate labels are preflight-bounded at 16 KiB total prompt bytes (`max_prompt_bytes`) before template formatting. Tokenized prompts are bounded by backend sequence capacity: on CPU, up to 768 tokens (`max_prompt_tokens`, capping total sequence length to 1024 `max_seq_len`); on CUDA, total sequence length (prompt + canvas) is capped at 512 tokens due to the CUDA attention kernel capacity (effective prompt token limit $512 - \text{canvas\_length}$, i.e. 256 tokens with default 256-token canvas). Exceeding either boundary returns HTTP 400 Bad Request with error code `canvas_overflow`.
+- **Serial Execution & Trust Boundary**: The server is a single-threaded synchronous local decision engine without authentication or transport encryption (TLS). In-flight model evaluations on `/v1/systemone` execute synchronously on the configured backend (CPU reference by default, or GPU when started with `serve --cuda`); concurrent incoming requests (including `/health`) are queued in the OS TCP socket listen backlog until the current forward pass completes. It is intended for loopback operation (`127.0.0.1`). If exposed to external network interfaces (`--host 0.0.0.0`), it must be placed behind an authenticated reverse proxy (e.g. Envoy, Nginx, Caddy).
 
 ---
 
@@ -246,13 +246,13 @@ The native interface returns typed errors:
 - `error.InvalidEntropyThreshold`: threshold $< 0.0$, $> 1.0$, or non-finite.
 - `error.TokenNotFound`: candidate string absent from model vocabulary.
 - `error.MultiTokenCandidateNotAllowed`: candidate resolves to multiple tokens.
-- `error.CanvasOverflow`: prompt byte length exceeds `max_prompt_bytes` (16 KiB) or tokenized prompt exceeds `max_prompt_tokens` (768).
+- `error.CanvasOverflow`: prompt byte length exceeds `max_prompt_bytes` (16 KiB), tokenized prompt exceeds `max_prompt_tokens` (768), or total sequence length (prompt + canvas) exceeds backend capacity (1024 on CPU, 512 on CUDA).
 
 A candidate string that is absent from the vocabulary is reported as `TokenNotFound`, **not** `MultiTokenCandidateNotAllowed`, preserving distinct failure semantics (choose a different label versus map the label to a one-token code).
 
 ## 6. Known Gaps in This Specification
 
-The request path is implemented as a CPU prototype with verified discrete decision matching against reference oracles. Remaining dependencies are tracked in [`UNRESOLVED.md`](UNRESOLVED.md):
+The request path is implemented across CPU reference and CUDA execution backends, with verified discrete decision matching against reference oracles. Remaining dependencies are tracked in [`UNRESOLVED.md`](UNRESOLVED.md):
 
 * **U-05** — *Resolved*: The artifact's exact chat template is recorded verbatim in [`chat_template.jinja`](chat_template.jinja) and documented in [`canvas-templates.md`](canvas-templates.md) §4.
 * **U-13 / U-22** — *Open*: Golden fixture captures and schema `zeno.fixture/v1` are established against llama.cpp PR #24423 (`llama-diffusion-gemma-eval`) with exact candidate decision matching and identical top-5 vocabulary predictions. However, candidate raw logit divergence between FP32 dequantized execution and GGML SIMD execution (1.19 to 11.07 across fixtures) exceeds the $\le 0.5$ tolerance limit in `zeno.tolerance/v1`. Full Phase 3 parity exit remains open until numerical logit divergence is reconciled.
