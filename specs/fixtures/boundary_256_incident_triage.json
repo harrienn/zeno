@@ -274,17 +274,17 @@
     7925,
     236787
   ],
-  "oracle_command": "NGL=99 /hdd/Projects/llama.cpp/build/bin/llama-diffusion-gemma-eval models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf /tmp/prompt_boundary.i32 /tmp/canvas_boundary.i32 /tmp/out_boundary_gpu.bin",
+  "oracle_command": "NGL=99 /hdd/Projects/llama.cpp/build/bin/llama-diffusion-gemma-eval models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf /tmp/boundary_256_incident_triage_p.i32 /tmp/boundary_256_incident_triage_c.i32 /tmp/boundary_256_incident_triage_gpu.bin",
   "oracle_reference": {
     "decision": "No",
     "decision_probability": 1.0,
     "candidate_logits_raw": [
-      2.4487,
-      16.684
+      2.4542,
+      18.8165
     ],
     "candidate_logits_softcapped": [
-      2.4433,
-      15.1531
+      2.4487,
+      16.684
     ],
     "probabilities": [
       0.0,
@@ -314,12 +314,12 @@
     "decision": "No",
     "decision_probability": 1.0,
     "candidate_logits_raw": [
-      2.4487,
-      16.684
+      2.4542,
+      18.8165
     ],
     "candidate_logits_softcapped": [
-      2.4433,
-      15.1531
+      2.4487,
+      16.684
     ],
     "probabilities": [
       0.0,
@@ -333,12 +333,12 @@
     "decision": "No",
     "decision_probability": 1.0,
     "candidate_logits_raw": [
-      -0.484,
+      -0.4839,
       18.1301
     ],
     "candidate_logits_softcapped": [
-      -0.484,
-      16.2038
+      -0.4839,
+      16.2039
     ],
     "probabilities": [
       0.0,

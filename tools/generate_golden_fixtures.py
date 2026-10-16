@@ -17,6 +17,10 @@ VOCAB_SIZE = 262_144
 def softcap(x, cap=30.0):
     return cap * np.tanh(x / cap)
 
+def unsoftcap(s, cap=30.0):
+    ratio = np.clip(s / cap, -0.999999, 0.999999)
+    return float(cap * np.arctanh(ratio))
+
 def generate_fixture(fixture_name, base_def):
     target_path = f"specs/fixtures/{fixture_name}.json"
     p_i32 = f"/tmp/{fixture_name}_p.i32"
@@ -45,14 +49,18 @@ def generate_fixture(fixture_name, base_def):
     subprocess.run([LLAMA_EVAL, MODEL_PATH, p_i32, c_i32, out_bin], env=env, check=True)
 
     # Parse oracle output
+    # Note: llama-diffusion-gemma-eval outputs res->t_logits from diffusion-gemma.cpp:605-612.
+    # In GGML computation graph, final logit softcapping (30.0 * tanh(x / 30.0)) has already been applied.
+    # Therefore, row0 contains single-softcapped logits.
+    # We recover true raw logits via inverse softcap: 30.0 * arctanh(s / 30.0).
     with open(out_bin, "rb") as f:
         row0 = np.fromfile(f, dtype=np.float32, count=VOCAB_SIZE)
 
     cand_ids = [c["token_id"] for c in base_def["candidates"]]
     cand_labels = [c["label"] for c in base_def["candidates"]]
 
-    oracle_raw = [round(float(row0[tid]), 4) for tid in cand_ids]
-    oracle_sc = [round(float(softcap(r)), 4) for r in oracle_raw]
+    oracle_sc = [round(float(row0[tid]), 4) for tid in cand_ids]
+    oracle_raw = [round(unsoftcap(s), 4) for s in oracle_sc]
 
     max_sc = max(oracle_sc)
     exp_sc = [np.exp(s - max_sc) for s in oracle_sc]
@@ -161,84 +169,25 @@ def generate_fixture(fixture_name, base_def):
     assert oracle_decision == zeno_decision, f"Decision mismatch: {oracle_decision} != {zeno_decision}"
     print(f"✓ Fixture '{fixture_name}' generated and verified successfully at {target_path}")
 
-def main():
-    # Fixture 4: Maintenance Priority with High Entropy / Uncertainty Gating
-    fix4_def = {
-        "schema": "zeno.fixture/v1",
-        "policy": "zeno.tolerance/v1",
-        "description": "Maintenance event priority triage with high-entropy uncertainty gating on DiffusionGemma 26B-A4B-it Q4_K_M",
-        "model": {
-            "path": MODEL_PATH,
-            "sha256": MODEL_SHA256
-        },
-        "reference": {
-            "repo": REF_REPO,
-            "commit": REF_COMMIT
-        },
-        "query": "What is the priority level of this maintenance event?",
-        "context": "Routine index reorganization scheduled for customer analytics warehouse. Query latency expected to elevate by 10% for analytics queries only during off-peak window. Production OLTP databases are entirely unaffected.\n",
-        "schema_type": "choice",
-        "canvas_length": 256,
-        "answer_pos": 0,
-        "answer_seed_token": 4,
-        "entropy_threshold": 0.5,
-        "candidates": [
-            { "label": "Low", "token": "Low", "token_id": 26834 },
-            { "label": "Medium", "token": "Medium", "token_id": 49074 },
-            { "label": "High", "token": "High", "token_id": 13238 }
-        ],
-        "expected": {
-            "decision": "",
-            "decision_probability": 0.0,
-            "candidate_logits_raw": [],
-            "candidate_logits_softcapped": [],
-            "probabilities": [],
-            "entropy_nats": 0.0,
-            "normalized_entropy": 0.0,
-            "uncertain": True
-        }
-    }
-    generate_fixture("maintenance_priority_uncertain", fix4_def)
+def update_fixture_file(fixture_path):
+    with open(fixture_path, "r") as f:
+        base_def = json.load(f)
+    fixture_name = os.path.splitext(os.path.basename(fixture_path))[0]
+    generate_fixture(fixture_name, base_def)
 
-    # Fixture 5: 5-class numeric score query
-    fix5_def = {
-        "schema": "zeno.fixture/v1",
-        "policy": "zeno.tolerance/v1",
-        "description": "5-point customer satisfaction rating score decision query on DiffusionGemma 26B-A4B-it Q4_K_M",
-        "model": {
-            "path": MODEL_PATH,
-            "sha256": MODEL_SHA256
-        },
-        "reference": {
-            "repo": REF_REPO,
-            "commit": REF_COMMIT
-        },
-        "query": "What is the satisfaction rating from 1 to 5?",
-        "context": "Customer Review: Absolutely outstanding service and fantastic product quality! It arrived two days early, was packaged perfectly, and worked flawlessly out of the box. Extremely delighted with this purchase!\n",
-        "schema_type": "score",
-        "canvas_length": 256,
-        "answer_pos": 0,
-        "answer_seed_token": 4,
-        "entropy_threshold": 0.8,
-        "candidates": [
-            { "label": "1", "token": "1", "token_id": 236770 },
-            { "label": "2", "token": "2", "token_id": 236778 },
-            { "label": "3", "token": "3", "token_id": 236800 },
-            { "label": "4", "token": "4", "token_id": 236812 },
-            { "label": "5", "token": "5", "token_id": 236810 }
-        ],
-        "expected": {
-            "decision": "",
-            "decision_probability": 0.0,
-            "candidate_logits_raw": [],
-            "candidate_logits_softcapped": [],
-            "probabilities": [],
-            "entropy_nats": 0.0,
-            "normalized_entropy": 0.0,
-            "uncertain": False
-        }
-    }
-    generate_fixture("satisfaction_score_5class", fix5_def)
+def main():
+    if len(sys.argv) > 1:
+        targets = sys.argv[1:]
+    else:
+        targets = [
+            "specs/fixtures/system_health_boolean.json",
+            "specs/fixtures/incident_severity_multiclass.json",
+            "specs/fixtures/boundary_256_incident_triage.json",
+            "specs/fixtures/maintenance_priority_uncertain.json",
+            "specs/fixtures/satisfaction_score_5class.json",
+        ]
+    for target in targets:
+        update_fixture_file(target)
 
 if __name__ == "__main__":
     main()

@@ -53,24 +53,24 @@
     7925,
     236787
   ],
-  "oracle_command": "NGL=99 /hdd/Projects/llama.cpp/build/bin/llama-diffusion-gemma-eval models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf /tmp/prompt_mc.i32 /tmp/canvas_mc.i32 /tmp/out_mc_gpu.bin",
+  "oracle_command": "NGL=99 /hdd/Projects/llama.cpp/build/bin/llama-diffusion-gemma-eval models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf /tmp/incident_severity_multiclass_p.i32 /tmp/incident_severity_multiclass_c.i32 /tmp/incident_severity_multiclass_gpu.bin",
   "oracle_reference": {
     "decision": "Medium",
-    "decision_probability": 0.7795,
+    "decision_probability": 0.8574,
     "candidate_logits_raw": [
+      15.4337,
+      18.4133,
+      14.5577
+    ],
+    "candidate_logits_softcapped": [
       14.2023,
       16.4034,
       13.5133
     ],
-    "candidate_logits_softcapped": [
-      13.2285,
-      14.9431,
-      12.6679
-    ],
     "probabilities": [
-      0.1403,
-      0.7795,
-      0.0801
+      0.0949,
+      0.8574,
+      0.0476
     ],
     "top_5_vocab_tokens": [
       100,
@@ -99,24 +99,24 @@
   ],
   "expected": {
     "decision": "Medium",
-    "decision_probability": 0.7795,
+    "decision_probability": 0.8574,
     "candidate_logits_raw": [
+      15.4337,
+      18.4133,
+      14.5577
+    ],
+    "candidate_logits_softcapped": [
       14.2023,
       16.4034,
       13.5133
     ],
-    "candidate_logits_softcapped": [
-      13.2285,
-      14.9431,
-      12.6679
-    ],
     "probabilities": [
-      0.1403,
-      0.7795,
-      0.0801
+      0.0949,
+      0.8574,
+      0.0476
     ],
-    "entropy_nats": 0.6719,
-    "normalized_entropy": 0.6116,
+    "entropy_nats": 0.5003,
+    "normalized_entropy": 0.4554,
     "uncertain": false
   },
   "local_engine_baseline": {
@@ -124,18 +124,18 @@
     "decision_probability": 0.8154,
     "candidate_logits_raw": [
       14.4416,
-      17.4412,
+      17.4411,
       14.7053
     ],
     "candidate_logits_softcapped": [
-      13.4182,
-      15.6989,
-      13.6264
+      13.4206,
+      15.7098,
+      13.6307
     ],
     "probabilities": [
       0.0826,
       0.8154,
-      0.1019
+      0.102
     ],
     "entropy_nats": 0.6052,
     "normalized_entropy": 0.5509,

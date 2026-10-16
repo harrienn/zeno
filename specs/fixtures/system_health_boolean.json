@@ -48,21 +48,21 @@
     7925,
     236787
   ],
-  "oracle_command": "NGL=99 /hdd/Projects/llama.cpp/build/bin/llama-diffusion-gemma-eval models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf /tmp/prompt.i32 /tmp/canvas.i32 /tmp/out_gpu.bin",
+  "oracle_command": "NGL=99 /hdd/Projects/llama.cpp/build/bin/llama-diffusion-gemma-eval models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf /tmp/system_health_boolean_p.i32 /tmp/system_health_boolean_c.i32 /tmp/system_health_boolean_gpu.bin",
   "oracle_reference": {
     "decision": "Yes",
-    "decision_probability": 0.9128,
+    "decision_probability": 0.942,
     "candidate_logits_raw": [
+      15.1473,
+      11.7586
+    ],
+    "candidate_logits_softcapped": [
       13.9791,
       11.1913
     ],
-    "candidate_logits_softcapped": [
-      13.0481,
-      10.6995
-    ],
     "probabilities": [
-      0.9128,
-      0.0872
+      0.942,
+      0.058
     ],
     "top_5_vocab_tokens": [
       107,
@@ -86,33 +86,33 @@
   ],
   "expected": {
     "decision": "Yes",
-    "decision_probability": 0.9128,
+    "decision_probability": 0.942,
     "candidate_logits_raw": [
+      15.1473,
+      11.7586
+    ],
+    "candidate_logits_softcapped": [
       13.9791,
       11.1913
     ],
-    "candidate_logits_softcapped": [
-      13.0481,
-      10.6995
-    ],
     "probabilities": [
-      0.9128,
-      0.0872
+      0.942,
+      0.058
     ],
-    "entropy_nats": 0.296,
-    "normalized_entropy": 0.4271,
+    "entropy_nats": 0.2214,
+    "normalized_entropy": 0.3195,
     "uncertain": false
   },
   "local_engine_baseline": {
     "decision": "Yes",
     "decision_probability": 0.9503,
     "candidate_logits_raw": [
-      25.0527,
-      20.0945
+      25.0528,
+      20.0946
     ],
     "candidate_logits_softcapped": [
-      20.4996,
-      17.5447
+      20.496,
+      17.5459
     ],
     "probabilities": [
       0.9503,
