@@ -71,6 +71,12 @@ def main():
     # Top 5 vocabulary tokens across all 262,144 tokens
     oracle_top5 = np.argsort(row0)[::-1][:5].tolist()
 
+    # Compute Shannon entropy and uncertainty for Oracle reference
+    oracle_h = float(-sum(p * np.log(p) for p in oracle_probs if p > 0.0))
+    oracle_h_norm = float(oracle_h / np.log(len(candidates))) if len(candidates) > 1 else 0.0
+    thresh = fixture.get("entropy_threshold")
+    oracle_uncertain = bool(oracle_h_norm >= thresh) if thresh is not None else False
+
     print("=== Reference Oracle Execution ===")
     print(f"File:                 {bin_path}")
     print(f"Decision:             {oracle_decision}")
@@ -80,6 +86,9 @@ def main():
     print(f"Top 5 Vocab Tokens:   {oracle_top5}")
     for t in oracle_top5:
         print(f"  Token {t}: {row0[t]:.4f}")
+    print(f"Entropy (nats):       {oracle_h:.4f}")
+    print(f"Normalized Entropy:   {oracle_h_norm:.4f}")
+    print(f"Uncertain:            {oracle_uncertain}")
 
     # 1. Assert reference execution reproducibility against captured oracle_reference
     ref = fixture.get("oracle_reference", fixture.get("expected"))
@@ -100,6 +109,15 @@ def main():
             assert raw_err <= 1e-3, f"Oracle raw logit mismatch for '{label}': {raw_err:.6f} > 1e-3"
             assert sc_err <= 1e-3, f"Oracle softcapped logit mismatch for '{label}': {sc_err:.6f} > 1e-3"
             assert prob_err <= 1e-3, f"Oracle probability mismatch for '{label}': {prob_err:.6f} > 1e-3"
+
+        if "entropy_nats" in ref:
+            h_err = abs(oracle_h - ref["entropy_nats"])
+            assert h_err <= 1e-3, f"Oracle entropy mismatch: {h_err:.6f} > 1e-3"
+        if "normalized_entropy" in ref:
+            hn_err = abs(oracle_h_norm - ref["normalized_entropy"])
+            assert hn_err <= 1e-3, f"Oracle normalized entropy mismatch: {hn_err:.6f} > 1e-3"
+        if "uncertain" in ref:
+            assert oracle_uncertain == ref["uncertain"], f"Oracle uncertainty mismatch: {oracle_uncertain} != {ref['uncertain']}"
 
         print("✓ Reference execution identically reproduces captured oracle record.")
 
@@ -144,6 +162,10 @@ def main():
             print(f"{lbl:<10} | {o_raw:<10.4f} | {z_raw:<10.4f} | {d_raw:<10.4f} | {o_p:<11.4f} | {z_p:<11.4f} | {d_p:<10.4f}")
 
         d_dec_prob = abs(zeno["decision_probability"] - oracle_decision_prob)
+        d_entropy = abs(zeno.get("entropy_nats", 0.0) - oracle_h)
+        d_norm_entropy = abs(zeno.get("normalized_entropy", 0.0) - oracle_h_norm)
+        unc_match = (zeno.get("uncertain", False) == oracle_uncertain)
+
         print("-" * 85)
         print(f"Summary Deltas:")
         print(f"  Discrete Decision:       MATCH ('{zeno['decision']}')")
@@ -151,6 +173,9 @@ def main():
         print(f"  Max Raw Logit Delta:     {max_raw_delta:.4f} (tolerance <= 0.5)")
         print(f"  Max Softcapped Delta:    {max_sc_delta:.4f} (tolerance <= 0.5)")
         print(f"  Max Probability Delta:   {max_prob_delta:.4f} (tolerance <= 0.05)")
+        print(f"  Entropy Delta:           {d_entropy:.4f} (tolerance <= 0.05)")
+        print(f"  Norm Entropy Delta:      {d_norm_entropy:.4f} (tolerance <= 0.05)")
+        print(f"  Uncertain Match:         {'MATCH' if unc_match else 'MISMATCH'} (Oracle: {oracle_uncertain}, Zeno: {zeno.get('uncertain')})")
 
         # Verify regression against local engine baseline if present
         if "local_engine_baseline" in fixture:
@@ -166,12 +191,21 @@ def main():
             print("✓ Zeno CPU output matches local engine baseline within regression tolerances.")
 
         # U-22 tolerance evaluation
-        passed_u22 = (max_raw_delta <= 0.5) and (max_sc_delta <= 0.5) and (max_prob_delta <= 0.05) and (d_dec_prob <= 0.05)
+        passed_u22 = (
+            (zeno["decision"] == oracle_decision) and
+            (max_raw_delta <= 0.5) and
+            (max_sc_delta <= 0.5) and
+            (max_prob_delta <= 0.05) and
+            (d_dec_prob <= 0.05) and
+            (d_entropy <= 0.05) and
+            (d_norm_entropy <= 0.05) and
+            unc_match
+        )
         if passed_u22:
             print("\n✓ Full numerical parity PASS under U-22 tolerance policy.")
         else:
-            print(f"\n! Numerical logit/probability delta exceeds strict 0.5 budget (max raw delta={max_raw_delta:.4f} > 0.5).")
-            print("  Status: Discrete decision PASSED (residual divergence bounded by high-layer MoE router expert boundary switching; U-13/U-22 resolved).")
+            print(f"\n! Numerical cross-engine divergence exceeds U-22 tolerance budget (max raw delta={max_raw_delta:.4f} > 0.5, max prob delta={max_prob_delta:.4f}, max H delta={d_entropy:.4f}).")
+            print("  Status: Discrete decision PASSED, but cross-engine numerical parity gates U-13/U-22 remain OPEN.")
             if strict_parity:
                 print("Error: Strict parity required but tolerances exceeded.")
                 sys.exit(1)

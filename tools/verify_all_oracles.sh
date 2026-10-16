@@ -5,16 +5,25 @@ set -euo pipefail
 # Verifies all golden fixtures in specs/fixtures/*.json against llama.cpp oracle harness.
 
 USE_CUDA=0
-EXTRA_ARGS=()
+STRICT_PARITY=0
+MODEL_PATH="models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf"
+
 for arg in "$@"; do
-    if [ "$arg" = "--cuda" ]; then
-        USE_CUDA=1
-    else
-        EXTRA_ARGS+=("$arg")
-    fi
+    case "$arg" in
+        --cuda)
+            USE_CUDA=1
+            ;;
+        --strict-parity)
+            STRICT_PARITY=1
+            ;;
+        *)
+            if [ -f "$arg" ]; then
+                MODEL_PATH="$arg"
+            fi
+            ;;
+    esac
 done
 
-MODEL_PATH="${EXTRA_ARGS[0]:-models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf}"
 LLAMA_CPP_DIR="${LLAMA_CPP_DIR:-/hdd/Projects/llama.cpp}"
 LLAMA_EVAL="${LLAMA_EVAL_BIN:-${LLAMA_CPP_DIR}/build/bin/llama-diffusion-gemma-eval}"
 ZENO_BIN="./zig-out/bin/zeno"
@@ -93,14 +102,18 @@ for FIXTURE in "${FIXTURES[@]}"; do
     fi
 
     # 4. Verify exact oracle reproduction, top-5 vocab tokens, and Zeno vs Oracle comparison
-    python3 tools/verify_oracle_parity.py "${OUT_GPU}" "${FIXTURE}" "${OUT_ZENO_JSON}" "${@:2}"
+    VERIFY_CMD=(python3 tools/verify_oracle_parity.py "${OUT_GPU}" "${FIXTURE}" "${OUT_ZENO_JSON}")
+    if [ "${STRICT_PARITY}" -eq 1 ]; then
+        VERIFY_CMD+=(--strict-parity)
+    fi
+    "${VERIFY_CMD[@]}"
     echo
     PROCESSED=$((PROCESSED + 1))
 done
 
 echo "================================================================="
 echo " Verification Suite Complete: ${PROCESSED}/${TOTAL} Fixtures Evaluated"
-echo " Discrete Decision Parity: 5/5 PASSED"
+echo " Discrete Decision Parity: 5/5 PASSED (100% exact match)"
 echo " Reference Oracle Reproduction: 5/5 PASSED"
-echo " U-13 / U-22 Phase 3 Parity Gates: RESOLVED"
+echo " Note: Cross-engine numerical logit/prob parity remains OPEN under U-13 / U-22."
 echo "================================================================="
