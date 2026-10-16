@@ -1072,7 +1072,7 @@ pub fn executeStructuredReadSlice(
     out_raw_logits: []f32,
     out_softcapped_logits: []f32,
 ) !void {
-    std.debug.assert(answer_pos < canvas_tokens.len);
+    if (answer_pos >= canvas_tokens.len) return error.InvalidParam;
     const P = prompt_tokens.len;
     const C = canvas_tokens.len;
     const N = P + C;

@@ -46,6 +46,9 @@ pub const WireDecisionRequest = struct {
 
 /// Parses an IPv4 string "A.B.C.D" into a network-ordered u32 for sockaddr.in.
 pub fn parseIp4(str: []const u8) !u32 {
+    if (std.mem.eql(u8, str, "localhost")) {
+        return parseIp4("127.0.0.1");
+    }
     var parts: [4]u8 = undefined;
     var idx: usize = 0;
     var it = std.mem.splitScalar(u8, str, '.');

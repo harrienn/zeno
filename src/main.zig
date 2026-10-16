@@ -137,15 +137,29 @@ pub fn main(init: std.process.Init) !void {
             if (std.mem.eql(u8, args[arg_i], "--cuda")) {
                 use_cuda = true;
             } else if (std.mem.eql(u8, args[arg_i], "--steps")) {
-                if (arg_i + 1 < args.len) {
-                    arg_i += 1;
-                    step_cap = std.fmt.parseInt(u32, args[arg_i], 10) catch 1;
+                if (arg_i + 1 >= args.len) {
+                    try stdout_writer.print("Error: --steps requires an integer argument\n", .{});
+                    try stdout_writer.flush();
+                    return;
                 }
+                arg_i += 1;
+                step_cap = std.fmt.parseInt(u32, args[arg_i], 10) catch {
+                    try stdout_writer.print("Error: Invalid step count '{s}'\n", .{args[arg_i]});
+                    try stdout_writer.flush();
+                    return;
+                };
             } else if (std.mem.eql(u8, args[arg_i], "--canvas")) {
-                if (arg_i + 1 < args.len) {
-                    arg_i += 1;
-                    canvas_override = std.fmt.parseInt(usize, args[arg_i], 10) catch null;
+                if (arg_i + 1 >= args.len) {
+                    try stdout_writer.print("Error: --canvas requires an integer argument\n", .{});
+                    try stdout_writer.flush();
+                    return;
                 }
+                arg_i += 1;
+                canvas_override = std.fmt.parseInt(usize, args[arg_i], 10) catch {
+                    try stdout_writer.print("Error: Invalid canvas length '{s}'\n", .{args[arg_i]});
+                    try stdout_writer.flush();
+                    return;
+                };
             } else {
                 try raw_candidates.append(arena, args[arg_i]);
             }
@@ -389,15 +403,29 @@ pub fn main(init: std.process.Init) !void {
             if (std.mem.eql(u8, args[arg_i], "--cuda")) {
                 use_cuda = true;
             } else if (std.mem.eql(u8, args[arg_i], "--steps")) {
-                if (arg_i + 1 < args.len) {
-                    arg_i += 1;
-                    step_cap = std.fmt.parseInt(u32, args[arg_i], 10) catch 1;
+                if (arg_i + 1 >= args.len) {
+                    try stdout_writer.print("Error: --steps requires an integer argument\n", .{});
+                    try stdout_writer.flush();
+                    return;
                 }
+                arg_i += 1;
+                step_cap = std.fmt.parseInt(u32, args[arg_i], 10) catch {
+                    try stdout_writer.print("Error: Invalid step count '{s}'\n", .{args[arg_i]});
+                    try stdout_writer.flush();
+                    return;
+                };
             } else if (std.mem.eql(u8, args[arg_i], "--canvas")) {
-                if (arg_i + 1 < args.len) {
-                    arg_i += 1;
-                    canvas_override = std.fmt.parseInt(usize, args[arg_i], 10) catch null;
+                if (arg_i + 1 >= args.len) {
+                    try stdout_writer.print("Error: --canvas requires an integer argument\n", .{});
+                    try stdout_writer.flush();
+                    return;
                 }
+                arg_i += 1;
+                canvas_override = std.fmt.parseInt(usize, args[arg_i], 10) catch {
+                    try stdout_writer.print("Error: Invalid canvas length '{s}'\n", .{args[arg_i]});
+                    try stdout_writer.flush();
+                    return;
+                };
             } else {
                 out_json_path = args[arg_i];
             }
@@ -476,25 +504,49 @@ pub fn main(init: std.process.Init) !void {
             if (std.mem.eql(u8, args[arg_i], "--cuda")) {
                 use_cuda = true;
             } else if (std.mem.eql(u8, args[arg_i], "--steps")) {
-                if (arg_i + 1 < args.len) {
-                    arg_i += 1;
-                    step_cap = std.fmt.parseInt(u32, args[arg_i], 10) catch 1;
+                if (arg_i + 1 >= args.len) {
+                    try stdout_writer.print("Error: --steps requires an integer argument\n", .{});
+                    try stdout_writer.flush();
+                    return;
                 }
+                arg_i += 1;
+                step_cap = std.fmt.parseInt(u32, args[arg_i], 10) catch {
+                    try stdout_writer.print("Error: Invalid step count '{s}'\n", .{args[arg_i]});
+                    try stdout_writer.flush();
+                    return;
+                };
             } else if (std.mem.eql(u8, args[arg_i], "--threshold")) {
-                if (arg_i + 1 < args.len) {
-                    arg_i += 1;
-                    entropy_threshold = std.fmt.parseFloat(f32, args[arg_i]) catch null;
+                if (arg_i + 1 >= args.len) {
+                    try stdout_writer.print("Error: --threshold requires a float argument\n", .{});
+                    try stdout_writer.flush();
+                    return;
                 }
+                arg_i += 1;
+                entropy_threshold = std.fmt.parseFloat(f32, args[arg_i]) catch {
+                    try stdout_writer.print("Error: Invalid entropy threshold '{s}'\n", .{args[arg_i]});
+                    try stdout_writer.flush();
+                    return;
+                };
             } else if (std.mem.eql(u8, args[arg_i], "--canvas")) {
-                if (arg_i + 1 < args.len) {
-                    arg_i += 1;
-                    canvas_override = std.fmt.parseInt(usize, args[arg_i], 10) catch null;
+                if (arg_i + 1 >= args.len) {
+                    try stdout_writer.print("Error: --canvas requires an integer argument\n", .{});
+                    try stdout_writer.flush();
+                    return;
                 }
+                arg_i += 1;
+                canvas_override = std.fmt.parseInt(usize, args[arg_i], 10) catch {
+                    try stdout_writer.print("Error: Invalid canvas length '{s}'\n", .{args[arg_i]});
+                    try stdout_writer.flush();
+                    return;
+                };
             } else if (std.mem.eql(u8, args[arg_i], "--out")) {
-                if (arg_i + 1 < args.len) {
-                    arg_i += 1;
-                    out_json_path = args[arg_i];
+                if (arg_i + 1 >= args.len) {
+                    try stdout_writer.print("Error: --out requires an output path argument\n", .{});
+                    try stdout_writer.flush();
+                    return;
                 }
+                arg_i += 1;
+                out_json_path = args[arg_i];
             } else {
                 out_json_path = args[arg_i];
             }
@@ -684,10 +736,21 @@ pub fn main(init: std.process.Init) !void {
             if (std.mem.eql(u8, args[b_idx], "--cuda")) {
                 use_cuda = true;
             } else if (std.mem.eql(u8, args[b_idx], "--samples")) {
-                if (b_idx + 1 < args.len) {
-                    b_idx += 1;
-                    num_samples = std.fmt.parseInt(usize, args[b_idx], 10) catch 3;
-                    if (num_samples == 0) num_samples = 1;
+                if (b_idx + 1 >= args.len) {
+                    try stdout_writer.print("Error: --samples requires a positive integer argument\n", .{});
+                    try stdout_writer.flush();
+                    return;
+                }
+                b_idx += 1;
+                num_samples = std.fmt.parseInt(usize, args[b_idx], 10) catch {
+                    try stdout_writer.print("Error: Invalid sample count '{s}'\n", .{args[b_idx]});
+                    try stdout_writer.flush();
+                    return;
+                };
+                if (num_samples == 0) {
+                    try stdout_writer.print("Error: --samples must be at least 1\n", .{});
+                    try stdout_writer.flush();
+                    return;
                 }
             } else {
                 specific_fixture = args[b_idx];
@@ -1064,15 +1127,27 @@ fn getMonotonicMs() f64 {
     return @as(f64, @floatFromInt(ts.sec)) * 1000.0 + @as(f64, @floatFromInt(ts.nsec)) / 1_000_000.0;
 }
 
+fn writeAllToFd(fd: i32, bytes: []const u8) !void {
+    var written: usize = 0;
+    while (written < bytes.len) {
+        const rc = std.os.linux.write(fd, bytes.ptr + written, bytes.len - written);
+        const signed_rc: isize = @bitCast(rc);
+        if (signed_rc < 0) return error.WriteFailed;
+        if (rc == 0) return error.WriteFailed;
+        written += rc;
+    }
+}
+
 fn writeTokensToFile(path: []const u8, tokens: []const i32) !void {
     const fd = try std.posix.openat(std.posix.AT.FDCWD, path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, 0o644);
     defer _ = std.os.linux.close(fd);
     const bytes = std.mem.sliceAsBytes(tokens);
-    _ = std.os.linux.write(fd, bytes.ptr, bytes.len);
+    try writeAllToFd(fd, bytes);
 }
 
 fn writeDecisionResponseJson(allocator: std.mem.Allocator, out_json_path: []const u8, resp: zeno.DecisionResponse) !void {
     var json_list: std.ArrayList(u8) = .empty;
+    const esc_decision = try zeno.dataset.escapeJsonString(allocator, resp.decision);
 
     const header = try std.fmt.allocPrint(allocator,
         \\{{
@@ -1086,7 +1161,7 @@ fn writeDecisionResponseJson(allocator: std.mem.Allocator, out_json_path: []cons
         \\  "candidates": [
         \\
     , .{
-        resp.decision,
+        esc_decision,
         resp.decision_probability,
         resp.entropy_nats,
         resp.normalized_entropy,
@@ -1099,6 +1174,7 @@ fn writeDecisionResponseJson(allocator: std.mem.Allocator, out_json_path: []cons
     for (resp.candidates, 0..) |c, i| {
         const sc = zeno.ops.logitSoftcap(c.raw_logit, zeno.ModelConfig.logit_softcap);
         const comma = if (i + 1 < resp.candidates.len) "," else "";
+        const esc_label = try zeno.dataset.escapeJsonString(allocator, c.label);
         const cand_str = try std.fmt.allocPrint(allocator,
             \\    {{
             \\      "label": "{s}",
@@ -1109,7 +1185,7 @@ fn writeDecisionResponseJson(allocator: std.mem.Allocator, out_json_path: []cons
             \\    }}{s}
             \\
         , .{
-            c.label,
+            esc_label,
             c.token_id,
             c.raw_logit,
             sc,
@@ -1123,7 +1199,7 @@ fn writeDecisionResponseJson(allocator: std.mem.Allocator, out_json_path: []cons
 
     const out_fd = try std.posix.openat(std.posix.AT.FDCWD, out_json_path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, 0o644);
     defer _ = std.os.linux.close(out_fd);
-    _ = std.os.linux.write(out_fd, json_list.items.ptr, json_list.items.len);
+    try writeAllToFd(out_fd, json_list.items);
 }
 
 test "main module compilation test" {

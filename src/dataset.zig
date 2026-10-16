@@ -76,7 +76,7 @@ pub fn loadDataset(allocator: std.mem.Allocator, path: []const u8) !std.json.Par
     });
 }
 
-fn escapeJsonString(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
+pub fn escapeJsonString(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     var list: std.ArrayList(u8) = .empty;
     for (input) |byte| {
         switch (byte) {

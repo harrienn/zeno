@@ -132,18 +132,16 @@ pub const CudaStream = struct {
         return moved;
     }
 
-    /// Idempotent stream destruction. If stream destruction fails, logs error
-    /// and retains handle in release mode so the resource failure is not masked (R18-03).
+    /// Idempotent stream destruction. Clears handle unconditionally and logs/asserts if destruction fails (R29-06).
     pub fn deinit(self: *CudaStream) void {
         if (!cuda.is_enabled) return;
         if (self.handle) |h| {
+            self.handle = null;
             const rc = cuda.c.zeno_cuda_stream_destroy(h, self.device_id);
             if (rc != 0) {
                 std.log.err("zeno_cuda_stream_destroy failed for device {d} with rc={d}", .{ self.device_id, rc });
                 std.debug.assert(rc == 0);
-                return;
             }
-            self.handle = null;
         }
     }
 
@@ -305,19 +303,17 @@ pub fn DeviceBuffer(comptime T: type) type {
             return moved;
         }
 
-        /// Idempotent device buffer deallocation. If free fails, logs error
-        /// and retains pointer in release mode to preserve trackable state (R16-02).
+        /// Idempotent device buffer deallocation. Clears pointer unconditionally and logs/asserts if free fails (R29-06).
         pub fn deinit(self: *Self) void {
             if (!cuda.is_enabled) return;
             if (self.ptr) |p| {
+                self.ptr = null;
+                self.len = 0;
                 const rc = cuda.c.zeno_cuda_free(p, self.device_id);
                 if (rc != 0) {
                     std.log.err("zeno_cuda_free failed for device {d} with rc={d}", .{ self.device_id, rc });
                     std.debug.assert(rc == 0);
-                    return;
                 }
-                self.ptr = null;
-                self.len = 0;
             }
         }
 
@@ -997,6 +993,13 @@ pub fn attentionCached(
     if (num_q_heads == 0 or num_kv_heads == 0) return error.InvalidParam;
     if (num_q_heads % num_kv_heads != 0) return error.InvalidParam;
     if (head_dim != 256 and head_dim != 512) return error.InvalidParam;
+    if (stride_q < num_q_heads * head_dim or
+        stride_k < num_kv_heads * head_dim or
+        stride_v < num_kv_heads * head_dim or
+        stride_out < num_q_heads * head_dim)
+    {
+        return error.InvalidParam;
+    }
 
     const dev = q.device_id;
     if (canvas_k.device_id != dev or canvas_v.device_id != dev or out.device_id != dev) {

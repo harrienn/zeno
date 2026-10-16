@@ -69,26 +69,32 @@ pub fn evaluateReferenceParity(
     resp: decision.DecisionResponse,
 ) ParityReport {
     const dec_match = std.mem.eql(u8, fix.expected.decision, resp.decision);
-    var max_raw: f32 = 0.0;
-    var max_sc: f32 = 0.0;
-    var max_prob: f32 = 0.0;
-    for (fix.expected.candidate_logits_raw, resp.candidates, 0..) |exp_raw, cand, i| {
-        const raw_diff = @abs(exp_raw - cand.raw_logit);
-        if (raw_diff > max_raw) max_raw = raw_diff;
+    const len_match = (fix.expected.candidate_logits_raw.len == resp.candidates.len) and
+        (fix.expected.candidate_logits_softcapped.len == resp.candidates.len) and
+        (fix.expected.probabilities.len == resp.candidates.len);
 
-        const cand_sc = root.ops.logitSoftcap(cand.raw_logit, root.ModelConfig.logit_softcap);
-        const sc_diff = @abs(fix.expected.candidate_logits_softcapped[i] - cand_sc);
-        if (sc_diff > max_sc) max_sc = sc_diff;
+    var max_raw: f32 = if (len_match) 0.0 else std.math.inf(f32);
+    var max_sc: f32 = if (len_match) 0.0 else std.math.inf(f32);
+    var max_prob: f32 = if (len_match) 0.0 else std.math.inf(f32);
+    if (len_match) {
+        for (fix.expected.candidate_logits_raw, resp.candidates, 0..) |exp_raw, cand, i| {
+            const raw_diff = @abs(exp_raw - cand.raw_logit);
+            if (raw_diff > max_raw) max_raw = raw_diff;
 
-        const prob_diff = @abs(fix.expected.probabilities[i] - cand.probability);
-        if (prob_diff > max_prob) max_prob = prob_diff;
+            const cand_sc = root.ops.logitSoftcap(cand.raw_logit, root.ModelConfig.logit_softcap);
+            const sc_diff = @abs(fix.expected.candidate_logits_softcapped[i] - cand_sc);
+            if (sc_diff > max_sc) max_sc = sc_diff;
+
+            const prob_diff = @abs(fix.expected.probabilities[i] - cand.probability);
+            if (prob_diff > max_prob) max_prob = prob_diff;
+        }
     }
 
     const h_diff = @abs(fix.expected.entropy_nats - resp.entropy_nats);
     const h_norm_diff = @abs(fix.expected.normalized_entropy - resp.normalized_entropy);
     const unc_match = fix.expected.uncertain == resp.uncertain;
 
-    const meets_tol = dec_match and unc_match and
+    const meets_tol = len_match and dec_match and unc_match and
         (max_raw <= 0.5) and (max_sc <= 0.5) and
         (max_prob <= 0.05) and (h_diff <= 0.05) and (h_norm_diff <= 0.05);
 
@@ -217,6 +223,7 @@ pub fn validateFixture(
     try std.testing.expectEqual(baseline.uncertain, resp.uncertain);
     try std.testing.expectEqual(baseline.candidate_logits_raw.len, resp.candidates.len);
     try std.testing.expectEqual(baseline.candidate_logits_softcapped.len, resp.candidates.len);
+    try std.testing.expectEqual(baseline.probabilities.len, resp.candidates.len);
 
     for (baseline.candidate_logits_raw, resp.candidates, 0..) |expected_raw, actual_cand, i| {
         try std.testing.expectApproxEqAbs(expected_raw, actual_cand.raw_logit, 0.5);
@@ -229,7 +236,13 @@ pub fn validateFixture(
     try std.testing.expectApproxEqAbs(baseline.normalized_entropy, resp.normalized_entropy, 0.05);
 
     try std.testing.expectEqual(fix.canvas_length, root.ModelConfig.canvas_length);
-    try std.testing.expect(fix.answer_pos + 1 <= resp.canvas_tokens_used);
+    try std.testing.expectEqual(@as(usize, 0), fix.answer_pos);
+    try std.testing.expectEqual(root.SpecialTokens.mask, fix.answer_seed_token);
+    if (fix.prompt_tokens) |recorded_prompt| {
+        try std.testing.expectEqual(@as(u32, @intCast(recorded_prompt.len + fix.answer_pos + 1)), resp.canvas_tokens_used);
+    } else {
+        try std.testing.expect(fix.answer_pos + 1 <= resp.canvas_tokens_used);
+    }
 }
 
 test "loadFixture: parses zeno.fixture/v1 correctly" {

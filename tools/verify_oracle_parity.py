@@ -167,6 +167,9 @@ def main():
             if strict_parity:
                 print("Error: Strict parity required but tolerances exceeded.")
                 sys.exit(1)
+    elif strict_parity:
+        print("Error: --strict-parity requires a <zeno_decision_json> path argument.")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

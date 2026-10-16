@@ -373,57 +373,6 @@ pub const CudaModel = struct {
         model_ptr.sc_up = null;
         model_ptr.sc_down = null;
 
-        // Load rope_freqs if present
-        if (cpu_model.rope_freqs) |rf| {
-            const rf_slice = getExactTensorSlice(cpu_model, rf);
-            const rf_count = rf_slice.len / @sizeOf(f32);
-            var rf0 = try DeviceBuffer(f32).init(dev0, rf_count);
-            try rf0.copyFromHost(@as([*]const f32, @ptrCast(@alignCast(rf_slice.ptr)))[0..rf_count]);
-            model_ptr.rope_freqs_dev0 = rf0;
-
-            if (use_multi_gpu) {
-                var rf1 = try DeviceBuffer(f32).init(dev1, rf_count);
-                try rf1.copyFromHost(@as([*]const f32, @ptrCast(@alignCast(rf_slice.ptr)))[0..rf_count]);
-                model_ptr.rope_freqs_dev1 = rf1;
-            }
-        }
-
-        // Load self-conditioning tensors onto Device 0 if present (Phase 9)
-        if (cpu_model.self_cond_pre_norm != null and
-            cpu_model.self_cond_gate != null and
-            cpu_model.self_cond_up != null and
-            cpu_model.self_cond_down != null)
-        {
-            const pre_norm_info = cpu_model.self_cond_pre_norm.?;
-            const pre_norm_slice = getExactTensorSlice(cpu_model, pre_norm_info);
-            var sc_pre_norm = try DeviceBuffer(f32).init(dev0, ModelConfig.embedding_dim);
-            errdefer sc_pre_norm.deinit();
-            try sc_pre_norm.copyFromHost(@as([*]const f32, @ptrCast(@alignCast(pre_norm_slice.ptr)))[0..ModelConfig.embedding_dim]);
-            model_ptr.sc_pre_norm = sc_pre_norm;
-
-            const gate_info = cpu_model.self_cond_gate.?;
-            const gate_slice = getExactTensorSlice(cpu_model, gate_info);
-            var sc_gate = try DeviceBuffer(u8).init(dev0, gate_slice.len);
-            errdefer sc_gate.deinit();
-            try sc_gate.copyFromHost(gate_slice);
-            model_ptr.sc_gate = sc_gate;
-
-            const up_info = cpu_model.self_cond_up.?;
-            const up_slice = getExactTensorSlice(cpu_model, up_info);
-            var sc_up = try DeviceBuffer(u8).init(dev0, up_slice.len);
-            errdefer sc_up.deinit();
-            try sc_up.copyFromHost(up_slice);
-            model_ptr.sc_up = sc_up;
-
-            const down_info = cpu_model.self_cond_down.?;
-            const down_slice = getExactTensorSlice(cpu_model, down_info);
-            var sc_down = try DeviceBuffer(u8).init(dev0, down_slice.len);
-            errdefer sc_down.deinit();
-            try sc_down.copyFromHost(down_slice);
-            model_ptr.sc_down = sc_down;
-        }
-
-        // Load all 30 layers with layer-splitting
         var loaded_layers: usize = 0;
         errdefer {
             for (0..loaded_layers) |l| {
@@ -437,6 +386,71 @@ pub const CudaModel = struct {
             if (model_ptr.rope_freqs_dev1) |*rf1| rf1.deinit();
         }
 
+        // Load rope_freqs if present
+        if (cpu_model.rope_freqs) |rf| {
+            const rf_slice = getExactTensorSlice(cpu_model, rf);
+            const rf_count = rf_slice.len / @sizeOf(f32);
+            var rf0 = try DeviceBuffer(f32).init(dev0, rf_count);
+            {
+                errdefer rf0.deinit();
+                try rf0.copyFromHost(@as([*]const f32, @ptrCast(@alignCast(rf_slice.ptr)))[0..rf_count]);
+            }
+            model_ptr.rope_freqs_dev0 = rf0;
+
+            if (use_multi_gpu) {
+                var rf1 = try DeviceBuffer(f32).init(dev1, rf_count);
+                {
+                    errdefer rf1.deinit();
+                    try rf1.copyFromHost(@as([*]const f32, @ptrCast(@alignCast(rf_slice.ptr)))[0..rf_count]);
+                }
+                model_ptr.rope_freqs_dev1 = rf1;
+            }
+        }
+
+        // Load self-conditioning tensors onto Device 0 if present (Phase 9)
+        if (cpu_model.self_cond_pre_norm != null and
+            cpu_model.self_cond_gate != null and
+            cpu_model.self_cond_up != null and
+            cpu_model.self_cond_down != null)
+        {
+            const pre_norm_info = cpu_model.self_cond_pre_norm.?;
+            const pre_norm_slice = getExactTensorSlice(cpu_model, pre_norm_info);
+            var sc_pre_norm = try DeviceBuffer(f32).init(dev0, ModelConfig.embedding_dim);
+            {
+                errdefer sc_pre_norm.deinit();
+                try sc_pre_norm.copyFromHost(@as([*]const f32, @ptrCast(@alignCast(pre_norm_slice.ptr)))[0..ModelConfig.embedding_dim]);
+            }
+            model_ptr.sc_pre_norm = sc_pre_norm;
+
+            const gate_info = cpu_model.self_cond_gate.?;
+            const gate_slice = getExactTensorSlice(cpu_model, gate_info);
+            var sc_gate = try DeviceBuffer(u8).init(dev0, gate_slice.len);
+            {
+                errdefer sc_gate.deinit();
+                try sc_gate.copyFromHost(gate_slice);
+            }
+            model_ptr.sc_gate = sc_gate;
+
+            const up_info = cpu_model.self_cond_up.?;
+            const up_slice = getExactTensorSlice(cpu_model, up_info);
+            var sc_up = try DeviceBuffer(u8).init(dev0, up_slice.len);
+            {
+                errdefer sc_up.deinit();
+                try sc_up.copyFromHost(up_slice);
+            }
+            model_ptr.sc_up = sc_up;
+
+            const down_info = cpu_model.self_cond_down.?;
+            const down_slice = getExactTensorSlice(cpu_model, down_info);
+            var sc_down = try DeviceBuffer(u8).init(dev0, down_slice.len);
+            {
+                errdefer sc_down.deinit();
+                try sc_down.copyFromHost(down_slice);
+            }
+            model_ptr.sc_down = sc_down;
+        }
+
+        // Load all 30 layers with layer-splitting
         for (0..ModelConfig.num_layers) |l| {
             const target_dev = if (topology == .dual_gpu_split and l >= 15) dev1 else dev0;
             model_ptr.layers[l] = try CudaLayerWeights.initFromModelLayer(cpu_model, l, target_dev);
@@ -529,9 +543,9 @@ pub const CudaDeviceWorkspace = struct {
     allocator: std.mem.Allocator,
 
     pub const max_device_layers: usize = 30;
-    pub const max_prompt_tokens: usize = 512;
+    pub const max_cached_prompt_tokens: usize = 512;
     pub const max_k_dim_cached: usize = 2048; // Max across SWA (8*256=2048) and Global (2*512=1024) layers (R26-01)
-    pub const cache_floats_per_layer: usize = max_prompt_tokens * max_k_dim_cached;
+    pub const cache_floats_per_layer: usize = max_cached_prompt_tokens * max_k_dim_cached;
     pub const cache_total_floats: usize = max_device_layers * cache_floats_per_layer;
 
     pub fn init(allocator: std.mem.Allocator, device_id: i32, max_seq_len: usize) !CudaDeviceWorkspace {
@@ -1349,7 +1363,7 @@ pub fn prefillPromptCuda(
 ) !void {
     const P = prompt_tokens.len;
     if (P == 0) return;
-    if (P > ws.dev0.max_seq_len or P > CudaDeviceWorkspace.max_prompt_tokens) return error.InvalidParam;
+    if (P > ws.dev0.max_seq_len or P > CudaDeviceWorkspace.max_cached_prompt_tokens) return error.InvalidParam;
 
     const host_emb = ws.host_staging_buf[0 .. P * ModelConfig.embedding_dim];
     const emb_scale: f32 = @sqrt(@as(f32, @floatFromInt(ModelConfig.embedding_dim)));
@@ -1571,7 +1585,7 @@ pub fn executeStructuredReadCuda(
     out_softcapped_logits: []f32,
 ) !void {
     if (!is_enabled) return error.CudaDisabledAtBuild;
-    std.debug.assert(answer_pos < canvas_tokens.len);
+    if (answer_pos >= canvas_tokens.len) return error.InvalidParam;
 
     const P = prompt_tokens.len;
     const C = canvas_tokens.len;
@@ -1579,7 +1593,7 @@ pub fn executeStructuredReadCuda(
     if (N > ws.dev0.max_seq_len or N > 512) return error.InvalidParam;
 
     // Phase 7B: Prompt KV prefix caching and canvas-only forward pass execution
-    if (enable_prompt_cache and P > 0 and P <= CudaDeviceWorkspace.max_prompt_tokens) {
+    if (enable_prompt_cache and P > 0 and P <= CudaDeviceWorkspace.max_cached_prompt_tokens) {
         const prompt_hash = std.hash.Wyhash.hash(0, std.mem.sliceAsBytes(prompt_tokens));
         const prompt_hit = ws.prompt_cache_valid and ws.cached_prompt_hash == prompt_hash and ws.cached_prompt_len == P;
 

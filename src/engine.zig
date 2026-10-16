@@ -21,7 +21,7 @@ pub const BackendType = enum {
 pub const EngineOptions = struct {
     backend: BackendType = .cpu,
     force_single_gpu: bool = false,
-    workspace_seq_len: usize = 512,
+    workspace_seq_len: usize = root.ModelConfig.max_seq_len,
 };
 
 pub const DecisionRequest = decision.DecisionRequest;
@@ -98,7 +98,8 @@ pub const DecisionEngine = struct {
                 if (!infer_cuda.is_enabled) return error.CudaDisabledAtBuild;
                 const cm = try infer_cuda.CudaModel.initFromCpuModel(allocator, model, options.force_single_gpu);
                 cuda_model = cm;
-                const cws = try infer_cuda.CudaWorkspace.init(allocator, cm.topology, cm.devices, options.workspace_seq_len);
+                const cuda_seq_len = @min(options.workspace_seq_len, 512);
+                const cws = try infer_cuda.CudaWorkspace.init(allocator, cm.topology, cm.devices, cuda_seq_len);
                 cuda_ws = cws;
             },
         }

@@ -74,6 +74,8 @@ def compute_brier_score(results: List[Dict[str, Any]]) -> float:
     for r in results:
         gt = r["ground_truth"]
         cands = r["candidates"]
+        if not any(c["label"] == gt for c in cands):
+            raise ValueError(f"ground_truth '{gt}' not found in candidate labels for id '{r.get('id', 'unknown')}'")
         for c in cands:
             prob = float(c["probability"])
             target = 1.0 if c["label"] == gt else 0.0
@@ -86,11 +88,15 @@ def compute_nll(results: List[Dict[str, Any]]) -> float:
     for r in results:
         gt = r["ground_truth"]
         cands = r["candidates"]
+        found = False
         prob_gt = 1e-12
         for c in cands:
             if c["label"] == gt:
                 prob_gt = max(float(c["probability"]), 1e-12)
+                found = True
                 break
+        if not found:
+            raise ValueError(f"ground_truth '{gt}' not found in candidate labels for id '{r.get('id', 'unknown')}'")
         total_nll += -math.log(prob_gt)
     return total_nll / len(results) if results else 0.0
 
@@ -105,8 +111,8 @@ def compute_selective_risk(results: List[Dict[str, Any]]) -> List[Dict[str, Any]
         cov_count = len(covered)
         cov_pct = (cov_count / total) * 100.0 if total > 0 else 0.0
         correct_cov = sum(1 for r in covered if r["is_correct"])
-        acc_cov = (correct_cov / cov_count) * 100.0 if cov_count > 0 else 100.0
-        risk_cov = 100.0 - acc_cov
+        acc_cov = (correct_cov / cov_count) * 100.0 if cov_count > 0 else None
+        risk_cov = (100.0 - acc_cov) if acc_cov is not None else None
         curve.append({
             "threshold": tau,
             "coverage_pct": cov_pct,
@@ -195,7 +201,9 @@ def print_single_report(analysis: Dict[str, Any]):
     print("| Entropy Cutoff (tau) | Coverage (%) | Covered Queries | Selective Acc (%) | Selective Risk (%) |")
     print("|:---------------------|-------------:|----------------:|------------------:|-------------------:|")
     for s in analysis["selective"]:
-        print(f"| < {s['threshold']:<17.1f} | {s['coverage_pct']:>11.1f}% | {s['covered_count']:>15} | {s['selective_acc']:>16.2f}% | {s['selective_risk']:>17.2f}% |")
+        acc_str = f"{s['selective_acc']:>16.2f}%" if s["selective_acc"] is not None else f"{'N/A':>17}"
+        risk_str = f"{s['selective_risk']:>17.2f}%" if s["selective_risk"] is not None else f"{'N/A':>18}"
+        print(f"| < {s['threshold']:<17.1f} | {s['coverage_pct']:>11.1f}% | {s['covered_count']:>15} | {acc_str} | {risk_str} |")
 
     print("\n--- Category Breakdown ---")
     print("| Category                 | Count | Accuracy (%) | Mean Conf | Mean H_norm |")
