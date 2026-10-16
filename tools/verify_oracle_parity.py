@@ -205,7 +205,7 @@ def main():
             print("\n✓ Full numerical parity PASS under U-22 tolerance policy.")
         else:
             print(f"\n! Numerical cross-engine divergence exceeds U-22 tolerance budget (max raw delta={max_raw_delta:.4f} > 0.5, max prob delta={max_prob_delta:.4f}, max H delta={d_entropy:.4f}).")
-            print("  Status: Discrete decision PASSED, but cross-engine numerical parity gates U-13/U-22 remain OPEN.")
+            print("  Status: Discrete decision PASSED, but cross-engine numerical parity gate U-22 remains OPEN.")
             if strict_parity:
                 print("Error: Strict parity required but tolerances exceeded.")
                 sys.exit(1)

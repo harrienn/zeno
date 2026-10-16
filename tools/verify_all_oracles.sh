@@ -6,7 +6,7 @@ set -euo pipefail
 
 USE_CUDA=0
 STRICT_PARITY=0
-MODEL_PATH="models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf"
+MODEL_PATH=""
 
 for arg in "$@"; do
     case "$arg" in
@@ -16,13 +16,24 @@ for arg in "$@"; do
         --strict-parity)
             STRICT_PARITY=1
             ;;
+        -*)
+            echo "Error: Unknown option '$arg'" >&2
+            echo "Usage: $0 [--cuda] [--strict-parity] [path/to/model.gguf]" >&2
+            exit 1
+            ;;
         *)
-            if [ -f "$arg" ]; then
+            if [ -z "${MODEL_PATH}" ]; then
                 MODEL_PATH="$arg"
+            else
+                echo "Error: Unexpected extra argument '$arg'" >&2
+                echo "Usage: $0 [--cuda] [--strict-parity] [path/to/model.gguf]" >&2
+                exit 1
             fi
             ;;
     esac
 done
+
+MODEL_PATH="${MODEL_PATH:-models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf}"
 
 LLAMA_CPP_DIR="${LLAMA_CPP_DIR:-/hdd/Projects/llama.cpp}"
 LLAMA_EVAL="${LLAMA_EVAL_BIN:-${LLAMA_CPP_DIR}/build/bin/llama-diffusion-gemma-eval}"
@@ -115,5 +126,5 @@ echo "================================================================="
 echo " Verification Suite Complete: ${PROCESSED}/${TOTAL} Fixtures Evaluated"
 echo " Discrete Decision Parity: 5/5 PASSED (100% exact match)"
 echo " Reference Oracle Reproduction: 5/5 PASSED"
-echo " Note: Cross-engine numerical logit/prob parity remains OPEN under U-13 / U-22."
+echo " Note: Cross-engine numerical logit/prob parity remains OPEN under U-22."
 echo "================================================================="
