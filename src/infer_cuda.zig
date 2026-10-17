@@ -14,6 +14,7 @@ const quant = @import("quant.zig");
 const ops = @import("ops.zig");
 const infer = @import("infer.zig");
 const gguf = @import("gguf.zig");
+const decision = @import("decision.zig");
 
 pub const is_enabled = cuda.is_enabled;
 pub const ModelConfig = root.ModelConfig;
@@ -23,6 +24,7 @@ pub const Canvas = canvas_mod.Canvas;
 pub const DeviceBuffer = cuda_mem.DeviceBuffer;
 pub const DeviceSlice = cuda_mem.DeviceSlice;
 pub const CudaStream = cuda_mem.CudaStream;
+pub const StageTimings = decision.StageTimings;
 
 pub fn getTensorByteSize(tensor: gguf.TensorInfo) usize {
     var total_elements: usize = 1;
@@ -779,6 +781,17 @@ pub const CudaWorkspace = struct {
     cached_prompt_len: usize,
     prompt_cache_valid: bool,
 
+    // Stage-level profiling timings (Review Round 34 Option 1)
+    last_stage_timings: decision.StageTimings,
+    last_canvas_ms: f32,
+
+    pub fn synchronize(self: *CudaWorkspace) !void {
+        try self.dev0.stream.synchronize();
+        if (self.dev1) |*d1| {
+            try d1.stream.synchronize();
+        }
+    }
+
     pub fn init(allocator: std.mem.Allocator, topology: ExecutionTopology, devices: [2]i32, max_seq_len: usize) !*CudaWorkspace {
         const ws_ptr = try allocator.create(CudaWorkspace);
         errdefer allocator.destroy(ws_ptr);
@@ -826,6 +839,8 @@ pub const CudaWorkspace = struct {
         ws_ptr.cached_prompt_hash = 0;
         ws_ptr.cached_prompt_len = 0;
         ws_ptr.prompt_cache_valid = false;
+        ws_ptr.last_stage_timings = .{};
+        ws_ptr.last_canvas_ms = 0.0;
 
         return ws_ptr;
     }
@@ -834,6 +849,8 @@ pub const CudaWorkspace = struct {
         self.cached_prompt_hash = 0;
         self.cached_prompt_len = 0;
         self.prompt_cache_valid = false;
+        self.last_stage_timings = .{};
+        self.last_canvas_ms = 0.0;
         if (self.graph1) |*g1| {
             g1.deinit();
             self.graph1 = null;
@@ -1378,12 +1395,11 @@ pub fn prefillPromptCuda(
     ws.dev0.resetBufferPointers();
     if (ws.dev1) |*d1| d1.resetBufferPointers();
 
-    try ws.dev0.stream.synchronize();
-    if (ws.dev1) |*d1| try d1.stream.synchronize();
+    try ws.synchronize();
+    const t_prefill_start = decision.getMonotonicNanos();
 
     const d0_emb_slice = try ws.dev0.current_emb.slice().subslice(0, P * ModelConfig.embedding_dim);
     try d0_emb_slice.copyFromHost(host_emb);
-    try ws.dev0.stream.synchronize();
 
     if (model.topology == .single_gpu) {
         for (0..ModelConfig.num_layers) |l| {
@@ -1392,6 +1408,13 @@ pub fn prefillPromptCuda(
             try runLayerCuda(&ws.dev0, &model.layers[l], P, P, rf_slice, l);
         }
         try ws.dev0.stream.synchronize();
+        const t_end = decision.getMonotonicNanos();
+        const dur = @as(f32, @floatFromInt(t_end - t_prefill_start)) / 1_000_000.0;
+        ws.last_stage_timings.prompt_p0_ms = dur;
+        ws.last_stage_timings.prompt_transfer_ms = 0.0;
+        ws.last_stage_timings.prompt_p1_ms = 0.0;
+        ws.last_stage_timings.prompt_prefill_ms = dur;
+        ws.last_stage_timings.prompt_cache_hit = false;
     } else {
         var dev1 = &ws.dev1.?;
         for (0..15) |l| {
@@ -1399,11 +1422,16 @@ pub fn prefillPromptCuda(
             const rf_slice = if (rf) |r| r.slice() else null;
             try runLayerCuda(&ws.dev0, &model.layers[l], P, P, rf_slice, l);
         }
+        try ws.dev0.stream.synchronize();
+        const t_p0 = decision.getMonotonicNanos();
 
         const d0_out_slice = try ws.dev0.emb_buf_1.slice().subslice(0, P * ModelConfig.embedding_dim);
         const d1_in_slice = try dev1.emb_buf_0.slice().subslice(0, P * ModelConfig.embedding_dim);
         const ev_opt = if (ws.boundary_event) |*ev| ev else null;
         try transferHiddenState(d0_out_slice, d1_in_slice, &ws.dev0.stream, &dev1.stream, ev_opt, ws.host_staging_buf, ws.peer_access_enabled);
+        try dev1.stream.synchronize();
+        try ws.dev0.stream.synchronize();
+        const t_tr = decision.getMonotonicNanos();
 
         for (15..30) |l| {
             const dev_layer_idx = l - 15;
@@ -1414,6 +1442,13 @@ pub fn prefillPromptCuda(
 
         try dev1.stream.synchronize();
         try ws.dev0.stream.synchronize();
+        const t_p1 = decision.getMonotonicNanos();
+
+        ws.last_stage_timings.prompt_p0_ms = @as(f32, @floatFromInt(t_p0 - t_prefill_start)) / 1_000_000.0;
+        ws.last_stage_timings.prompt_transfer_ms = @as(f32, @floatFromInt(t_tr - t_p0)) / 1_000_000.0;
+        ws.last_stage_timings.prompt_p1_ms = @as(f32, @floatFromInt(t_p1 - t_tr)) / 1_000_000.0;
+        ws.last_stage_timings.prompt_prefill_ms = @as(f32, @floatFromInt(t_p1 - t_prefill_start)) / 1_000_000.0;
+        ws.last_stage_timings.prompt_cache_hit = false;
     }
 }
 
@@ -1603,6 +1638,12 @@ pub fn executeStructuredReadCuda(
             ws.cached_prompt_hash = prompt_hash;
             ws.cached_prompt_len = P;
             ws.prompt_cache_valid = true;
+        } else {
+            ws.last_stage_timings.prompt_p0_ms = 0.0;
+            ws.last_stage_timings.prompt_transfer_ms = 0.0;
+            ws.last_stage_timings.prompt_p1_ms = 0.0;
+            ws.last_stage_timings.prompt_prefill_ms = 0.0;
+            ws.last_stage_timings.prompt_cache_hit = true;
         }
 
         // Embed canvas tokens on host
@@ -1621,8 +1662,8 @@ pub fn executeStructuredReadCuda(
         ws.dev0.resetBufferPointers();
         if (ws.dev1) |*d1| d1.resetBufferPointers();
 
-        try ws.dev0.stream.synchronize();
-        if (ws.dev1) |*d1| try d1.stream.synchronize();
+        try ws.synchronize();
+        const t_canvas_start = decision.getMonotonicNanos();
 
         const d0_emb_slice = try ws.dev0.current_emb.slice().subslice(0, C * ModelConfig.embedding_dim);
         try d0_emb_slice.copyFromHost(host_emb);
@@ -1879,6 +1920,9 @@ pub fn executeStructuredReadCuda(
             try dev1.stream.synchronize();
         }
 
+        const t_canvas_end = decision.getMonotonicNanos();
+        ws.last_canvas_ms = @as(f32, @floatFromInt(t_canvas_end - t_canvas_start)) / 1_000_000.0;
+
         // Project candidate logits on host using Q6_K dot products
         infer.readCandidateLogits(cpu_model, ws.host_norm_hidden, candidate_token_ids, out_raw_logits, out_softcapped_logits);
         return;
@@ -1912,8 +1956,8 @@ pub fn executeStructuredReadCuda(
     ws.dev0.resetBufferPointers();
     if (ws.dev1) |*d1| d1.resetBufferPointers();
 
-    try ws.dev0.stream.synchronize();
-    if (ws.dev1) |*d1| try d1.stream.synchronize();
+    try ws.synchronize();
+    const t_fallback_start = decision.getMonotonicNanos();
 
     const d0_emb_slice = try ws.dev0.current_emb.slice().subslice(0, N * ModelConfig.embedding_dim);
     try d0_emb_slice.copyFromHost(host_emb);
@@ -2131,6 +2175,14 @@ pub fn executeStructuredReadCuda(
         try dev1.norm_hidden.copyToHost(ws.host_norm_hidden);
         try dev1.stream.synchronize();
     }
+
+    const t_fallback_end = decision.getMonotonicNanos();
+    ws.last_canvas_ms = @as(f32, @floatFromInt(t_fallback_end - t_fallback_start)) / 1_000_000.0;
+    ws.last_stage_timings.prompt_p0_ms = 0.0;
+    ws.last_stage_timings.prompt_transfer_ms = 0.0;
+    ws.last_stage_timings.prompt_p1_ms = 0.0;
+    ws.last_stage_timings.prompt_prefill_ms = 0.0;
+    ws.last_stage_timings.prompt_cache_hit = false;
 
     // 4. Project candidate logits on host using Q6_K dot products
     infer.readCandidateLogits(cpu_model, ws.host_norm_hidden, candidate_token_ids, out_raw_logits, out_softcapped_logits);

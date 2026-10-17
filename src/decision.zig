@@ -47,6 +47,33 @@ pub const DecisionRequest = struct {
     canvas_length: ?usize = null,
 };
 
+/// Returns monotonic host clock in nanoseconds for stage-level profiling.
+pub fn getMonotonicNanos() i128 {
+    var ts: std.os.linux.timespec = undefined;
+    _ = std.os.linux.clock_gettime(.MONOTONIC, &ts);
+    return @as(i128, ts.sec) * 1_000_000_000 + @as(i128, ts.nsec);
+}
+
+/// Device-synchronized stage-level execution latency measurements in milliseconds.
+pub const StageTimings = struct {
+    /// Cold prompt prefill latency across all transformer layers (0.0 ms on KV cache hit).
+    prompt_prefill_ms: f32 = 0.0,
+    /// Partition 0 (layers 0..14 on GPU 0) prefill latency.
+    prompt_p0_ms: f32 = 0.0,
+    /// Cross-device tensor boundary transfer latency for prompt prefill.
+    prompt_transfer_ms: f32 = 0.0,
+    /// Partition 1 (layers 15..29 on GPU 1) prefill latency.
+    prompt_p1_ms: f32 = 0.0,
+    /// First-pass canvas evaluation latency across all layers and output projection.
+    canvas_step1_ms: f32 = 0.0,
+    /// Second-pass self-conditioning canvas evaluation latency (0.0 ms if step 2 not triggered).
+    canvas_step2_ms: f32 = 0.0,
+    /// Total decision execution latency measured from engine request entry to completion.
+    total_engine_ms: f32 = 0.0,
+    /// True if prompt KV cache hit was reused directly without re-prefilling.
+    prompt_cache_hit: bool = false,
+};
+
 /// Decision response payload.
 pub const DecisionResponse = struct {
     /// Display label of the highest scoring candidate.
@@ -65,6 +92,8 @@ pub const DecisionResponse = struct {
     steps_executed: u32,
     /// Number of tokens evaluated up to and including the pinned answer token (prompt_len + 1).
     canvas_tokens_used: u32,
+    /// Device-synchronized stage-level timing breakdown in milliseconds (optional).
+    timings: ?StageTimings = null,
 };
 
 /// Validation errors for DecisionRequest.

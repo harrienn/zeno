@@ -77,8 +77,12 @@ def main():
         sys.exit(1)
 
     print(f"Starting Zeno API server on {BASE_URL}...")
+    server_cmd = ["./zig-out/bin/zeno", "serve", MODEL_PATH, "--host", SERVER_HOST, "--port", str(SERVER_PORT)]
+    if "--cuda" in sys.argv:
+        server_cmd.append("--cuda")
+
     server_proc = subprocess.Popen(
-        ["./zig-out/bin/zeno", "serve", MODEL_PATH, "--host", SERVER_HOST, "--port", str(SERVER_PORT)],
+        server_cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -116,8 +120,8 @@ def main():
         assert "error" in data and data["error"].get("code") == "not_found"
         print(f"✓ Correctly returned 404: {data}")
 
-        # Test 4: Schema validation: unsupported step_cap > 1 (400 Bad Request)
-        print("\n--- Test 4: Schema validation (step_cap > 1) ---")
+        # Test 4: Schema validation: unsupported step_cap > 4 (400 Bad Request)
+        print("\n--- Test 4: Schema validation (step_cap > 4) ---")
         status, data = test_request("POST", "/v1/systemone", body={
             "query": "Is system healthy?",
             "schema": {
@@ -127,11 +131,11 @@ def main():
                     {"token": "No", "label": "No"}
                 ]
             },
-            "options": {"step_cap": 2}
+            "options": {"step_cap": 5}
         })
         assert status == 400, f"Expected 400, got {status}"
         assert "error" in data and data["error"].get("code") == "unsupported_step_cap"
-        print(f"✓ Correctly returned 400 for step_cap > 1: {data}")
+        print(f"✓ Correctly returned 400 for step_cap > 4: {data}")
 
         # Test 5: Schema validation: fewer than 2 candidates
         print("\n--- Test 5: Schema validation (too few candidates) ---")

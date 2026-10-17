@@ -83,7 +83,17 @@ The decision engine strictly validates that all candidate choices resolve to sin
     }
   ],
   "steps_executed": 1,
-  "canvas_tokens_used": 68
+  "canvas_tokens_used": 68,
+  "timings": {
+    "prompt_prefill_ms": 482.120,
+    "prompt_p0_ms": 235.400,
+    "prompt_transfer_ms": 9.150,
+    "prompt_p1_ms": 237.570,
+    "canvas_step1_ms": 612.430,
+    "canvas_step2_ms": 0.000,
+    "total_engine_ms": 1104.200,
+    "prompt_cache_hit": false
+  }
 }
 ```
 
@@ -100,6 +110,15 @@ The decision engine strictly validates that all candidate choices resolve to sin
 * **`uncertain`**: Set to `true` **only when `options.entropy_threshold` was supplied** and `normalized_entropy >= entropy_threshold`. If the threshold is omitted, `uncertain` is always `false`. Entropy is a dispersion measure, not a correctness estimate. *An earlier revision of this document stated "supplied or defaulted", contradicting the field table in §3.1. The field table is normative, and this reading is corroborated by [`denoising.md`](denoising.md) §2.1. See [`UNRESOLVED.md`](UNRESOLVED.md) U-21.*
 * **`steps_executed`**: Number of forward/adaptation steps executed ($t \in [1, \text{step\_cap}]$). Single-step reads return 1. Multi-step adaptive runs terminate early if $H_{\text{norm}} < \tau_{\text{entropy}}$, returning the number of steps actually executed. These candidate-restricted steps are not a claim of full DiffusionGemma sampler execution.
 * **`canvas_tokens_used`**: The number of prompt and answer positions, i.e. `answer_pos + 1`. It excludes the `TURN_CLOSE` and padded tail positions specified by U-02 in [`UNRESOLVED.md`](UNRESOLVED.md).
+* **`timings`**: Optional device-synchronized stage-level timing breakdown in milliseconds:
+  * `prompt_prefill_ms`: Cold prompt prefill latency across all transformer layers (0.0 ms when prompt KV cache is reused).
+  * `prompt_p0_ms`: Partition 0 (GPU 0, layers 0–14) prefill execution time.
+  * `prompt_transfer_ms`: Cross-device hidden state boundary transfer latency ($H_{15}$ GPU 0 $\to$ GPU 1).
+  * `prompt_p1_ms`: Partition 1 (GPU 1, layers 15–29) prefill execution time.
+  * `canvas_step1_ms`: First-pass canvas evaluation latency across all transformer layers and output logit projection.
+  * `canvas_step2_ms`: Second-pass self-conditioning canvas evaluation latency (0.0 ms if step 2 was not triggered).
+  * `total_engine_ms`: Total execution time from decision request entry to completion.
+  * `prompt_cache_hit`: Boolean flag indicating whether the precomputed prompt KV cache was hit and reused directly.
 
 ### 3.3 HTTP Error Envelope and Status Codes
 

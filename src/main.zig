@@ -468,6 +468,18 @@ pub fn main(init: std.process.Init) !void {
         try stdout_writer.print("Normalized Entropy: {d:.4}\n", .{resp.normalized_entropy});
         try stdout_writer.print("Uncertain:          {}\n", .{resp.uncertain});
         try stdout_writer.print("Steps Executed:     {d}\n", .{resp.steps_executed});
+        if (resp.timings) |t| {
+            try stdout_writer.print("Timings (ms):       Prefill: {d:.2} (P0: {d:.2}, Transfer: {d:.2}, P1: {d:.2}, Hit: {}) | Canvas Step1: {d:.2} | Step2: {d:.2} | Total Engine: {d:.2}\n", .{
+                t.prompt_prefill_ms,
+                t.prompt_p0_ms,
+                t.prompt_transfer_ms,
+                t.prompt_p1_ms,
+                t.prompt_cache_hit,
+                t.canvas_step1_ms,
+                t.canvas_step2_ms,
+                t.total_engine_ms,
+            });
+        }
         try stdout_writer.print("Candidates:\n", .{});
         for (resp.candidates) |c| {
             const sc = zeno.ops.logitSoftcap(c.raw_logit, zeno.ModelConfig.logit_softcap);
@@ -609,6 +621,11 @@ pub fn main(init: std.process.Init) !void {
         var latencies = try arena.alloc(f64, ds.examples.len);
         var sum_norm_entropy: f64 = 0.0;
         var uncertain_count: usize = 0;
+        var total_prefill_ms: f64 = 0.0;
+        var cold_prefill_count: usize = 0;
+        var total_canvas_step1_ms: f64 = 0.0;
+        var total_canvas_step2_ms: f64 = 0.0;
+        var step2_count: usize = 0;
 
         for (ds.examples, 0..) |ex, idx| {
             var cands = try arena.alloc(zeno.CandidateSpec, ex.candidates.len);
@@ -636,6 +653,18 @@ pub fn main(init: std.process.Init) !void {
             total_latency_ms += latency;
             sum_norm_entropy += resp.normalized_entropy;
 
+            if (resp.timings) |t| {
+                if (!t.prompt_cache_hit) {
+                    total_prefill_ms += t.prompt_prefill_ms;
+                    cold_prefill_count += 1;
+                }
+                total_canvas_step1_ms += t.canvas_step1_ms;
+                if (t.canvas_step2_ms > 0.0) {
+                    total_canvas_step2_ms += t.canvas_step2_ms;
+                    step2_count += 1;
+                }
+            }
+
             const is_correct = std.mem.eql(u8, resp.decision, ex.ground_truth);
             if (is_correct) correct_count += 1;
             if (resp.uncertain) uncertain_count += 1;
@@ -657,20 +686,41 @@ pub fn main(init: std.process.Init) !void {
                 .steps_executed = resp.steps_executed,
                 .latency_ms = latency,
                 .candidates = resp.candidates,
+                .stage_timings = resp.timings,
             };
 
-            try stdout_writer.print("[{d:>2}/{d}] ({s:<10}) Pred: '{s:<8}' | Truth: '{s:<8}' | Match: {s} | Prob: {d:.4} | H_norm: {d:.4} | Steps: {d} | {d:6.1}ms\n", .{
-                idx + 1,
-                ds.examples.len,
-                ex.id,
-                resp.decision,
-                ex.ground_truth,
-                if (is_correct) "YES" else "NO ",
-                resp.decision_probability,
-                resp.normalized_entropy,
-                resp.steps_executed,
-                latency,
-            });
+            if (resp.timings) |t| {
+                const hit_str = if (t.prompt_cache_hit) " [cache hit]" else "";
+                try stdout_writer.print("[{d:>2}/{d}] ({s:<10}) Pred: '{s:<8}' | Truth: '{s:<8}' | Match: {s} | Prob: {d:.4} | H_norm: {d:.4} | Steps: {d} | {d:6.1}ms (prefill={d:.1}ms{s}, c1={d:.1}ms, c2={d:.1}ms)\n", .{
+                    idx + 1,
+                    ds.examples.len,
+                    ex.id,
+                    resp.decision,
+                    ex.ground_truth,
+                    if (is_correct) "YES" else "NO ",
+                    resp.decision_probability,
+                    resp.normalized_entropy,
+                    resp.steps_executed,
+                    latency,
+                    t.prompt_prefill_ms,
+                    hit_str,
+                    t.canvas_step1_ms,
+                    t.canvas_step2_ms,
+                });
+            } else {
+                try stdout_writer.print("[{d:>2}/{d}] ({s:<10}) Pred: '{s:<8}' | Truth: '{s:<8}' | Match: {s} | Prob: {d:.4} | H_norm: {d:.4} | Steps: {d} | {d:6.1}ms\n", .{
+                    idx + 1,
+                    ds.examples.len,
+                    ex.id,
+                    resp.decision,
+                    ex.ground_truth,
+                    if (is_correct) "YES" else "NO ",
+                    resp.decision_probability,
+                    resp.normalized_entropy,
+                    resp.steps_executed,
+                    latency,
+                });
+            }
             try stdout_writer.flush();
         }
 
@@ -694,6 +744,18 @@ pub fn main(init: std.process.Init) !void {
         try stdout_writer.print("Total Examples:        {d}\n", .{summary.total_examples});
         try stdout_writer.print("Correct Decisions:     {d} ({d:.2}% accuracy)\n", .{ summary.correct_count, summary.accuracy * 100.0 });
         try stdout_writer.print("Latency:               Mean: {d:.2}ms | Median: {d:.2}ms | Spread: {d:.2}ms\n", .{ summary.mean_latency_ms, summary.median_latency_ms, stats.spread });
+        if (ds.examples.len > 0 and results[0].stage_timings != null) {
+            const mean_prefill = if (cold_prefill_count > 0) total_prefill_ms / @as(f64, @floatFromInt(cold_prefill_count)) else 0.0;
+            const mean_c1 = total_canvas_step1_ms / @as(f64, @floatFromInt(ds.examples.len));
+            const mean_c2 = if (step2_count > 0) total_canvas_step2_ms / @as(f64, @floatFromInt(step2_count)) else 0.0;
+            try stdout_writer.print("Stage Timings:         Prefill Mean: {d:.2}ms (N={d}) | Canvas Step1 Mean: {d:.2}ms | Canvas Step2 Mean: {d:.2}ms (N={d})\n", .{
+                mean_prefill,
+                cold_prefill_count,
+                mean_c1,
+                mean_c2,
+                step2_count,
+            });
+        }
         try stdout_writer.print("Mean Norm Entropy:     {d:.4}\n", .{summary.mean_normalized_entropy});
         try stdout_writer.print("Uncertain Queries:     {d} / {d}\n", .{ summary.uncertain_count, summary.total_examples });
         try stdout_writer.print("Step Distribution:     T=1: {d} | T=2: {d} | T=3: {d} | T=4: {d}\n", .{
@@ -1195,7 +1257,33 @@ fn writeDecisionResponseJson(allocator: std.mem.Allocator, out_json_path: []cons
         try json_list.appendSlice(allocator, cand_str);
     }
 
-    try json_list.appendSlice(allocator, "  ]\n}\n");
+    try json_list.appendSlice(allocator, "  ]");
+    if (resp.timings) |t| {
+        const tim_str = try std.fmt.allocPrint(allocator,
+            \\,
+            \\  "timings": {{
+            \\    "prompt_prefill_ms": {d:.3},
+            \\    "prompt_p0_ms": {d:.3},
+            \\    "prompt_transfer_ms": {d:.3},
+            \\    "prompt_p1_ms": {d:.3},
+            \\    "canvas_step1_ms": {d:.3},
+            \\    "canvas_step2_ms": {d:.3},
+            \\    "total_engine_ms": {d:.3},
+            \\    "prompt_cache_hit": {}
+            \\  }}
+        , .{
+            t.prompt_prefill_ms,
+            t.prompt_p0_ms,
+            t.prompt_transfer_ms,
+            t.prompt_p1_ms,
+            t.canvas_step1_ms,
+            t.canvas_step2_ms,
+            t.total_engine_ms,
+            t.prompt_cache_hit,
+        });
+        try json_list.appendSlice(allocator, tim_str);
+    }
+    try json_list.appendSlice(allocator, "\n}\n");
 
     const out_fd = try std.posix.openat(std.posix.AT.FDCWD, out_json_path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, 0o644);
     defer _ = std.os.linux.close(out_fd);

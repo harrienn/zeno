@@ -41,6 +41,7 @@ pub const EvaluationResult = struct {
     steps_executed: u32,
     latency_ms: f64,
     candidates: []const decision.CandidateResult,
+    stage_timings: ?decision.StageTimings = null,
 };
 
 pub const EvaluationSummary = struct {
@@ -217,12 +218,41 @@ pub fn writeEvaluationResultsJson(
             try json_list.appendSlice(allocator, cand_str);
         }
 
-        const item_ftr = try std.fmt.allocPrint(allocator,
-            \\      ]
-            \\    }}{s}
-            \\
-        , .{comma_res});
-        try json_list.appendSlice(allocator, item_ftr);
+        if (res.stage_timings) |st| {
+            const tim_str = try std.fmt.allocPrint(allocator,
+                \\      ],
+                \\      "stage_timings": {{
+                \\        "prompt_prefill_ms": {d:.3},
+                \\        "prompt_p0_ms": {d:.3},
+                \\        "prompt_transfer_ms": {d:.3},
+                \\        "prompt_p1_ms": {d:.3},
+                \\        "canvas_step1_ms": {d:.3},
+                \\        "canvas_step2_ms": {d:.3},
+                \\        "total_engine_ms": {d:.3},
+                \\        "prompt_cache_hit": {}
+                \\      }}
+                \\    }}{s}
+                \\
+            , .{
+                st.prompt_prefill_ms,
+                st.prompt_p0_ms,
+                st.prompt_transfer_ms,
+                st.prompt_p1_ms,
+                st.canvas_step1_ms,
+                st.canvas_step2_ms,
+                st.total_engine_ms,
+                st.prompt_cache_hit,
+                comma_res,
+            });
+            try json_list.appendSlice(allocator, tim_str);
+        } else {
+            const item_ftr = try std.fmt.allocPrint(allocator,
+                \\      ]
+                \\    }}{s}
+                \\
+            , .{comma_res});
+            try json_list.appendSlice(allocator, item_ftr);
+        }
     }
 
     try json_list.appendSlice(allocator, "  ]\n}\n");

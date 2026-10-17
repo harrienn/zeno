@@ -628,7 +628,32 @@ pub const Server = struct {
             });
         }
 
-        try list.appendSlice(allocator, "  ]\n}\n");
+        try list.appendSlice(allocator, "  ]");
+        if (resp.timings) |t| {
+            try list.print(allocator,
+                \\,
+                \\  "timings": {{
+                \\    "prompt_prefill_ms": {d:.3},
+                \\    "prompt_p0_ms": {d:.3},
+                \\    "prompt_transfer_ms": {d:.3},
+                \\    "prompt_p1_ms": {d:.3},
+                \\    "canvas_step1_ms": {d:.3},
+                \\    "canvas_step2_ms": {d:.3},
+                \\    "total_engine_ms": {d:.3},
+                \\    "prompt_cache_hit": {}
+                \\  }}
+            , .{
+                t.prompt_prefill_ms,
+                t.prompt_p0_ms,
+                t.prompt_transfer_ms,
+                t.prompt_p1_ms,
+                t.canvas_step1_ms,
+                t.canvas_step2_ms,
+                t.total_engine_ms,
+                t.prompt_cache_hit,
+            });
+        }
+        try list.appendSlice(allocator, "\n}\n");
         return list.toOwnedSlice(allocator);
     }
 
@@ -808,6 +833,52 @@ test "serializeDecisionResponse with special characters in label and decision (R
 
     const cands_arr = root_obj.get("candidates").?.array;
     try std.testing.expectEqualStrings(special_label, cands_arr.items[0].object.get("label").?.string);
+}
+
+test "serializeDecisionResponse with stage timings metadata" {
+    const allocator = std.testing.allocator;
+    const candidates = [_]decision.CandidateResult{
+        .{ .label = "Yes", .token_id = 100, .probability = 0.8, .raw_logit = 12.0 },
+        .{ .label = "No", .token_id = 200, .probability = 0.2, .raw_logit = 10.0 },
+    };
+    const resp = DecisionResponse{
+        .decision = "Yes",
+        .decision_probability = 0.8,
+        .entropy_nats = 0.5,
+        .normalized_entropy = 0.72,
+        .uncertain = false,
+        .candidates = &candidates,
+        .steps_executed = 2,
+        .canvas_tokens_used = 40,
+        .timings = .{
+            .prompt_prefill_ms = 450.5,
+            .prompt_p0_ms = 220.0,
+            .prompt_transfer_ms = 10.5,
+            .prompt_p1_ms = 220.0,
+            .canvas_step1_ms = 600.25,
+            .canvas_step2_ms = 580.1,
+            .total_engine_ms = 1635.0,
+            .prompt_cache_hit = false,
+        },
+    };
+
+    const json = try Server.serializeDecisionResponse(allocator, resp);
+    defer allocator.free(json);
+
+    var parsed = try std.json.parseFromSlice(std.json.Value, allocator, json, .{});
+    defer parsed.deinit();
+
+    const root_obj = parsed.value.object;
+    try std.testing.expect(root_obj.get("timings") != null);
+    const timings_obj = root_obj.get("timings").?.object;
+    try std.testing.expectEqual(@as(f64, 450.5), timings_obj.get("prompt_prefill_ms").?.float);
+    try std.testing.expectEqual(@as(f64, 220.0), timings_obj.get("prompt_p0_ms").?.float);
+    try std.testing.expectEqual(@as(f64, 10.5), timings_obj.get("prompt_transfer_ms").?.float);
+    try std.testing.expectEqual(@as(f64, 220.0), timings_obj.get("prompt_p1_ms").?.float);
+    try std.testing.expectEqual(@as(f64, 600.25), timings_obj.get("canvas_step1_ms").?.float);
+    try std.testing.expectEqual(@as(f64, 580.1), timings_obj.get("canvas_step2_ms").?.float);
+    try std.testing.expectEqual(@as(f64, 1635.0), timings_obj.get("total_engine_ms").?.float);
+    try std.testing.expectEqual(false, timings_obj.get("prompt_cache_hit").?.bool);
 }
 
 test "Server GET /health over loopback TCP" {
