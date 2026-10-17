@@ -266,6 +266,54 @@ Review Round 33 §2 requested isolating the source of the latency difference bet
    - For step 2, the prompt KV is already resident in GPU cache; execution consists solely of the 16-token canvas pass.
    - Consequently, triggering $T=2$ on 33.3% of queries adds an aggregate average overhead of only $0.333 \times 180\text{ ms} \approx 60\text{ ms}$ (empirically measured as **+43.2 ms / +4.0%**).
 
+---
+
+## 9. External Benchmark Evaluation: BoolQ Reading Comprehension (150 Items)
+
+To evaluate DiffusionGemma on binary factual verification and reading comprehension, a 150-item slice from the official **Google BoolQ** validation split was evaluated. BoolQ represents passage-based natural questions answered with binary choices (`Yes` / `No`) and was a primary binary benchmark evaluated on TypeSafe AI's Jev (achieving 91.3% in [arXiv:2609.37647](https://arxiv.org/abs/2609.37647)).
+
+### 9.1 Dataset Schema & Prompt Layout
+- **Source**: `google/boolq` (`default`, `validation` split).
+- **Tool**: [`tools/import_benchmark.py`](../tools/import_benchmark.py).
+- **Target Fixture**: [`specs/fixtures/boolq_150.json`](fixtures/boolq_150.json) (schema: `zeno.dataset/v1`, `schema_type: "boolean"`).
+- **Prompt Structure**:
+  ```text
+  <|turn>user
+  {passage}
+
+  Question: {question}
+  Choices:
+  - Yes
+  - No
+  <turn|>
+  <|turn>model
+  Answer:
+  ```
+- **Candidates**: `Yes` (ID 3848) and `No` (ID 2364).
+
+### 9.2 Comparative Step Dynamics & Calibration Matrix
+
+Evaluated on dual NVIDIA GeForce RTX 3060 GPUs (CUDA backend, canvas length $C=16$):
+
+| Configuration | Step Cap | Threshold ($\tau$) | Acc (%) | ECE ($B=10$) | Brier Score | NLL | Mean Latency | Median Latency | Multi-Step Rate |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Single-Step ($T=1$)** (`specs/fixtures/boolq_results/results_t1.json`) | 1 | None | **85.33%** (128/150) | **0.0862** (8.62%) | **0.2430** | **0.4772** | **1876.1 ms** | **1735.5 ms** | 0/150 (0.0%) |
+| **Adaptive Multi-Step ($T=2$)** (`specs/fixtures/boolq_results/results_t2_adapt.json`) | 2 | 0.5 | 84.00% (126/150) | 0.1179 (11.79%) | 0.2659 | 0.5553 | 1909.5 ms | 1744.2 ms | 31/150 (20.7%) |
+
+### 9.3 Key Empirical Findings
+
+1. **High Single-Step Zero-Shot Accuracy (85.33%)**:
+   - At $T=1$, DiffusionGemma 26B-A4B-it achieves **85.33% zero-shot accuracy** on BoolQ passage-based verification without fine-tuning, competitive with commercial System One models (Jev at 91.3%) and open autoregressive baselines (Qwen3.8-27B at ~88%).
+2. **Decision Stability and Content Invariance (98.67%)**:
+   - Paired comparison between $T=1$ and $T=2$ shows **148 of 150 decisions (98.67%) were identical**.
+   - Only 2 queries changed decisions across steps (McNemar $\chi^2 = 0.5000, p = 0.480$, statistically insignificant).
+3. **Balanced Label Selection**:
+   - Model predictions were balanced between classes: `No` was selected 47.3% (71/150) and `Yes` was selected 52.7% (79/150).
+4. **Structural Contrast: Binary Verification vs. Multi-Choice Reasoning**:
+   - On ARC-Challenge (4-choice science reasoning), questions exhibited high initial uncertainty, where $T=2$ self-conditioning provided a +10.67% boost.
+   - On BoolQ (binary factual reading comprehension), single-step $T=1$ reads were already highly decisive: 79.3% of queries had $\mathcal{H}_{\text{norm}} \le 0.5$ and exited at $T=1$. Forcing extra steps on the remaining 20.7% slightly over-concentrated probability mass (ECE 8.62% $\rightarrow$ 11.79%), confirming that for binary factual comprehension, single-step execution is already near-optimal.
+
+
 
 
 

@@ -149,9 +149,53 @@ def convert_sst2(rows, dataset_name: str, split: str):
         "examples": examples,
     }
 
+def convert_boolq(rows, dataset_name: str, split: str, max_words: int = 300):
+    """Converts BoolQ reading comprehension rows into zeno.dataset/v1 structure."""
+    examples = []
+    for idx, row in enumerate(rows):
+        qid = f"boolq_{idx}"
+        question = row.get("question", "").strip()
+        passage = row.get("passage", "").strip()
+        ans = row.get("answer")
+        if ans not in (True, False):
+            continue
+
+        # Format question with proper capitalization and terminal question mark
+        if question and not question.endswith("?"):
+            question = question + "?"
+        if question:
+            question = question[0].upper() + question[1:]
+
+        # Length guard to keep prompt comfortably within CUDA workspace sequence length (512)
+        words = passage.split()
+        if len(words) > max_words:
+            passage = " ".join(words[:max_words]) + "..."
+
+        ground_truth = "Yes" if ans is True else "No"
+
+        examples.append({
+            "id": qid,
+            "category": "reading_comprehension",
+            "query": question,
+            "context": passage,
+            "schema_type": "boolean",
+            "candidates": [
+                {"token": "Yes", "label": "Yes"},
+                {"token": "No", "label": "No"},
+            ],
+            "ground_truth": ground_truth,
+        })
+
+    return {
+        "schema": "zeno.dataset/v1",
+        "name": f"boolq_{split}_{len(examples)}",
+        "description": f"Standardized {len(examples)} items from google/boolq ({split} split) in zeno.dataset/v1 schema",
+        "examples": examples,
+    }
+
 def main():
     parser = argparse.ArgumentParser(description="Import external benchmark into zeno.dataset/v1 JSON")
-    parser.add_argument("--dataset", choices=["arc-challenge", "arc-easy", "sst2"], default="arc-challenge",
+    parser.add_argument("--dataset", choices=["arc-challenge", "arc-easy", "sst2", "boolq"], default="arc-challenge",
                         help="Benchmark dataset identifier")
     parser.add_argument("--split", default="test", help="Dataset split (test, validation, train)")
     parser.add_argument("--limit", type=int, default=150, help="Number of examples to import")
@@ -170,6 +214,11 @@ def main():
         print(f"Fetching {args.limit} rows from stanfordnlp/sst2 (default, {split})...")
         rows = fetch_hf_rows("stanfordnlp/sst2", "default", split, args.offset, args.limit)
         dataset_obj = convert_sst2(rows, "sst2", split)
+    elif args.dataset == "boolq":
+        split = "validation" if args.split == "test" else args.split
+        print(f"Fetching {args.limit} rows from google/boolq (default, {split})...")
+        rows = fetch_hf_rows("google/boolq", "default", split, args.offset, args.limit)
+        dataset_obj = convert_boolq(rows, "boolq", split)
     else:
         raise ValueError(f"Unsupported dataset: {args.dataset}")
 
