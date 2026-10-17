@@ -44,8 +44,8 @@ def fetch_hf_rows(dataset_name: str, config: str, split: str, offset: int, limit
 
     return all_rows[:limit]
 
-def convert_arc(rows, dataset_name: str, split: str):
-    """Converts ARC rows into zeno.dataset/v1 structure."""
+def convert_arc(rows, dataset_name: str, split: str, rotate: int = 0):
+    """Converts ARC rows into zeno.dataset/v1 structure, optionally applying option rotation."""
     examples = []
     for idx, row in enumerate(rows):
         qid = str(row.get("id", f"arc_{idx}"))
@@ -58,47 +58,46 @@ def convert_arc(rows, dataset_name: str, split: str):
         if len(texts) != len(raw_labels) or len(texts) < 2:
             continue
 
-        # Standardize labels to A, B, C, D...
-        candidates = []
-        ground_truth = None
-
-        # Build map from original label to standardized letter
-        label_to_std = {}
+        # Resolve original target index for ground truth
+        orig_target_idx = None
         for i, raw_lbl in enumerate(raw_labels):
-            std_letter = LETTER_MAP[i]
-            label_to_std[str(raw_lbl).strip()] = std_letter
-            choice_text = texts[i].strip()
-            candidates.append({
-                "token": std_letter,
-                "label": f"{std_letter}: {choice_text}",
-            })
+            if str(raw_lbl).strip() == raw_answer:
+                orig_target_idx = i
+                break
+        if orig_target_idx is None:
+            if raw_answer in LETTER_MAP[:len(texts)]:
+                orig_target_idx = LETTER_MAP.index(raw_answer)
+            else:
+                try:
+                    ans_num = int(raw_answer) - 1
+                    if 0 <= ans_num < len(texts):
+                        orig_target_idx = ans_num
+                except ValueError:
+                    pass
 
-        if raw_answer in label_to_std:
-            ground_truth = label_to_std[raw_answer]
-        elif raw_answer in LETTER_MAP[:len(texts)]:
-            ground_truth = raw_answer
-        else:
-            # Fallback if numeric or 1-based index
-            try:
-                ans_idx = int(raw_answer) - 1
-                if 0 <= ans_idx < len(texts):
-                    ground_truth = LETTER_MAP[ans_idx]
-            except ValueError:
-                pass
-
-        if not ground_truth:
+        if orig_target_idx is None:
             print(f"Warning: could not resolve answerKey '{raw_answer}' for query {qid}, skipping")
             continue
 
-        # Ground truth matches the candidate's full label which engine.decide returns
-        correct_label = None
-        for cand in candidates:
-            if cand["token"] == ground_truth:
-                correct_label = cand["label"]
-                break
+        # Apply cyclic rotation if requested (Review Round 33 §5: Option Permutation Control)
+        n = len(texts)
+        shift = rotate % n
+        rotated_texts = [None] * n
+        for i in range(n):
+            new_idx = (i + shift) % n
+            rotated_texts[new_idx] = texts[i].strip()
 
-        if not correct_label:
-            continue
+        new_target_idx = (orig_target_idx + shift) % n
+
+        candidates = []
+        for i in range(n):
+            letter = LETTER_MAP[i]
+            candidates.append({
+                "token": letter,
+                "label": f"{letter}: {rotated_texts[i]}",
+            })
+
+        correct_label = candidates[new_target_idx]["label"]
 
         examples.append({
             "id": qid,
@@ -112,8 +111,9 @@ def convert_arc(rows, dataset_name: str, split: str):
 
     return {
         "schema": "zeno.dataset/v1",
-        "name": f"{dataset_name}_{split}_{len(examples)}",
-        "description": f"Standardized {len(examples)} items from {dataset_name} ({split} split) in zeno.dataset/v1 schema",
+        "name": f"{dataset_name}_{split}_{len(examples)}" + (f"_rot{rotate}" if rotate else ""),
+        "description": f"Standardized {len(examples)} items from {dataset_name} ({split} split) in zeno.dataset/v1 schema" + (f" (options cyclically shifted by {rotate})" if rotate else ""),
+        "rotation": rotate,
         "examples": examples,
     }
 
@@ -156,6 +156,7 @@ def main():
     parser.add_argument("--split", default="test", help="Dataset split (test, validation, train)")
     parser.add_argument("--limit", type=int, default=150, help="Number of examples to import")
     parser.add_argument("--offset", type=int, default=0, help="Starting row offset")
+    parser.add_argument("--rotate", type=int, default=0, help="Cyclically shift option order by N positions (choice-order control)")
     parser.add_argument("--out", required=True, help="Output JSON path")
     args = parser.parse_args()
 
@@ -163,7 +164,7 @@ def main():
         config = "ARC-Challenge" if args.dataset == "arc-challenge" else "ARC-Easy"
         print(f"Fetching {args.limit} rows from allenai/ai2_arc ({config}, {args.split})...")
         rows = fetch_hf_rows("allenai/ai2_arc", config, args.split, args.offset, args.limit)
-        dataset_obj = convert_arc(rows, args.dataset, args.split)
+        dataset_obj = convert_arc(rows, args.dataset, args.split, rotate=args.rotate)
     elif args.dataset == "sst2":
         split = "validation" if args.split == "test" else args.split
         print(f"Fetching {args.limit} rows from stanfordnlp/sst2 (default, {split})...")
