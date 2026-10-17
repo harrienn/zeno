@@ -234,37 +234,49 @@ Evaluated sequentially on dual NVIDIA GeForce RTX 3060 GPUs (CUDA backend, canva
   - Running a general-purpose discrete diffusion checkpoint (`diffusiongemma-26B-A4B-it`) without decision-specific pretraining, Zeno achieves **86.00%** on ARC-Challenge at **5.93% ECE**.
   - This provides empirical proof that discrete diffusion token canvases and adaptive self-conditioning provide a competitive, high-speed, well-calibrated alternative to both autoregressive text generation and specialized proprietary decision engines.
 
+> [!NOTE]
+> Published external literature figures (e.g. TypeSafe AI Jev and open-weight autoregressive baselines reported in arXiv:2609.37647) reflect evaluations across differing test splits, full benchmark sizes, and distinct prompting conventions. They are cited here solely for broad qualitative context, not as direct head-to-head baselines against Zeno's frozen 150-item evaluation slice.
+
 ### 8.5 Choice-Order Robustness & Option Permutation Controls
 
-Per Review Round 33 §5, single-pass option probability evaluations can confound semantic reasoning with letter or position bias. To measure this, a 1-position cyclic option rotation was evaluated on all 150 ARC-Challenge items (`specs/fixtures/arc_challenge_150_rot1.json`), shifting options ($A \rightarrow B, B \rightarrow C, C \rightarrow D, D \rightarrow A$) and remapping the ground-truth answer to track content.
+Per Review Round 33 §5 and Round 34 §1/§3, single-pass option probability evaluations can confound semantic reasoning with letter or position bias. To measure this, a 1-position cyclic option rotation was evaluated on all 150 ARC-Challenge items (`specs/fixtures/arc_challenge_150_rot1.json`), shifting options ($A \rightarrow B, B \rightarrow C, C \rightarrow D, D \rightarrow A$) and remapping the ground-truth answer to track content identity.
 
-| Configuration | Set | Acc (%) | ECE | Brier | Net $\Delta$ vs Base | Content Invariance | McNemar $\chi^2$ ($p$-val) |
+| Configuration | Set | Acc (%) | ECE | Brier | Net $\Delta$ vs Base | Content Agreement | McNemar $\chi^2$ (paired accuracy) |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
 | **Single-Step ($T=1$)** | Base | 75.33% | 0.0679 | 0.3956 | — | — | — |
-| **Single-Step ($T=1$)** | Rotated (rot1) | 65.33% | 0.1400 | 0.4374 | -10.00% | 51.33% (77/150) | 3.2131 ($p=0.073$) |
+| **Single-Step ($T=1$)** | Rotated (rot1) | 65.33% | 0.1400 | 0.4374 | -10.00% | 51.33% (77/150) | 3.2131 ($p_{\text{asymp}}=0.073, p_{\text{exact}}=0.072$) |
 | **Adaptive Multi-Step ($T=2, \tau=0.5$)** | Base | 86.00% | 0.0593 | 0.2449 | — | — | — |
-| **Adaptive Multi-Step ($T=2, \tau=0.5$)** | Rotated (rot1) | **84.67%** | **0.0488** | **0.2384** | **-1.33%** | **80.00%** (120/150) | **0.0385 ($p=0.844$)** |
+| **Adaptive Multi-Step ($T=2, \tau=0.5$)** | Rotated (rot1) | **84.67%** | **0.0488** | **0.2384** | **-1.33%** | **80.00%** (120/150) | **0.0385 ($p_{\text{asymp}}=0.845, p_{\text{exact}}=0.845$)** |
 
 #### Key Insights from Permutation Testing:
-1. **Single-Step Middle-Option Bias**: At $T=1$, the model exhibited a pronounced position bias toward middle options (options B and C accounted for 76.7% of base predictions and 80.0% of rotated predictions; option A received only 2.7%–7.3%).
-2. **Self-Conditioning Resolves Position Bias**: When adaptive stepping was enabled ($T=2, \tau=0.5$), the position bias was largely mitigated:
-   - Option selection balanced across all choices (A: 15.3%, B: 20.7%, C: 41.3%, D: 22.7%).
-   - Accuracy on the rotated set recovered to **84.67%** (only -1.33% delta vs. base 86.00%).
-   - On the rotated set itself, adaptive stepping flipped **29 questions from wrong to correct and 0 from correct to wrong** ($\chi^2 = 27.0345$, $p < 10^{-6}$).
-   - McNemar's test between base $T=2$ and rotated $T=2$ yielded $\chi^2 = 0.0385$ ($p = 0.844$), demonstrating that under adaptive self-conditioning, decision performance is statistically invariant to option ordering.
+1. **Single-Step Middle-Option Bias**: At $T=1$, the model exhibited a pronounced position bias toward middle options (options B and C accounted for 76.7% of base predictions and 80.0% of rotated predictions; option A received only 2.7%–7.3%). Under rotation, content agreement dropped to 51.33% (77/150), and accuracy degraded by -10.00% (from 75.33% to 65.33%).
+2. **Adaptive Stepping and Content Agreement (80.00%)**:
+   - Under adaptive stepping ($T=2, \tau=0.5$), selected answer content agreed across rotations on **120 of 150 items (80.00%)**.
+   - Exactly **1 in 5 choices (30 of 150, 20.00%) changed content** when options were cyclically rotated.
+   - Aggregate accuracy was similar across the two orderings (86.00% base vs 84.67% rotated, net $\Delta = -1.33\%$).
+   - McNemar's paired test compares *correct/incorrect classification outcomes*, not content identity. Between base $T=2$ and rotated $T=2$, 12 items transitioned from incorrect to correct and 14 from correct to incorrect ($b=12, c=14, \chi^2 = 0.0385, p=0.845$). This confirms no statistically significant shift in overall accuracy outcomes between these two orderings. However, as noted in Review Round 34, a non-significant difference test is not an equivalence test and does not establish that decisions are invariant across option orderings. A formal invariance claim requires evaluating multiple deterministic permutations against a predefined equivalence margin for both content agreement and accuracy.
+3. **Prediction Letter Frequencies vs. Ground-Truth Position Distribution**:
+   - Option selection frequencies must be interpreted alongside the gold answer distributions:
+     - **Base Gold**: A: 39 (26.0%), B: 42 (28.0%), C: 42 (28.0%), D: 27 (18.0%).
+     - **Base $T=2$ Predictions**: A: 25 (16.7%), B: 43 (28.7%), C: 55 (36.7%), D: 27 (18.0%).
+     - **Rotated Gold (rot1)**: A: 27 (18.0%), B: 39 (26.0%), C: 42 (28.0%), D: 42 (28.0%).
+     - **Rotated $T=2$ Predictions**: A: 23 (15.3%), B: 31 (20.7%), C: 62 (41.3%), D: 34 (22.7%).
+   - In both base and rotated sets, Option C is chosen more often (36.7% and 41.3%) than its true prevalence in the gold set (28.0% in both). While adaptive stepping raises non-middle option selection (A: 15.3% vs 2.7% at $T=1$; D: 22.7% vs 17.3% at $T=1$), a residual preference for Option C remains present and position bias is not fully eliminated.
+4. **Within-Set Stepping Transitions on Rotated Inputs**:
+   - On the rotated slice itself, adaptive stepping ($T=2$ vs $T=1$) flipped **29 items from wrong to correct and 0 items from correct to wrong** ($b=29, c=0, \chi^2 = 27.0345, p_{\text{exact}} = 3.7 \times 10^{-9}$), demonstrating that self-conditioning consistently recovers classification quality when initial single-step reads are impaired by unfavorable option placement.
 
-### 8.6 Latency Profile & Pipeline Breakdown
+### 8.6 Latency Profile & Pipeline Breakdown (Analytical Derivation)
 
-Review Round 33 §2 requested isolating the source of the latency difference between short prefix benchmarks (~180 ms at $C=16$) and dataset evaluations (~1061 ms). Profiling on dual NVIDIA GeForce RTX 3060 GPUs isolated the exact components:
+Review Round 33 §2 requested explaining the latency difference between short synthetic prefix benchmarks (~180 ms at $C=16$) and dataset evaluations (~1061 ms). The reported split is an **analytical estimate** derived from comparing prefix benchmark baselines against end-to-end request measurements:
 
-1. **Cold Prompt Prefill ($P \approx 100\text{--}150$ tokens)**: **~880 ms**
-   - In dataset evaluation, each query presents a distinct question, requiring causal prompt prefill across all 30 layers and host-staged layer-split synchronization between GPUs.
-2. **Canvas Decoder Evaluation ($C=16$)**: **~180 ms**
-   - Running the bidirectional decoder over a 16-token canvas with cached prompt KV requires ~180 ms.
-3. **Total Single-Step Latency ($T=1$)**: **~1061 ms** ($880\text{ ms prefill} + 180\text{ ms canvas}$).
-4. **Step 2 Self-Conditioning ($T=2$)**: **~180 ms**
-   - For step 2, the prompt KV is already resident in GPU cache; execution consists solely of the 16-token canvas pass.
-   - Consequently, triggering $T=2$ on 33.3% of queries adds an aggregate average overhead of only $0.333 \times 180\text{ ms} \approx 60\text{ ms}$ (empirically measured as **+43.2 ms / +4.0%**).
+1. **Analytical Component Split**:
+   - **Standalone Canvas Evaluation ($C=16$)**: Benchmarked at **~180 ms** on dual RTX 3060 GPUs using short prompts where causal prefill overhead is minimal.
+   - **End-to-End Dataset Queries ($T=1$)**: Empirically measured at **~1061 ms** mean latency.
+   - **Derived Prompt Prefill & Cross-GPU Coordination ($P \approx 100\text{--}150$ tokens)**: The difference, **~880 ms**, is attributed to causal prompt prefill across all 30 layers and host-staged tensor synchronization across the dual-GPU layer split.
+   - **Derived Step 2 Incremental Cost**: For step 2, prompt KV states remain cached on GPUs. Triggering $T=2$ on 33.3% of queries added **+43.2 ms** (+4.0%) across all queries, implying an incremental cost of approximately $43.2 / 0.333 \approx 130\text{ ms}$ per triggered query, consistent with an isolated 16-token canvas pass without re-prefill.
+2. **Measurement Limitations & Verification Protocol (Per Review Round 34 §2)**:
+   - The current server records aggregate request latency. Stage-level CUDA timers with explicit device synchronization (`cudaEventSynchronize` or `cudaStreamSynchronize`) have not yet been instrumented around prefill versus canvas execution.
+   - Until synchronized stage-level instrumentation and repeated distribution measurements are merged, these figures should be treated as derived analytical estimates rather than direct profiler captures.
 
 ---
 
@@ -272,7 +284,7 @@ Review Round 33 §2 requested isolating the source of the latency difference bet
 
 To evaluate DiffusionGemma on binary factual verification and reading comprehension, a 150-item slice from the official **Google BoolQ** validation split was evaluated. BoolQ represents passage-based natural questions answered with binary choices (`Yes` / `No`) and was a primary binary benchmark evaluated on TypeSafe AI's Jev (achieving 91.3% in [arXiv:2609.37647](https://arxiv.org/abs/2609.37647)).
 
-### 9.1 Dataset Schema & Prompt Layout
+### 9.1 Dataset Schema, Prompt Layout & Truncation Disclosure
 - **Source**: `google/boolq` (`default`, `validation` split).
 - **Tool**: [`tools/import_benchmark.py`](../tools/import_benchmark.py).
 - **Target Fixture**: [`specs/fixtures/boolq_150.json`](fixtures/boolq_150.json) (schema: `zeno.dataset/v1`, `schema_type: "boolean"`).
@@ -290,6 +302,11 @@ To evaluate DiffusionGemma on binary factual verification and reading comprehens
   Answer:
   ```
 - **Candidates**: `Yes` (ID 3848) and `No` (ID 2364).
+- **Input Truncation Disclosure (Review Round 34 §4)**:
+  - A length guard of 300 whitespace-separated words was applied during import to keep prompts comfortably within the 512-token CUDA workspace sequence limit.
+  - Across the 150 validation items, **149 passages fit without modification**.
+  - Exactly one passage—item `boolq_55` (validation split index 55, query: *"Does damon and elena get together in season 3?"*)—exceeded the threshold (source length: 591 words, 3310 characters) and was truncated to 300 words with an ellipsis (`...`).
+  - To ensure full provenance, `specs/fixtures/boolq_150.json` records explicit truncation metadata on `boolq_55` (`source_index: 55`, `source_truncated: true`, `original_word_count: 591`, `truncation_word_limit: 300`). Item `boolq_55` was correctly classified as `"No"` at both $T=1$ and $T=2$. In future benchmark imports, prompt length will be checked using the model tokenizer rather than a whitespace-word proxy.
 
 ### 9.2 Comparative Step Dynamics & Calibration Matrix
 
@@ -302,13 +319,18 @@ Evaluated on dual NVIDIA GeForce RTX 3060 GPUs (CUDA backend, canvas length $C=1
 
 ### 9.3 Key Empirical Findings
 
-1. **High Single-Step Zero-Shot Accuracy (85.33%)**:
-   - At $T=1$, DiffusionGemma 26B-A4B-it achieves **85.33% zero-shot accuracy** on BoolQ passage-based verification without fine-tuning, competitive with commercial System One models (Jev at 91.3%) and open autoregressive baselines (Qwen3.8-27B at ~88%).
-2. **Decision Stability and Content Invariance (98.67%)**:
+1. **High Single-Step Zero-Shot Accuracy (85.33%) & Literature Context**:
+   - At $T=1$, DiffusionGemma 26B-A4B-it achieves **85.33% zero-shot accuracy** on this 150-item BoolQ validation slice without fine-tuning.
+   - *Contextual Literature Reference*: Published figures for commercial decision models (e.g. TypeSafe AI Jev at 91.3% and Qwen3.8-27B at ~88% in [arXiv:2609.37647](https://arxiv.org/abs/2609.37647)) provide broad context from differing splits, full datasets, and distinct prompting protocols. They are not direct head-to-head baselines against this frozen 150-item slice.
+2. **Decision Stability and Paired Transitions (98.67%)**:
    - Paired comparison between $T=1$ and $T=2$ shows **148 of 150 decisions (98.67%) were identical**.
-   - Only 2 queries changed decisions across steps (McNemar $\chi^2 = 0.5000, p = 0.480$, statistically insignificant).
-3. **Balanced Label Selection**:
-   - Model predictions were balanced between classes: `No` was selected 47.3% (71/150) and `Yes` was selected 52.7% (79/150).
+   - Exactly 2 queries changed decisions across steps ($b=0$ wrong $\rightarrow$ correct, $c=2$ correct $\rightarrow$ wrong, total discordant = 2).
+   - Continuity-corrected McNemar $\chi^2 = 0.5000$ ($p_{\text{asymp}} = 0.480$); exact two-sided binomial test $p_{\text{exact}} = 0.500$.
+3. **Label Selection Distribution vs. Ground Truth**:
+   - Ground truth on this 150-item slice: `No`: 53 (35.3%), `Yes`: 97 (64.7%).
+   - Model predictions at $T=1$: `No`: 71 (47.3%), `Yes`: 79 (52.7%).
+   - Model predictions at $T=2$: `No`: 73 (48.7%), `Yes`: 77 (51.3%).
+   - The model slightly over-predicts `No` relative to the validation split distribution (47.3% vs 35.3%), but shows healthy distribution across both binary classes without label collapse.
 4. **Structural Contrast: Binary Verification vs. Multi-Choice Reasoning**:
    - On ARC-Challenge (4-choice science reasoning), questions exhibited high initial uncertainty, where $T=2$ self-conditioning provided a +10.67% boost.
    - On BoolQ (binary factual reading comprehension), single-step $T=1$ reads were already highly decisive: 79.3% of queries had $\mathcal{H}_{\text{norm}} \le 0.5$ and exited at $T=1$. Forcing extra steps on the remaining 20.7% slightly over-concentrated probability mass (ECE 8.62% $\rightarrow$ 11.79%), confirming that for binary factual comprehension, single-step execution is already near-optimal.

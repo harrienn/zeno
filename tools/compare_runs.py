@@ -29,14 +29,41 @@ def analyze_paired_runs(base_path: str, alt_path: str):
     with open(alt_path, "r", encoding="utf-8") as f:
         alt_data = json.load(f)
 
-    base_results = {r["id"]: r for r in base_data.get("results", [])}
-    alt_results = {r["id"]: r for r in alt_data.get("results", [])}
+    base_raw_ids = [r["id"] for r in base_data.get("results", [])]
+    alt_raw_ids = [r["id"] for r in alt_data.get("results", [])]
 
-    common_ids = [r["id"] for r in base_data.get("results", []) if r["id"] in alt_results]
+    # Integrity check 1: Duplicate query IDs within either run
+    base_dups = [item for item, count in Counter(base_raw_ids).items() if count > 1]
+    if base_dups:
+        print(f"Error: Base run contains duplicate query IDs ({len(base_dups)} found): {base_dups[:5]}", file=sys.stderr)
+        sys.exit(1)
+
+    alt_dups = [item for item, count in Counter(alt_raw_ids).items() if count > 1]
+    if alt_dups:
+        print(f"Error: Compared run contains duplicate query IDs ({len(alt_dups)} found): {alt_dups[:5]}", file=sys.stderr)
+        sys.exit(1)
+
+    # Integrity check 2: Mismatched ID sets
+    base_id_set = set(base_raw_ids)
+    alt_id_set = set(alt_raw_ids)
+    if base_id_set != alt_id_set:
+        only_base = base_id_set - alt_id_set
+        only_alt = alt_id_set - base_id_set
+        print(f"Error: Mismatched query ID sets between runs.", file=sys.stderr)
+        if only_base:
+            print(f"  Present only in base run ({len(only_base)} items): {sorted(list(only_base))[:5]}...", file=sys.stderr)
+        if only_alt:
+            print(f"  Present only in compared run ({len(only_alt)} items): {sorted(list(only_alt))[:5]}...", file=sys.stderr)
+        sys.exit(1)
+
+    common_ids = base_raw_ids
     n = len(common_ids)
     if n == 0:
-        print("Error: No overlapping query IDs between the two runs.")
+        print("Error: No query IDs found in evaluation results.", file=sys.stderr)
         sys.exit(1)
+
+    base_results = {r["id"]: r for r in base_data.get("results", [])}
+    alt_results = {r["id"]: r for r in alt_data.get("results", [])}
 
     base_correct = 0
     alt_correct = 0
@@ -78,13 +105,28 @@ def analyze_paired_runs(base_path: str, alt_path: str):
         if b_let == a_let:
             letter_consistent += 1
 
-    # McNemar's chi-squared with continuity correction
+    # McNemar's chi-squared with clamped continuity correction
     b_disc = n01  # wrong -> correct
     c_disc = n10  # correct -> wrong
-    if (b_disc + c_disc) > 0:
-        mcnemar_stat = (abs(b_disc - c_disc) - 1.0) ** 2 / (b_disc + c_disc)
+    disc_total = b_disc + c_disc
+    if disc_total > 0:
+        mcnemar_stat = (max(0.0, abs(b_disc - c_disc) - 1.0) ** 2) / disc_total
     else:
         mcnemar_stat = 0.0
+
+    # P-value computation via scipy.stats
+    try:
+        from scipy.stats import binomtest, chi2
+        has_scipy = True
+        asymp_p_value = float(chi2.sf(mcnemar_stat, df=1))
+        if disc_total > 0:
+            exact_p_value = float(binomtest(b_disc, disc_total, p=0.5, alternative="two-sided").pvalue)
+        else:
+            exact_p_value = 1.0
+    except ImportError:
+        has_scipy = False
+        asymp_p_value = None
+        exact_p_value = None
 
     print("=" * 80)
     print(" ZENO PAIRED RUN & CHOICE-ORDER ROBUSTNESS ANALYSIS")
@@ -105,7 +147,13 @@ def analyze_paired_runs(base_path: str, alt_path: str):
     print(f"Both Incorrect (n00):            {n00:>3} ({n00/n*100:.1f}%)")
     print(f"Flipped to Correct (n01):        {n01:>3} ({n01/n*100:.1f}%) [wrong -> correct]")
     print(f"Flipped to Incorrect (n10):      {n10:>3} ({n10/n*100:.1f}%) [correct -> wrong]")
-    print(f"McNemar chi2 stat (continuity):  {mcnemar_stat:.4f} (discordant pairs: b={b_disc}, c={c_disc})")
+    print(f"Discordant Pairs (b, c):         b={b_disc} (wrong->correct), c={c_disc} (correct->wrong), total={disc_total}")
+    print(f"McNemar chi2 stat (continuity):  {mcnemar_stat:.4f}")
+    if has_scipy:
+        print(f"Asymptotic chi2 p-value:         {asymp_p_value:.6g} (df=1)")
+        print(f"Exact Binomial p-value (2-sided):{exact_p_value:.6g} (recommended for small b+c)")
+    else:
+        print("Note: scipy not installed; install scipy to compute p-values.")
     print("-" * 80)
     print("--- Option Letter Selection Distribution ---")
     letters = sorted(list(set(list(base_letters.keys()) + list(alt_letters.keys()))))

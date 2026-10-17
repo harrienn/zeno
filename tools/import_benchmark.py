@@ -149,7 +149,7 @@ def convert_sst2(rows, dataset_name: str, split: str):
         "examples": examples,
     }
 
-def convert_boolq(rows, dataset_name: str, split: str, max_words: int = 300):
+def convert_boolq(rows, dataset_name: str, split: str, max_words: int = 300, offset: int = 0):
     """Converts BoolQ reading comprehension rows into zeno.dataset/v1 structure."""
     examples = []
     for idx, row in enumerate(rows):
@@ -168,13 +168,17 @@ def convert_boolq(rows, dataset_name: str, split: str, max_words: int = 300):
 
         # Length guard to keep prompt comfortably within CUDA workspace sequence length (512)
         words = passage.split()
-        if len(words) > max_words:
+        orig_word_count = len(words)
+        is_truncated = False
+        if orig_word_count > max_words:
             passage = " ".join(words[:max_words]) + "..."
+            is_truncated = True
 
         ground_truth = "Yes" if ans is True else "No"
 
-        examples.append({
+        ex_dict = {
             "id": qid,
+            "source_index": offset + idx,
             "category": "reading_comprehension",
             "query": question,
             "context": passage,
@@ -184,7 +188,13 @@ def convert_boolq(rows, dataset_name: str, split: str, max_words: int = 300):
                 {"token": "No", "label": "No"},
             ],
             "ground_truth": ground_truth,
-        })
+        }
+        if is_truncated:
+            ex_dict["source_truncated"] = True
+            ex_dict["original_word_count"] = orig_word_count
+            ex_dict["truncation_word_limit"] = max_words
+
+        examples.append(ex_dict)
 
     return {
         "schema": "zeno.dataset/v1",
@@ -218,7 +228,7 @@ def main():
         split = "validation" if args.split == "test" else args.split
         print(f"Fetching {args.limit} rows from google/boolq (default, {split})...")
         rows = fetch_hf_rows("google/boolq", "default", split, args.offset, args.limit)
-        dataset_obj = convert_boolq(rows, "boolq", split)
+        dataset_obj = convert_boolq(rows, "boolq", split, offset=args.offset)
     else:
         raise ValueError(f"Unsupported dataset: {args.dataset}")
 
