@@ -10,8 +10,8 @@
     "total_examples": 50,
     "correct_count": 41,
     "accuracy": 0.8200,
-    "mean_latency_ms": 886.54,
-    "median_latency_ms": 863.47,
+    "mean_latency_ms": 892.13,
+    "median_latency_ms": 866.53,
     "mean_normalized_entropy": 0.2044,
     "uncertain_count": 2,
     "step_distribution": {
@@ -33,7 +33,7 @@
       "normalized_entropy": 0.464816,
       "uncertain": false,
       "steps_executed": 2,
-      "latency_ms": 366.98,
+      "latency_ms": 368.84,
       "candidates": [
         {
           "label": "Yes",
@@ -49,7 +49,17 @@
           "softcapped_logit": 14.466184,
           "probability": 0.098686
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 0.000,
+        "prompt_p0_ms": 0.000,
+        "prompt_transfer_ms": 0.000,
+        "prompt_p1_ms": 0.000,
+        "canvas_step1_ms": 182.162,
+        "canvas_step2_ms": 184.878,
+        "total_engine_ms": 368.835,
+        "prompt_cache_hit": true
+      }
     },
     {
       "id": "bool_02",
@@ -62,7 +72,7 @@
       "normalized_entropy": 0.417364,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 803.47,
+      "latency_ms": 807.74,
       "candidates": [
         {
           "label": "Yes",
@@ -78,7 +88,17 @@
           "softcapped_logit": 12.492421,
           "probability": 0.084362
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 617.553,
+        "prompt_p0_ms": 315.831,
+        "prompt_transfer_ms": 0.265,
+        "prompt_p1_ms": 301.457,
+        "canvas_step1_ms": 186.579,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 807.736,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "bool_03",
@@ -91,7 +111,7 @@
       "normalized_entropy": 0.003287,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 893.68,
+      "latency_ms": 889.91,
       "candidates": [
         {
           "label": "Yes",
@@ -107,7 +127,17 @@
           "softcapped_logit": 8.782707,
           "probability": 0.000245
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 699.535,
+        "prompt_p0_ms": 357.928,
+        "prompt_transfer_ms": 0.284,
+        "prompt_p1_ms": 341.324,
+        "canvas_step1_ms": 186.358,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 889.901,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "bool_04",
@@ -120,7 +150,7 @@
       "normalized_entropy": 0.042518,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 776.37,
+      "latency_ms": 779.25,
       "candidates": [
         {
           "label": "Yes",
@@ -136,7 +166,17 @@
           "softcapped_logit": 12.184154,
           "probability": 0.004623
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 590.018,
+        "prompt_p0_ms": 303.990,
+        "prompt_transfer_ms": 0.232,
+        "prompt_p1_ms": 285.796,
+        "canvas_step1_ms": 185.678,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 779.242,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "bool_05",
@@ -149,7 +189,7 @@
       "normalized_entropy": 0.395432,
       "uncertain": false,
       "steps_executed": 2,
-      "latency_ms": 1131.97,
+      "latency_ms": 1143.12,
       "candidates": [
         {
           "label": "Yes",
@@ -165,7 +205,17 @@
           "softcapped_logit": 12.223208,
           "probability": 0.078095
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 765.018,
+        "prompt_p0_ms": 397.188,
+        "prompt_transfer_ms": 0.312,
+        "prompt_p1_ms": 367.518,
+        "canvas_step1_ms": 189.138,
+        "canvas_step2_ms": 183.730,
+        "total_engine_ms": 1143.116,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "bool_06",
@@ -178,7 +228,7 @@
       "normalized_entropy": 0.250456,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 802.72,
+      "latency_ms": 798.48,
       "candidates": [
         {
           "label": "Yes",
@@ -194,7 +244,17 @@
           "softcapped_logit": 14.627922,
           "probability": 0.041794
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 607.606,
+        "prompt_p0_ms": 306.481,
+        "prompt_transfer_ms": 0.222,
+        "prompt_p1_ms": 300.902,
+        "canvas_step1_ms": 187.227,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 798.472,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "bool_07",
@@ -207,7 +267,7 @@
       "normalized_entropy": 0.180040,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 840.82,
+      "latency_ms": 848.66,
       "candidates": [
         {
           "label": "Yes",
@@ -223,7 +283,17 @@
           "softcapped_logit": 18.118961,
           "probability": 0.972821
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 661.582,
+        "prompt_p0_ms": 343.611,
+        "prompt_transfer_ms": 0.299,
+        "prompt_p1_ms": 317.671,
+        "canvas_step1_ms": 183.416,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 848.660,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "bool_08",
@@ -236,7 +306,7 @@
       "normalized_entropy": 0.364028,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 816.49,
+      "latency_ms": 832.40,
       "candidates": [
         {
           "label": "Yes",
@@ -252,7 +322,17 @@
           "softcapped_logit": 12.308599,
           "probability": 0.069493
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 644.915,
+        "prompt_p0_ms": 344.124,
+        "prompt_transfer_ms": 0.254,
+        "prompt_p1_ms": 300.538,
+        "canvas_step1_ms": 183.932,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 832.398,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "bool_09",
@@ -265,7 +345,7 @@
       "normalized_entropy": 0.175216,
       "uncertain": false,
       "steps_executed": 2,
-      "latency_ms": 1022.54,
+      "latency_ms": 1017.52,
       "candidates": [
         {
           "label": "Yes",
@@ -281,7 +361,17 @@
           "softcapped_logit": 10.733021,
           "probability": 0.026249
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 646.773,
+        "prompt_p0_ms": 326.539,
+        "prompt_transfer_ms": 0.242,
+        "prompt_p1_ms": 319.993,
+        "canvas_step1_ms": 183.051,
+        "canvas_step2_ms": 183.586,
+        "total_engine_ms": 1017.519,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "bool_10",
@@ -294,7 +384,7 @@
       "normalized_entropy": 0.311631,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 864.22,
+      "latency_ms": 868.54,
       "candidates": [
         {
           "label": "Yes",
@@ -310,7 +400,17 @@
           "softcapped_logit": 15.853229,
           "probability": 0.056067
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 681.469,
+        "prompt_p0_ms": 344.177,
+        "prompt_transfer_ms": 0.243,
+        "prompt_p1_ms": 337.049,
+        "canvas_step1_ms": 183.413,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 868.534,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "bool_11",
@@ -323,7 +423,7 @@
       "normalized_entropy": 0.000594,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 856.64,
+      "latency_ms": 863.40,
       "candidates": [
         {
           "label": "Yes",
@@ -339,7 +439,17 @@
           "softcapped_logit": 15.094770,
           "probability": 0.999963
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 676.581,
+        "prompt_p0_ms": 343.685,
+        "prompt_transfer_ms": 0.252,
+        "prompt_p1_ms": 332.644,
+        "canvas_step1_ms": 183.067,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 863.391,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "bool_12",
@@ -352,7 +462,7 @@
       "normalized_entropy": 0.005703,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 756.25,
+      "latency_ms": 762.17,
       "candidates": [
         {
           "label": "Yes",
@@ -368,7 +478,17 @@
           "softcapped_logit": 18.256788,
           "probability": 0.999545
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 575.334,
+        "prompt_p0_ms": 292.421,
+        "prompt_transfer_ms": 0.222,
+        "prompt_p1_ms": 282.691,
+        "canvas_step1_ms": 183.747,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 762.166,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "bool_13",
@@ -381,7 +501,7 @@
       "normalized_entropy": 0.052990,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 785.37,
+      "latency_ms": 792.87,
       "candidates": [
         {
           "label": "Yes",
@@ -397,7 +517,17 @@
           "softcapped_logit": 19.124638,
           "probability": 0.993990
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 606.270,
+        "prompt_p0_ms": 305.203,
+        "prompt_transfer_ms": 0.226,
+        "prompt_p1_ms": 300.841,
+        "canvas_step1_ms": 183.365,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 792.861,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "bool_14",
@@ -410,7 +540,7 @@
       "normalized_entropy": 0.005202,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 818.75,
+      "latency_ms": 824.89,
       "candidates": [
         {
           "label": "Yes",
@@ -426,7 +556,17 @@
           "softcapped_logit": 19.061844,
           "probability": 0.999590
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 638.423,
+        "prompt_p0_ms": 323.195,
+        "prompt_transfer_ms": 0.243,
+        "prompt_p1_ms": 314.985,
+        "canvas_step1_ms": 183.043,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 824.886,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "bool_15",
@@ -439,7 +579,7 @@
       "normalized_entropy": 0.017926,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 862.72,
+      "latency_ms": 864.52,
       "candidates": [
         {
           "label": "Yes",
@@ -455,7 +595,17 @@
           "softcapped_logit": 17.457851,
           "probability": 0.998318
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 674.992,
+        "prompt_p0_ms": 342.251,
+        "prompt_transfer_ms": 0.261,
+        "prompt_p1_ms": 332.479,
+        "canvas_step1_ms": 183.832,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 864.518,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "bool_16",
@@ -468,7 +618,7 @@
       "normalized_entropy": 0.001441,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 861.55,
+      "latency_ms": 862.98,
       "candidates": [
         {
           "label": "Yes",
@@ -484,7 +634,17 @@
           "softcapped_logit": 16.725140,
           "probability": 0.999902
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 677.712,
+        "prompt_p0_ms": 345.595,
+        "prompt_transfer_ms": 0.243,
+        "prompt_p1_ms": 331.875,
+        "canvas_step1_ms": 181.981,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 862.972,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "bool_17",
@@ -497,7 +657,7 @@
       "normalized_entropy": 0.005748,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 794.87,
+      "latency_ms": 798.07,
       "candidates": [
         {
           "label": "Yes",
@@ -513,7 +673,17 @@
           "softcapped_logit": 19.022680,
           "probability": 0.999541
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 610.639,
+        "prompt_p0_ms": 309.996,
+        "prompt_transfer_ms": 0.240,
+        "prompt_p1_ms": 300.404,
+        "canvas_step1_ms": 184.159,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 798.069,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "bool_18",
@@ -526,7 +696,7 @@
       "normalized_entropy": 0.000809,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 703.11,
+      "latency_ms": 709.06,
       "candidates": [
         {
           "label": "Yes",
@@ -542,7 +712,17 @@
           "softcapped_logit": 20.149857,
           "probability": 0.999949
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 524.339,
+        "prompt_p0_ms": 266.998,
+        "prompt_transfer_ms": 0.183,
+        "prompt_p1_ms": 257.158,
+        "canvas_step1_ms": 181.957,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 709.054,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "bool_19",
@@ -555,7 +735,7 @@
       "normalized_entropy": 0.001025,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 722.11,
+      "latency_ms": 721.75,
       "candidates": [
         {
           "label": "Yes",
@@ -571,7 +751,17 @@
           "softcapped_logit": 18.530813,
           "probability": 0.999933
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 536.733,
+        "prompt_p0_ms": 273.134,
+        "prompt_transfer_ms": 0.228,
+        "prompt_p1_ms": 263.370,
+        "canvas_step1_ms": 181.940,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 721.744,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "bool_20",
@@ -584,7 +774,7 @@
       "normalized_entropy": 0.441156,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 786.63,
+      "latency_ms": 795.30,
       "candidates": [
         {
           "label": "Yes",
@@ -600,7 +790,17 @@
           "softcapped_logit": 15.818245,
           "probability": 0.908591
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 609.664,
+        "prompt_p0_ms": 310.058,
+        "prompt_transfer_ms": 0.243,
+        "prompt_p1_ms": 299.363,
+        "canvas_step1_ms": 182.459,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 795.296,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "choice_01",
@@ -613,7 +813,7 @@
       "normalized_entropy": 0.072967,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 740.41,
+      "latency_ms": 742.26,
       "candidates": [
         {
           "label": "Low",
@@ -643,7 +843,17 @@
           "softcapped_logit": 18.782377,
           "probability": 0.982449
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 557.234,
+        "prompt_p0_ms": 282.591,
+        "prompt_transfer_ms": 0.211,
+        "prompt_p1_ms": 274.432,
+        "canvas_step1_ms": 181.691,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 742.258,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "choice_02",
@@ -656,7 +866,7 @@
       "normalized_entropy": 0.727039,
       "uncertain": true,
       "steps_executed": 2,
-      "latency_ms": 1004.76,
+      "latency_ms": 1014.90,
       "candidates": [
         {
           "label": "Low",
@@ -686,7 +896,17 @@
           "softcapped_logit": 14.058527,
           "probability": 0.013441
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 643.167,
+        "prompt_p0_ms": 327.806,
+        "prompt_transfer_ms": 0.243,
+        "prompt_p1_ms": 315.118,
+        "canvas_step1_ms": 181.637,
+        "canvas_step2_ms": 185.840,
+        "total_engine_ms": 1014.894,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "choice_03",
@@ -699,7 +919,7 @@
       "normalized_entropy": 0.451335,
       "uncertain": false,
       "steps_executed": 2,
-      "latency_ms": 1008.67,
+      "latency_ms": 1013.90,
       "candidates": [
         {
           "label": "Low",
@@ -729,7 +949,17 @@
           "softcapped_logit": 15.356357,
           "probability": 0.830169
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 642.760,
+        "prompt_p0_ms": 326.922,
+        "prompt_transfer_ms": 0.244,
+        "prompt_p1_ms": 315.593,
+        "canvas_step1_ms": 183.685,
+        "canvas_step2_ms": 182.930,
+        "total_engine_ms": 1013.899,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "choice_04",
@@ -742,7 +972,7 @@
       "normalized_entropy": 0.498506,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 745.86,
+      "latency_ms": 761.50,
       "candidates": [
         {
           "label": "Low",
@@ -772,7 +1002,17 @@
           "softcapped_logit": 14.373056,
           "probability": 0.003859
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 575.051,
+        "prompt_p0_ms": 298.214,
+        "prompt_transfer_ms": 0.233,
+        "prompt_p1_ms": 276.604,
+        "canvas_step1_ms": 182.853,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 761.493,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "choice_05",
@@ -785,7 +1025,7 @@
       "normalized_entropy": 0.001220,
       "uncertain": false,
       "steps_executed": 2,
-      "latency_ms": 939.02,
+      "latency_ms": 945.65,
       "candidates": [
         {
           "label": "Low",
@@ -815,7 +1055,17 @@
           "softcapped_logit": -1.954224,
           "probability": 0.000000
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 578.589,
+        "prompt_p0_ms": 294.587,
+        "prompt_transfer_ms": 0.210,
+        "prompt_p1_ms": 283.793,
+        "canvas_step1_ms": 181.229,
+        "canvas_step2_ms": 181.657,
+        "total_engine_ms": 945.649,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "choice_06",
@@ -828,7 +1078,7 @@
       "normalized_entropy": 0.100160,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 793.14,
+      "latency_ms": 797.41,
       "candidates": [
         {
           "label": "Low",
@@ -858,7 +1108,17 @@
           "softcapped_logit": 19.039764,
           "probability": 0.971843
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 611.401,
+        "prompt_p0_ms": 311.343,
+        "prompt_transfer_ms": 0.260,
+        "prompt_p1_ms": 299.798,
+        "canvas_step1_ms": 182.110,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 797.408,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "choice_07",
@@ -871,7 +1131,7 @@
       "normalized_entropy": 0.009894,
       "uncertain": false,
       "steps_executed": 2,
-      "latency_ms": 961.91,
+      "latency_ms": 966.86,
       "candidates": [
         {
           "label": "Low",
@@ -894,7 +1154,17 @@
           "softcapped_logit": 4.711999,
           "probability": 0.000000
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 596.239,
+        "prompt_p0_ms": 302.137,
+        "prompt_transfer_ms": 0.240,
+        "prompt_p1_ms": 293.863,
+        "canvas_step1_ms": 183.890,
+        "canvas_step2_ms": 182.719,
+        "total_engine_ms": 966.860,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "choice_08",
@@ -907,7 +1177,7 @@
       "normalized_entropy": 0.188310,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 760.18,
+      "latency_ms": 761.75,
       "candidates": [
         {
           "label": "Low",
@@ -930,7 +1200,17 @@
           "softcapped_logit": 17.969215,
           "probability": 0.043551
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 573.089,
+        "prompt_p0_ms": 291.441,
+        "prompt_transfer_ms": 0.235,
+        "prompt_p1_ms": 281.413,
+        "canvas_step1_ms": 185.236,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 761.744,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "choice_09",
@@ -943,7 +1223,7 @@
       "normalized_entropy": 0.392745,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 752.09,
+      "latency_ms": 752.88,
       "candidates": [
         {
           "label": "Low",
@@ -966,7 +1246,17 @@
           "softcapped_logit": 15.157348,
           "probability": 0.871868
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 565.196,
+        "prompt_p0_ms": 286.745,
+        "prompt_transfer_ms": 0.225,
+        "prompt_p1_ms": 278.226,
+        "canvas_step1_ms": 184.453,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 752.877,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "choice_10",
@@ -979,7 +1269,7 @@
       "normalized_entropy": 0.205041,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 724.33,
+      "latency_ms": 726.56,
       "candidates": [
         {
           "label": "Low",
@@ -1002,7 +1292,17 @@
           "softcapped_logit": 8.796007,
           "probability": 0.000044
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 540.087,
+        "prompt_p0_ms": 273.830,
+        "prompt_transfer_ms": 0.198,
+        "prompt_p1_ms": 266.060,
+        "canvas_step1_ms": 183.394,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 726.555,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "choice_11",
@@ -1015,7 +1315,7 @@
       "normalized_entropy": 0.418213,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 745.70,
+      "latency_ms": 779.10,
       "candidates": [
         {
           "label": "Low",
@@ -1038,7 +1338,17 @@
           "softcapped_logit": 15.339399,
           "probability": 0.102111
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 578.136,
+        "prompt_p0_ms": 302.069,
+        "prompt_transfer_ms": 0.250,
+        "prompt_p1_ms": 275.817,
+        "canvas_step1_ms": 197.732,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 779.094,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "choice_12",
@@ -1051,7 +1361,7 @@
       "normalized_entropy": 0.697366,
       "uncertain": true,
       "steps_executed": 2,
-      "latency_ms": 1144.91,
+      "latency_ms": 1163.97,
       "candidates": [
         {
           "label": "A",
@@ -1074,7 +1384,17 @@
           "softcapped_logit": 20.254444,
           "probability": 0.171575
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 789.049,
+        "prompt_p0_ms": 408.037,
+        "prompt_transfer_ms": 0.317,
+        "prompt_p1_ms": 380.696,
+        "canvas_step1_ms": 184.550,
+        "canvas_step2_ms": 185.048,
+        "total_engine_ms": 1163.961,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "choice_13",
@@ -1087,7 +1407,7 @@
       "normalized_entropy": 0.154005,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 958.39,
+      "latency_ms": 962.12,
       "candidates": [
         {
           "label": "A",
@@ -1110,7 +1430,17 @@
           "softcapped_logit": 13.559570,
           "probability": 0.039824
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 772.312,
+        "prompt_p0_ms": 392.497,
+        "prompt_transfer_ms": 0.297,
+        "prompt_p1_ms": 379.519,
+        "canvas_step1_ms": 185.471,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 962.111,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "choice_14",
@@ -1123,7 +1453,7 @@
       "normalized_entropy": 0.185984,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 963.94,
+      "latency_ms": 968.55,
       "candidates": [
         {
           "label": "A",
@@ -1146,7 +1476,17 @@
           "softcapped_logit": 18.886810,
           "probability": 0.949517
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 779.065,
+        "prompt_p0_ms": 396.859,
+        "prompt_transfer_ms": 0.321,
+        "prompt_p1_ms": 381.885,
+        "canvas_step1_ms": 185.139,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 968.544,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "choice_15",
@@ -1159,7 +1499,7 @@
       "normalized_entropy": 0.251914,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 856.48,
+      "latency_ms": 857.44,
       "candidates": [
         {
           "label": "A",
@@ -1182,7 +1522,17 @@
           "softcapped_logit": 13.360502,
           "probability": 0.058929
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 670.045,
+        "prompt_p0_ms": 340.368,
+        "prompt_transfer_ms": 0.268,
+        "prompt_p1_ms": 329.408,
+        "canvas_step1_ms": 183.464,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 857.435,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "score_01",
@@ -1195,7 +1545,7 @@
       "normalized_entropy": 0.067134,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 966.97,
+      "latency_ms": 967.14,
       "candidates": [
         {
           "label": "1",
@@ -1232,7 +1582,17 @@
           "softcapped_logit": 19.828634,
           "probability": 0.981800
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 781.241,
+        "prompt_p0_ms": 395.834,
+        "prompt_transfer_ms": 0.297,
+        "prompt_p1_ms": 385.111,
+        "canvas_step1_ms": 181.671,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 967.135,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "score_02",
@@ -1245,7 +1605,7 @@
       "normalized_entropy": 0.280929,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 998.17,
+      "latency_ms": 1003.39,
       "candidates": [
         {
           "label": "1",
@@ -1282,7 +1642,17 @@
           "softcapped_logit": 14.245911,
           "probability": 0.017600
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 816.222,
+        "prompt_p0_ms": 415.583,
+        "prompt_transfer_ms": 0.368,
+        "prompt_p1_ms": 400.271,
+        "canvas_step1_ms": 182.726,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1003.385,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "score_03",
@@ -1295,7 +1665,7 @@
       "normalized_entropy": 0.434193,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 970.30,
+      "latency_ms": 974.72,
       "candidates": [
         {
           "label": "1",
@@ -1332,7 +1702,17 @@
           "softcapped_logit": 16.455126,
           "probability": 0.021975
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 786.747,
+        "prompt_p0_ms": 398.598,
+        "prompt_transfer_ms": 0.306,
+        "prompt_p1_ms": 387.842,
+        "canvas_step1_ms": 183.842,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 974.714,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "score_04",
@@ -1345,7 +1725,7 @@
       "normalized_entropy": 0.013939,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 831.17,
+      "latency_ms": 831.67,
       "candidates": [
         {
           "label": "1",
@@ -1382,7 +1762,17 @@
           "softcapped_logit": 8.137879,
           "probability": 0.000099
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 646.863,
+        "prompt_p0_ms": 327.787,
+        "prompt_transfer_ms": 0.252,
+        "prompt_p1_ms": 318.824,
+        "canvas_step1_ms": 181.405,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 831.670,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "score_05",
@@ -1395,7 +1785,7 @@
       "normalized_entropy": 0.230571,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 924.63,
+      "latency_ms": 925.60,
       "candidates": [
         {
           "label": "1",
@@ -1432,7 +1822,17 @@
           "softcapped_logit": 13.604101,
           "probability": 0.008994
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 739.199,
+        "prompt_p0_ms": 373.640,
+        "prompt_transfer_ms": 0.291,
+        "prompt_p1_ms": 365.268,
+        "canvas_step1_ms": 182.397,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 925.595,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "score_06",
@@ -1445,7 +1845,7 @@
       "normalized_entropy": 0.232368,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 999.74,
+      "latency_ms": 1008.99,
       "candidates": [
         {
           "label": "1",
@@ -1482,7 +1882,17 @@
           "softcapped_logit": 18.383360,
           "probability": 0.914704
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 821.398,
+        "prompt_p0_ms": 420.472,
+        "prompt_transfer_ms": 0.339,
+        "prompt_p1_ms": 400.587,
+        "canvas_step1_ms": 183.136,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1008.983,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "score_07",
@@ -1495,7 +1905,7 @@
       "normalized_entropy": 0.112321,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1021.90,
+      "latency_ms": 1024.63,
       "candidates": [
         {
           "label": "1",
@@ -1532,7 +1942,17 @@
           "softcapped_logit": 9.171295,
           "probability": 0.000826
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 836.587,
+        "prompt_p0_ms": 423.555,
+        "prompt_transfer_ms": 0.291,
+        "prompt_p1_ms": 412.742,
+        "canvas_step1_ms": 184.164,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1024.627,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "score_08",
@@ -1545,7 +1965,7 @@
       "normalized_entropy": 0.102325,
       "uncertain": false,
       "steps_executed": 2,
-      "latency_ms": 1032.46,
+      "latency_ms": 1045.86,
       "candidates": [
         {
           "label": "1",
@@ -1582,7 +2002,17 @@
           "softcapped_logit": 15.214699,
           "probability": 0.005035
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 669.668,
+        "prompt_p0_ms": 341.934,
+        "prompt_transfer_ms": 0.267,
+        "prompt_p1_ms": 327.467,
+        "canvas_step1_ms": 186.259,
+        "canvas_step2_ms": 185.517,
+        "total_engine_ms": 1045.858,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "score_09",
@@ -1595,7 +2025,7 @@
       "normalized_entropy": 0.163594,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 980.58,
+      "latency_ms": 984.29,
       "candidates": [
         {
           "label": "1",
@@ -1632,7 +2062,17 @@
           "softcapped_logit": 17.489874,
           "probability": 0.941983
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 795.109,
+        "prompt_p0_ms": 404.590,
+        "prompt_transfer_ms": 0.311,
+        "prompt_p1_ms": 390.208,
+        "canvas_step1_ms": 183.979,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 984.284,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "score_10",
@@ -1645,7 +2085,7 @@
       "normalized_entropy": 0.018328,
       "uncertain": false,
       "steps_executed": 2,
-      "latency_ms": 1083.30,
+      "latency_ms": 1084.35,
       "candidates": [
         {
           "label": "1",
@@ -1682,7 +2122,17 @@
           "softcapped_logit": 22.906210,
           "probability": 0.996035
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 712.689,
+        "prompt_p0_ms": 360.671,
+        "prompt_transfer_ms": 0.257,
+        "prompt_p1_ms": 351.761,
+        "canvas_step1_ms": 183.448,
+        "canvas_step2_ms": 183.569,
+        "total_engine_ms": 1084.347,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "score_11",
@@ -1695,7 +2145,7 @@
       "normalized_entropy": 0.033653,
       "uncertain": false,
       "steps_executed": 2,
-      "latency_ms": 1117.22,
+      "latency_ms": 1132.93,
       "candidates": [
         {
           "label": "1",
@@ -1732,7 +2182,17 @@
           "softcapped_logit": 16.887718,
           "probability": 0.000989
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 758.498,
+        "prompt_p0_ms": 388.614,
+        "prompt_transfer_ms": 0.311,
+        "prompt_p1_ms": 369.574,
+        "canvas_step1_ms": 183.580,
+        "canvas_step2_ms": 185.974,
+        "total_engine_ms": 1132.921,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "score_12",
@@ -1745,7 +2205,7 @@
       "normalized_entropy": 0.360096,
       "uncertain": false,
       "steps_executed": 2,
-      "latency_ms": 1107.11,
+      "latency_ms": 1110.57,
       "candidates": [
         {
           "label": "1",
@@ -1782,7 +2242,17 @@
           "softcapped_logit": 19.134626,
           "probability": 0.003565
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 737.973,
+        "prompt_p0_ms": 374.288,
+        "prompt_transfer_ms": 0.270,
+        "prompt_p1_ms": 363.415,
+        "canvas_step1_ms": 183.565,
+        "canvas_step2_ms": 183.714,
+        "total_engine_ms": 1110.569,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "score_13",
@@ -1795,7 +2265,7 @@
       "normalized_entropy": 0.146015,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 977.99,
+      "latency_ms": 983.79,
       "candidates": [
         {
           "label": "1",
@@ -1832,7 +2302,17 @@
           "softcapped_logit": 19.566090,
           "probability": 0.953065
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 792.032,
+        "prompt_p0_ms": 404.056,
+        "prompt_transfer_ms": 0.319,
+        "prompt_p1_ms": 387.657,
+        "canvas_step1_ms": 187.588,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 983.782,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "score_14",
@@ -1845,7 +2325,7 @@
       "normalized_entropy": 0.340472,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 973.57,
+      "latency_ms": 980.14,
       "candidates": [
         {
           "label": "1",
@@ -1882,7 +2362,17 @@
           "softcapped_logit": 11.877380,
           "probability": 0.010073
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 791.799,
+        "prompt_p0_ms": 402.657,
+        "prompt_transfer_ms": 0.322,
+        "prompt_p1_ms": 388.820,
+        "canvas_step1_ms": 183.737,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 980.139,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "score_15",
@@ -1895,7 +2385,7 @@
       "normalized_entropy": 0.190650,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 974.91,
+      "latency_ms": 983.97,
       "candidates": [
         {
           "label": "1",
@@ -1932,7 +2422,17 @@
           "softcapped_logit": 17.051182,
           "probability": 0.006475
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 796.066,
+        "prompt_p0_ms": 408.098,
+        "prompt_transfer_ms": 0.362,
+        "prompt_p1_ms": 387.605,
+        "canvas_step1_ms": 183.559,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 983.966,
+        "prompt_cache_hit": false
+      }
     }
   ]
 }

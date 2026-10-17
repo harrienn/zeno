@@ -145,11 +145,11 @@ To evaluate the empirical relationship between single-step reads ($T=1$), adapti
 Evaluated with canvas length $C=16$ sequentially on dual RTX 3060 GPUs (CUDA backend):
 
 | Run Name / Configuration | Step Cap | Threshold ($\tau$) | Acc (%) | ECE ($B=10$) | Brier Score | NLL | Mean Latency | Median Latency | Multi-Step Rate |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Single-Step Baseline** (`specs/fixtures/calibration_results/results_t1.json`) | 1 | None | 80.00% | **0.0767** | 0.3313 | 0.6723 | **841.5 ms** | **830.7 ms** | 0/50 (0.0%) |
-| **Adaptive Multi-Step** (`specs/fixtures/calibration_results/results_t2_adapt.json`) | 2 | 0.5 | **82.00%** | 0.1356 | **0.3072** | **0.6131** | 886.5 ms | 863.5 ms | 12/50 (24.0%) |
-| **Deep Adaptive** (`specs/fixtures/calibration_results/results_t3_adapt.json`) | 3 | 0.4 | **82.00%** | 0.1302 | 0.3172 | 0.7485 | 931.9 ms | 941.5 ms | 17/50 (34.0%) |
-| **Forced Multi-Step** (`specs/fixtures/calibration_results/results_t2_forced.json`) | 2 | 0.0 | **82.00%** | 0.1415 | 0.3184 | 0.7806 | 1027.7 ms | 1017.0 ms | 50/50 (100.0%) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Single-Step Baseline** (`specs/fixtures/calibration_results/results_t1.json`) | 1 | None | 80.00% | **0.0767** | 0.3313 | 0.6723 | **854.3 ms** | **853.1 ms** | 0/50 (0.0%) |
+| **Adaptive Multi-Step** (`specs/fixtures/calibration_results/results_t2_adapt.json`) | 2 | 0.5 | **82.00%** | 0.1356 | **0.3072** | **0.6131** | 892.1 ms | 866.5 ms | 12/50 (24.0%) |
+| **Deep Adaptive** (`specs/fixtures/calibration_results/results_t3_adapt.json`) | 3 | 0.4 | **82.00%** | 0.1302 | 0.3172 | 0.7485 | 925.6 ms | 936.3 ms | 17/50 (34.0%) |
+| **Forced Multi-Step** (`specs/fixtures/calibration_results/results_t2_forced.json`) | 2 | 0.0 | **82.00%** | 0.1415 | 0.3184 | 0.7806 | 1024.0 ms | 1022.9 ms | 50/50 (100.0%) |
 
 ### 7.3 Key Empirical Findings
 
@@ -168,8 +168,9 @@ Evaluated with canvas length $C=16$ sequentially on dual RTX 3060 GPUs (CUDA bac
      - $\tau < 0.5$: **86.84% accuracy** (13.16% error) at 76.0% coverage (38 queries).
      - Full set: **80.00% accuracy** (20.00% error) at 100.0% coverage (50 queries).
    - This validates using $H_{\text{norm}}$ as an empirical gate to separate highly decisive queries from those warranting secondary verification.
-4. **Latency Profile**:
-   - In single-pass sequential evaluation, adaptive stepping ($T=2, \tau=0.5$) adds **+5.3% mean latency** overhead (886.5 ms vs 841.5 ms) while selectively refining 24% of uncertain queries, compared to **+22.1% overhead** (1027.7 ms) for forced multi-step execution. Repeated multi-run variance and confidence interval captures are deferred to future profiling runs.
+4. **Latency Profile & Stage Decomposition**:
+   - In single-pass sequential evaluation, adaptive stepping ($T=2, \tau=0.5$) adds **+4.4% mean latency** overhead (892.1 ms vs 854.3 ms) while selectively refining 24% of uncertain queries, compared to **+19.9% overhead** (1024.0 ms) for forced multi-step execution.
+   - Synchronized stage profiling reveals that prefill accounts for ~660.0 ms (GPU 0: 336.6 ms, cross-GPU transfer: 0.26 ms, GPU 1: 323.1 ms), canvas step 1 takes 184.0 ms, and canvas step 2 averages 44.2 ms across all queries (184.1 ms when active on uncertain queries). Repeated multi-run variance and confidence interval captures are deferred to future profiling runs.
 
 ---
 
@@ -204,16 +205,16 @@ Evaluated sequentially on dual NVIDIA GeForce RTX 3060 GPUs (CUDA backend, canva
 
 | Configuration | Step Cap | Threshold ($\tau$) | Acc (%) | ECE ($B=10$) | Brier Score | NLL | Mean Latency | Median Latency | Multi-Step Rate |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Single-Step ($T=1$)** (`specs/fixtures/arc_results/results_t1.json`) | 1 | None | 75.33% (113/150) | 0.0679 (6.79%) | 0.3956 | 0.9413 | 1061.0 ms | 1012.9 ms | 0/150 (0.0%) |
-| **Adaptive Multi-Step ($T=2$)** (`specs/fixtures/arc_results/results_t2_adapt.json`) | 2 | 0.5 | **86.00%** (129/150) | **0.0593** (5.93%) | **0.2449** | **0.6357** | 1104.2 ms | 1067.0 ms | 50/150 (33.3%) |
+| **Single-Step ($T=1$)** (`specs/fixtures/arc_results/results_t1.json`) | 1 | None | 75.33% (113/150) | 0.0679 (6.79%) | 0.3956 | 0.9413 | 1046.0 ms | 1005.8 ms | 0/150 (0.0%) |
+| **Adaptive Multi-Step ($T=2$)** (`specs/fixtures/arc_results/results_t2_adapt.json`) | 2 | 0.5 | **86.00%** (129/150) | **0.0593** (5.93%) | **0.2449** | **0.6357** | 1109.3 ms | 1067.7 ms | 50/150 (33.3%) |
 
 ### 8.3 Key Empirical Findings
 
 1. **Substantial Accuracy Gain from Adaptive Self-Conditioning (+10.67%)**:
    - Single-step structured reads ($T=1$) achieve **75.33%** accuracy zero-shot on ARC-Challenge.
    - When uncertainty gating triggers an additional self-conditioning step ($\mathcal{H}_{\text{norm}} > 0.5$), accuracy jumps to **86.00%**, correcting 16 difficult reasoning questions from initial incorrect classifications to correct decisions.
-2. **Minimal Latency Overhead (+4.0%)**:
-   - Because 66.7% of queries (100/150) exhibited decisive single-step distributions ($\mathcal{H}_{\text{norm}} \le 0.5$) and exited early, the mean latency penalty across the entire dataset was only **+43.2 ms** (1104.2 ms vs 1061.0 ms).
+2. **Minimal Latency Overhead (+6.1%)**:
+   - Because 66.7% of queries (100/150) exhibited decisive single-step distributions ($\mathcal{H}_{\text{norm}} \le 0.5$) and exited early, the mean latency penalty across the entire dataset was only **+63.3 ms** (1109.3 ms vs 1046.0 ms).
 3. **Comprehensive Calibration & Confidence Sharpening**:
    - Unlike the synthetic operational benchmark where $T=2$ increased ECE due to confident overfit on small sample sizes, on ARC-Challenge adaptive stepping **improved all calibration metrics**:
      - Brier score dropped by **-38.1%** (from 0.3956 to 0.2449).
@@ -275,14 +276,15 @@ Review Round 33 §2 and Round 34 §2 requested explaining the latency difference
    - Timing measurements are emitted optionally in `/v1/systemone` responses (`"timings"` object), fixture evaluations, and benchmark dataset outputs (`"stage_timings"` object per query, plus summary mean aggregations).
 
 2. **Empirically Measured Stage Breakdown (Dual NVIDIA GeForce RTX 3060 12GB)**:
-   - **Cold Prompt Prefill ($P \approx 100\text{--}150$ tokens)**: **~600–690 ms** total.
-     - *Partition 0 (GPU 0, Layers 0–14)*: ~300–350 ms.
-     - *Cross-GPU Boundary Transfer ($H_{15}$)*: **~0.17–0.25 ms** (sub-millisecond peer transfer).
-     - *Partition 1 (GPU 1, Layers 15–29)*: ~300–340 ms.
-   - **Prompt KV Cache Hit (Cached Steps & Successive Turns)**: **0.0 ms** (`prompt_cache_hit = true`), fully bypassing prompt re-computation.
-   - **Canvas Evaluation ($C=256$, Full Width)**: **~2760–2805 ms** for step 1; **~2808–2835 ms** for step 2 (including device-resident self-conditioning MLP projection at answer token).
-   - **Canvas Evaluation ($C=16$, Short Prefix)**: **~180–210 ms** per step, confirming that canvas execution latency scales proportionally with evaluated canvas width.
-   - **Analytical vs. Measured Consistency**: The empirical stage measurements directly confirm the analytical model: total query latency is dominated by prompt prefill on cold requests (~600–880 ms depending on prompt length) plus canvas evaluation (~180 ms for $C=16$, ~2780 ms for $C=256$). Cross-device boundary transfer latency is negligible (<0.3 ms), demonstrating high pipelined execution efficiency across the dual-GPU layer split.
+   - **Cold Prompt Prefill**:
+     - *Short Prefixes (Calibration Suite, $P \approx 50\text{--}80$ tokens)*: **~655–660 ms** total (Partition 0: ~333–337 ms, Boundary Transfer $H_{15}$: ~0.24–0.26 ms, Partition 1: ~321–323 ms).
+     - *Medium Reasoning Prompts (ARC-Challenge, $P \approx 100\text{--}150$ tokens)*: **~848–856 ms** total (Partition 0: ~429–436 ms, Boundary Transfer $H_{15}$: ~0.34–0.35 ms, Partition 1: ~417–420 ms).
+     - *Long Reading Comprehension Passages (BoolQ, $P \approx 200\text{--}300$ tokens)*: **~1686–1689 ms** total (Partition 0: ~853–854 ms, Boundary Transfer $H_{15}$: ~0.66 ms, Partition 1: ~832–834 ms).
+   - **Cross-GPU Hidden State Boundary Transfer ($H_{15}$)**: **~0.24–0.66 ms** (sub-millisecond peer transfer across all benchmark suites).
+   - **Prompt KV Cache Hit (Cached Steps & Successive Turns)**: **0.0 ms** (`prompt_cache_hit = true`), fully bypassing prompt re-computation on step 2.
+   - **Canvas Evaluation ($C=16$, Fast Prefix Mode)**: **~182–190 ms** per step (Step 1: ~182–190 ms; Step 2 when active: ~182–190 ms; Step 2 dataset-wide mean scales with multi-step trigger rate).
+   - **Canvas Evaluation ($C=256$, Full Width Mode)**: **~2760–2805 ms** for step 1; **~2808–2835 ms** for step 2 (including device-resident self-conditioning MLP projection at answer token).
+   - **Analytical vs. Measured Consistency**: The empirical stage measurements directly confirm the analytical model: total query latency is dominated by prompt prefill on cold requests (~660 ms for calibration, ~850 ms for ARC, ~1688 ms for BoolQ) plus canvas evaluation (~184–190 ms for $C=16$, ~2780 ms for $C=256$). Cross-device boundary transfer latency is negligible (<0.7 ms), demonstrating high pipelined execution efficiency across the dual-GPU layer split.
 
 ---
 
@@ -320,8 +322,8 @@ Evaluated on dual NVIDIA GeForce RTX 3060 GPUs (CUDA backend, canvas length $C=1
 
 | Configuration | Step Cap | Threshold ($\tau$) | Acc (%) | ECE ($B=10$) | Brier Score | NLL | Mean Latency | Median Latency | Multi-Step Rate |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Single-Step ($T=1$)** (`specs/fixtures/boolq_results/results_t1.json`) | 1 | None | **85.33%** (128/150) | **0.0862** (8.62%) | **0.2430** | **0.4772** | **1876.1 ms** | **1735.5 ms** | 0/150 (0.0%) |
-| **Adaptive Multi-Step ($T=2$)** (`specs/fixtures/boolq_results/results_t2_adapt.json`) | 2 | 0.5 | 84.00% (126/150) | 0.1179 (11.79%) | 0.2659 | 0.5553 | 1909.5 ms | 1744.2 ms | 31/150 (20.7%) |
+| **Single-Step ($T=1$)** (`specs/fixtures/boolq_results/results_t1.json`) | 1 | None | **85.33%** (128/150) | **0.0862** (8.62%) | **0.2430** | **0.4772** | **1890.7 ms** | **1750.7 ms** | 0/150 (0.0%) |
+| **Adaptive Multi-Step ($T=2$)** (`specs/fixtures/boolq_results/results_t2_adapt.json`) | 2 | 0.5 | 84.00% (126/150) | 0.1179 (11.79%) | 0.2659 | 0.5553 | 1929.8 ms | 1774.2 ms | 31/150 (20.7%) |
 
 ### 9.3 Key Empirical Findings
 
@@ -340,6 +342,10 @@ Evaluated on dual NVIDIA GeForce RTX 3060 GPUs (CUDA backend, canvas length $C=1
 4. **Structural Contrast: Binary Verification vs. Multi-Choice Reasoning**:
    - On ARC-Challenge (4-choice science reasoning), questions exhibited high initial uncertainty, where $T=2$ self-conditioning provided a +10.67% boost.
    - On BoolQ (binary factual reading comprehension), single-step $T=1$ reads were already highly decisive: 79.3% of queries had $\mathcal{H}_{\text{norm}} \le 0.5$ and exited at $T=1$. Forcing extra steps on the remaining 20.7% slightly over-concentrated probability mass (ECE 8.62% $\rightarrow$ 11.79%), confirming that for binary factual comprehension, single-step execution is already near-optimal.
+5. **Latency Profile & Stage Decomposition**:
+   - Sequential single-pass execution on BoolQ averaged **1890.7 ms** at $T=1$ and **1929.8 ms** at $T=2$ (median: 1750.7 ms and 1774.2 ms, respectively), representing a modest **+2.1% latency overhead** (+39.1 ms) for adaptive stepping.
+   - Device-synchronized stage profiling shows prompt prefill dominates the run due to longer reading passages ($P \approx 200\text{--}300$ tokens), averaging **1685.8 ms** (GPU 0 partition: 853.2 ms, cross-GPU transfer: 0.66 ms, GPU 1 partition: 831.9 ms).
+   - In contrast, canvas evaluation remains fast and stable: Step 1 averages **190.2 ms**, and Step 2 averages **189.9 ms** on the 31 queries that stepped (averaging 39.2 ms across the entire 150-query dataset).
 
 
 

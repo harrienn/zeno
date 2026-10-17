@@ -10,8 +10,8 @@
     "total_examples": 150,
     "correct_count": 98,
     "accuracy": 0.6533,
-    "mean_latency_ms": 1039.37,
-    "median_latency_ms": 999.13,
+    "mean_latency_ms": 1037.80,
+    "median_latency_ms": 999.59,
     "mean_normalized_entropy": 0.3709,
     "uncertain_count": 0,
     "step_distribution": {
@@ -33,7 +33,7 @@
       "normalized_entropy": 0.412767,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 189.45,
+      "latency_ms": 201.84,
       "candidates": [
         {
           "label": "A: Planetary gravity will become stronger.",
@@ -63,7 +63,17 @@
           "softcapped_logit": 15.187957,
           "probability": 0.811053
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 0.000,
+        "prompt_p0_ms": 0.000,
+        "prompt_transfer_ms": 0.000,
+        "prompt_p1_ms": 0.000,
+        "canvas_step1_ms": 199.915,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 201.837,
+        "prompt_cache_hit": true
+      }
     },
     {
       "id": "Mercury_SC_409171",
@@ -76,7 +86,7 @@
       "normalized_entropy": 0.052765,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1226.08,
+      "latency_ms": 1243.76,
       "candidates": [
         {
           "label": "A: building materials will be cheaper",
@@ -106,7 +116,17 @@
           "softcapped_logit": 17.260610,
           "probability": 0.000953
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1031.801,
+        "prompt_p0_ms": 527.828,
+        "prompt_transfer_ms": 0.435,
+        "prompt_p1_ms": 503.538,
+        "canvas_step1_ms": 205.109,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1243.759,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_SC_408547",
@@ -119,7 +139,7 @@
       "normalized_entropy": 0.506633,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1182.41,
+      "latency_ms": 1196.64,
       "candidates": [
         {
           "label": "A: Sunlight is converted into chlorophyll.",
@@ -149,7 +169,17 @@
           "softcapped_logit": 16.219124,
           "probability": 0.480806
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1000.965,
+        "prompt_p0_ms": 518.228,
+        "prompt_transfer_ms": 0.433,
+        "prompt_p1_ms": 482.304,
+        "canvas_step1_ms": 189.546,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1196.632,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_407327",
@@ -162,7 +192,7 @@
       "normalized_entropy": 0.986183,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1287.52,
+      "latency_ms": 1287.23,
       "candidates": [
         {
           "label": "A: the independent (manipulated) variable",
@@ -192,7 +222,17 @@
           "softcapped_logit": 17.352083,
           "probability": 0.265065
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1087.568,
+        "prompt_p0_ms": 555.347,
+        "prompt_transfer_ms": 0.459,
+        "prompt_p1_ms": 531.762,
+        "canvas_step1_ms": 192.776,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1287.221,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "MCAS_2006_9_44",
@@ -205,7 +245,7 @@
       "normalized_entropy": 0.822691,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1540.07,
+      "latency_ms": 1539.31,
       "candidates": [
         {
           "label": "A: They have each gained one-half of their maximum kinetic energy.",
@@ -235,7 +275,17 @@
           "softcapped_logit": 16.642471,
           "probability": 0.397204
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1342.614,
+        "prompt_p0_ms": 685.483,
+        "prompt_transfer_ms": 0.567,
+        "prompt_p1_ms": 656.563,
+        "canvas_step1_ms": 188.565,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1539.305,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7270393",
@@ -248,7 +298,7 @@
       "normalized_entropy": 0.194284,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1469.53,
+      "latency_ms": 1458.83,
       "candidates": [
         {
           "label": "A: an infectious, chronic disease",
@@ -278,7 +328,17 @@
           "softcapped_logit": 8.820530,
           "probability": 0.024304
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1260.790,
+        "prompt_p0_ms": 639.429,
+        "prompt_transfer_ms": 0.529,
+        "prompt_p1_ms": 620.832,
+        "canvas_step1_ms": 187.666,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1458.830,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "MCAS_2014_5_7",
@@ -291,7 +351,7 @@
       "normalized_entropy": 0.099130,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1440.14,
+      "latency_ms": 1461.44,
       "candidates": [
         {
           "label": "A: to protect the grasses and seeds from decay before winter",
@@ -321,7 +381,17 @@
           "softcapped_logit": 19.687826,
           "probability": 0.972861
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1247.260,
+        "prompt_p0_ms": 641.478,
+        "prompt_transfer_ms": 0.515,
+        "prompt_p1_ms": 605.268,
+        "canvas_step1_ms": 205.470,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1461.434,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7086660",
@@ -334,7 +404,7 @@
       "normalized_entropy": 0.637965,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1168.94,
+      "latency_ms": 1150.77,
       "candidates": [
         {
           "label": "A: There are active faults in the area.",
@@ -364,7 +434,17 @@
           "softcapped_logit": 16.771914,
           "probability": 0.594262
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 960.229,
+        "prompt_p0_ms": 483.394,
+        "prompt_transfer_ms": 0.379,
+        "prompt_p1_ms": 476.456,
+        "canvas_step1_ms": 185.117,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1150.765,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7168805",
@@ -377,7 +457,7 @@
       "normalized_entropy": 0.152323,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1486.68,
+      "latency_ms": 1456.22,
       "candidates": [
         {
           "label": "A: The chickens would have a lower rate of disease.",
@@ -407,7 +487,17 @@
           "softcapped_logit": 15.589810,
           "probability": 0.001622
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1261.035,
+        "prompt_p0_ms": 632.718,
+        "prompt_transfer_ms": 0.502,
+        "prompt_p1_ms": 627.814,
+        "canvas_step1_ms": 187.546,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1456.218,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "MCAS_2003_8_11",
@@ -420,7 +510,7 @@
       "normalized_entropy": 0.024815,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 875.81,
+      "latency_ms": 857.68,
       "candidates": [
         {
           "label": "A: the proton",
@@ -450,7 +540,17 @@
           "softcapped_logit": 10.324202,
           "probability": 0.000711
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 672.121,
+        "prompt_p0_ms": 340.097,
+        "prompt_transfer_ms": 0.266,
+        "prompt_p1_ms": 331.758,
+        "canvas_step1_ms": 181.729,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 857.680,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7250058",
@@ -463,7 +563,7 @@
       "normalized_entropy": 0.284828,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1039.21,
+      "latency_ms": 1018.35,
       "candidates": [
         {
           "label": "A: energy molecules",
@@ -493,7 +593,17 @@
           "softcapped_logit": 12.703473,
           "probability": 0.004007
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 830.870,
+        "prompt_p0_ms": 418.334,
+        "prompt_transfer_ms": 0.299,
+        "prompt_p1_ms": 412.236,
+        "canvas_step1_ms": 183.229,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1018.347,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7012740",
@@ -506,7 +616,7 @@
       "normalized_entropy": 0.284535,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 966.67,
+      "latency_ms": 931.61,
       "candidates": [
         {
           "label": "A: The Sun provides minerals.",
@@ -536,7 +646,17 @@
           "softcapped_logit": 15.415655,
           "probability": 0.012537
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 743.466,
+        "prompt_p0_ms": 374.275,
+        "prompt_transfer_ms": 0.288,
+        "prompt_p1_ms": 368.903,
+        "canvas_step1_ms": 183.688,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 931.603,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_LBS10610",
@@ -549,7 +669,7 @@
       "normalized_entropy": 0.666137,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1200.29,
+      "latency_ms": 1114.73,
       "candidates": [
         {
           "label": "A: 98° F",
@@ -579,7 +699,17 @@
           "softcapped_logit": 12.239244,
           "probability": 0.084772
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 925.293,
+        "prompt_p0_ms": 468.740,
+        "prompt_transfer_ms": 0.358,
+        "prompt_p1_ms": 456.195,
+        "canvas_step1_ms": 185.129,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1114.728,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_SC_407400",
@@ -592,7 +722,7 @@
       "normalized_entropy": 0.183654,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1130.71,
+      "latency_ms": 1053.35,
       "candidates": [
         {
           "label": "A: Make daily observations of the light bulbs.",
@@ -622,7 +752,17 @@
           "softcapped_logit": 12.115193,
           "probability": 0.050699
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 863.823,
+        "prompt_p0_ms": 436.701,
+        "prompt_transfer_ms": 0.306,
+        "prompt_p1_ms": 426.816,
+        "canvas_step1_ms": 184.708,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1053.343,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7212993",
@@ -635,7 +775,7 @@
       "normalized_entropy": 0.065993,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 779.06,
+      "latency_ms": 725.00,
       "candidates": [
         {
           "label": "A: carbon dioxide",
@@ -665,7 +805,17 @@
           "softcapped_logit": 16.402548,
           "probability": 0.985328
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 540.218,
+        "prompt_p0_ms": 273.971,
+        "prompt_transfer_ms": 0.209,
+        "prompt_p1_ms": 266.037,
+        "canvas_step1_ms": 181.645,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 724.996,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_SC_413240",
@@ -678,7 +828,7 @@
       "normalized_entropy": 0.039173,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 826.24,
+      "latency_ms": 781.22,
       "candidates": [
         {
           "label": "A: 212 degrees Celsius",
@@ -708,7 +858,17 @@
           "softcapped_logit": 15.066286,
           "probability": 0.002446
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 596.185,
+        "prompt_p0_ms": 302.669,
+        "prompt_transfer_ms": 0.249,
+        "prompt_p1_ms": 293.268,
+        "canvas_step1_ms": 181.886,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 781.220,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7186358",
@@ -721,7 +881,7 @@
       "normalized_entropy": 0.338873,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1423.27,
+      "latency_ms": 1409.78,
       "candidates": [
         {
           "label": "A: delete earlier reports that were missing the new findings",
@@ -751,7 +911,17 @@
           "softcapped_logit": 21.492525,
           "probability": 0.875383
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1213.964,
+        "prompt_p0_ms": 610.668,
+        "prompt_transfer_ms": 0.483,
+        "prompt_p1_ms": 602.814,
+        "canvas_step1_ms": 188.378,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1409.777,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7166425",
@@ -764,7 +934,7 @@
       "normalized_entropy": 0.061707,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1150.52,
+      "latency_ms": 1144.26,
       "candidates": [
         {
           "label": "A: from the ice to the pitcher",
@@ -794,7 +964,17 @@
           "softcapped_logit": 11.154521,
           "probability": 0.004661
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 952.068,
+        "prompt_p0_ms": 479.653,
+        "prompt_transfer_ms": 0.375,
+        "prompt_p1_ms": 472.040,
+        "canvas_step1_ms": 186.471,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1144.254,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "MDSA_2007_8_3",
@@ -807,7 +987,7 @@
       "normalized_entropy": 0.394536,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1441.38,
+      "latency_ms": 1434.32,
       "candidates": [
         {
           "label": "A: there will be more trees for logging",
@@ -837,7 +1017,17 @@
           "softcapped_logit": 14.901046,
           "probability": 0.021039
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1240.331,
+        "prompt_p0_ms": 622.170,
+        "prompt_transfer_ms": 0.485,
+        "prompt_p1_ms": 617.676,
+        "canvas_step1_ms": 186.649,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1434.315,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7094290",
@@ -850,7 +1040,7 @@
       "normalized_entropy": 0.021305,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1088.34,
+      "latency_ms": 1080.79,
       "candidates": [
         {
           "label": "A: the invention of the microscope.",
@@ -880,7 +1070,17 @@
           "softcapped_logit": 17.614054,
           "probability": 0.995893
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 891.098,
+        "prompt_p0_ms": 450.221,
+        "prompt_transfer_ms": 0.363,
+        "prompt_p1_ms": 440.514,
+        "canvas_step1_ms": 184.444,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1080.791,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7186568",
@@ -893,7 +1093,7 @@
       "normalized_entropy": 0.031815,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1082.52,
+      "latency_ms": 1077.18,
       "candidates": [
         {
           "label": "A: converting energy from one form into another",
@@ -923,7 +1123,17 @@
           "softcapped_logit": 7.395211,
           "probability": 0.000125
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 888.219,
+        "prompt_p0_ms": 448.783,
+        "prompt_transfer_ms": 0.353,
+        "prompt_p1_ms": 439.083,
+        "canvas_step1_ms": 183.916,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1077.174,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_402216",
@@ -936,7 +1146,7 @@
       "normalized_entropy": 0.005895,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1633.41,
+      "latency_ms": 1633.28,
       "candidates": [
         {
           "label": "A: H_{2}O(l) -> 2H(g) + O(g)",
@@ -966,7 +1176,17 @@
           "softcapped_logit": 9.603116,
           "probability": 0.000167
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1439.534,
+        "prompt_p0_ms": 726.118,
+        "prompt_transfer_ms": 0.558,
+        "prompt_p1_ms": 712.858,
+        "canvas_step1_ms": 187.379,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1633.277,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_404894",
@@ -979,7 +1199,7 @@
       "normalized_entropy": 0.204689,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 872.24,
+      "latency_ms": 870.72,
       "candidates": [
         {
           "label": "A: Penguins make great pets.",
@@ -1009,7 +1229,17 @@
           "softcapped_logit": 8.435907,
           "probability": 0.000320
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 684.025,
+        "prompt_p0_ms": 344.914,
+        "prompt_transfer_ms": 0.263,
+        "prompt_p1_ms": 338.848,
+        "canvas_step1_ms": 182.940,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 870.715,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "MCAS_2002_8_11",
@@ -1022,7 +1252,7 @@
       "normalized_entropy": 0.691390,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1403.29,
+      "latency_ms": 1408.22,
       "candidates": [
         {
           "label": "A: 90°F.",
@@ -1052,7 +1282,17 @@
           "softcapped_logit": 16.630709,
           "probability": 0.574637
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1215.471,
+        "prompt_p0_ms": 610.960,
+        "prompt_transfer_ms": 0.493,
+        "prompt_p1_ms": 604.019,
+        "canvas_step1_ms": 186.748,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1408.220,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_SC_405086",
@@ -1065,7 +1305,7 @@
       "normalized_entropy": 0.021522,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 701.91,
+      "latency_ms": 705.87,
       "candidates": [
         {
           "label": "A: clouds.",
@@ -1095,7 +1335,17 @@
           "softcapped_logit": 12.169554,
           "probability": 0.000557
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 522.988,
+        "prompt_p0_ms": 263.853,
+        "prompt_transfer_ms": 0.213,
+        "prompt_p1_ms": 258.922,
+        "canvas_step1_ms": 180.133,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 705.863,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_SC_408324",
@@ -1108,7 +1358,7 @@
       "normalized_entropy": 0.671909,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1075.35,
+      "latency_ms": 1076.38,
       "candidates": [
         {
           "label": "A: It became a solid.",
@@ -1138,7 +1388,17 @@
           "softcapped_logit": 3.924772,
           "probability": 0.000340
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 889.229,
+        "prompt_p0_ms": 447.157,
+        "prompt_transfer_ms": 0.319,
+        "prompt_p1_ms": 441.752,
+        "canvas_step1_ms": 182.831,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1076.372,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7218820",
@@ -1151,7 +1411,7 @@
       "normalized_entropy": 0.151566,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1353.75,
+      "latency_ms": 1349.75,
       "candidates": [
         {
           "label": "A: It is a rare event inconsistent with local climate and weather.",
@@ -1181,7 +1441,17 @@
           "softcapped_logit": 13.813004,
           "probability": 0.016283
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1153.794,
+        "prompt_p0_ms": 580.092,
+        "prompt_transfer_ms": 0.467,
+        "prompt_p1_ms": 573.235,
+        "canvas_step1_ms": 189.129,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1349.746,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_412202",
@@ -1194,7 +1464,7 @@
       "normalized_entropy": 0.008325,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1457.70,
+      "latency_ms": 1471.41,
       "candidates": [
         {
           "label": "A: Object 2, Object 3, Object 1",
@@ -1224,7 +1494,17 @@
           "softcapped_logit": 9.956198,
           "probability": 0.000816
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1276.156,
+        "prompt_p0_ms": 648.996,
+        "prompt_transfer_ms": 0.525,
+        "prompt_p1_ms": 626.635,
+        "canvas_step1_ms": 187.722,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1471.409,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_SC_409139",
@@ -1237,7 +1517,7 @@
       "normalized_entropy": 0.474885,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1147.02,
+      "latency_ms": 1150.02,
       "candidates": [
         {
           "label": "A: Plankton reproduce quickly.",
@@ -1267,7 +1547,17 @@
           "softcapped_logit": 13.347481,
           "probability": 0.147684
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 960.412,
+        "prompt_p0_ms": 482.957,
+        "prompt_transfer_ms": 0.459,
+        "prompt_p1_ms": 476.996,
+        "canvas_step1_ms": 184.398,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1150.016,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_400687",
@@ -1280,7 +1570,7 @@
       "normalized_entropy": 0.077832,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 865.75,
+      "latency_ms": 864.60,
       "candidates": [
         {
           "label": "A: Wood is magnetic.",
@@ -1310,7 +1600,17 @@
           "softcapped_logit": 16.456059,
           "probability": 0.000357
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 676.939,
+        "prompt_p0_ms": 339.480,
+        "prompt_transfer_ms": 0.220,
+        "prompt_p1_ms": 337.240,
+        "canvas_step1_ms": 184.314,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 864.592,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7171605",
@@ -1323,7 +1623,7 @@
       "normalized_entropy": 0.406784,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1215.77,
+      "latency_ms": 1220.67,
       "candidates": [
         {
           "label": "A: the type of environment in which the organisms lived",
@@ -1353,7 +1653,17 @@
           "softcapped_logit": 11.931281,
           "probability": 0.009224
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1028.568,
+        "prompt_p0_ms": 519.910,
+        "prompt_transfer_ms": 0.415,
+        "prompt_p1_ms": 508.243,
+        "canvas_step1_ms": 186.340,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1220.663,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7210245",
@@ -1366,7 +1676,7 @@
       "normalized_entropy": 0.490437,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1039.80,
+      "latency_ms": 1037.12,
       "candidates": [
         {
           "label": "A: its high surface tension",
@@ -1396,7 +1706,17 @@
           "softcapped_logit": 15.728543,
           "probability": 0.290214
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 847.608,
+        "prompt_p0_ms": 425.139,
+        "prompt_transfer_ms": 0.312,
+        "prompt_p1_ms": 422.157,
+        "canvas_step1_ms": 184.870,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1037.120,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "AKDE&ED_2008_4_25",
@@ -1409,7 +1729,7 @@
       "normalized_entropy": 0.221269,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 931.03,
+      "latency_ms": 934.28,
       "candidates": [
         {
           "label": "A: Ice is a liquid.",
@@ -1439,7 +1759,17 @@
           "softcapped_logit": 12.976651,
           "probability": 0.008839
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 746.849,
+        "prompt_p0_ms": 377.667,
+        "prompt_transfer_ms": 0.316,
+        "prompt_p1_ms": 368.866,
+        "canvas_step1_ms": 183.646,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 934.273,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "AKDE&ED_2008_4_19",
@@ -1452,7 +1782,7 @@
       "normalized_entropy": 0.465133,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 963.67,
+      "latency_ms": 962.84,
       "candidates": [
         {
           "label": "A: It causes work to be more difficult.",
@@ -1482,7 +1812,17 @@
           "softcapped_logit": 15.142488,
           "probability": 0.796545
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 775.204,
+        "prompt_p0_ms": 387.864,
+        "prompt_transfer_ms": 0.284,
+        "prompt_p1_ms": 387.056,
+        "canvas_step1_ms": 183.536,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 962.837,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_SC_400402",
@@ -1495,7 +1835,7 @@
       "normalized_entropy": 0.590810,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 676.63,
+      "latency_ms": 678.83,
       "candidates": [
         {
           "label": "A: solar eclipse",
@@ -1525,7 +1865,17 @@
           "softcapped_logit": 12.015943,
           "probability": 0.028683
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 495.442,
+        "prompt_p0_ms": 249.376,
+        "prompt_transfer_ms": 0.193,
+        "prompt_p1_ms": 245.873,
+        "canvas_step1_ms": 180.619,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 678.821,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7234308",
@@ -1538,7 +1888,7 @@
       "normalized_entropy": 0.235904,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1352.26,
+      "latency_ms": 1352.82,
       "candidates": [
         {
           "label": "A: Equal crust densities are found on opposite sides of the region.",
@@ -1568,7 +1918,17 @@
           "softcapped_logit": 8.723374,
           "probability": 0.000406
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1157.128,
+        "prompt_p0_ms": 580.925,
+        "prompt_transfer_ms": 0.454,
+        "prompt_p1_ms": 575.749,
+        "canvas_step1_ms": 188.810,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1352.819,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "ACTAAP_2014_5_8",
@@ -1581,7 +1941,7 @@
       "normalized_entropy": 0.054472,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1184.38,
+      "latency_ms": 1188.80,
       "candidates": [
         {
           "label": "A: The sun would be very dim next to one of the smallest stars.",
@@ -1611,7 +1971,17 @@
           "softcapped_logit": 13.838417,
           "probability": 0.000152
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 998.515,
+        "prompt_p0_ms": 500.587,
+        "prompt_transfer_ms": 0.411,
+        "prompt_p1_ms": 497.517,
+        "canvas_step1_ms": 184.412,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1188.799,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_400407",
@@ -1624,7 +1994,7 @@
       "normalized_entropy": 0.088783,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 971.78,
+      "latency_ms": 976.33,
       "candidates": [
         {
           "label": "A: The solid planets are much larger than the gas planets.",
@@ -1654,7 +2024,17 @@
           "softcapped_logit": 11.578305,
           "probability": 0.002121
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 788.749,
+        "prompt_p0_ms": 397.237,
+        "prompt_transfer_ms": 0.306,
+        "prompt_p1_ms": 391.206,
+        "canvas_step1_ms": 183.042,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 976.322,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7116288",
@@ -1667,7 +2047,7 @@
       "normalized_entropy": 0.627617,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 998.88,
+      "latency_ms": 1002.75,
       "candidates": [
         {
           "label": "A: to allow the passage of carbon dioxide into the plant",
@@ -1697,7 +2077,17 @@
           "softcapped_logit": 19.349615,
           "probability": 0.681749
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 814.021,
+        "prompt_p0_ms": 409.849,
+        "prompt_transfer_ms": 0.304,
+        "prompt_p1_ms": 403.868,
+        "canvas_step1_ms": 184.262,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1002.742,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "MCAS_2004_9_15-v1",
@@ -1710,7 +2100,7 @@
       "normalized_entropy": 0.056416,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1122.40,
+      "latency_ms": 1126.41,
       "candidates": [
         {
           "label": "A: Hydraulic systems involve fluids in motion and pneumatic systems involve fluids at rest.",
@@ -1740,7 +2130,17 @@
           "softcapped_logit": 11.743802,
           "probability": 0.003330
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 936.761,
+        "prompt_p0_ms": 472.948,
+        "prompt_transfer_ms": 0.367,
+        "prompt_p1_ms": 463.446,
+        "canvas_step1_ms": 183.642,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1126.404,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "NYSEDREGENTS_2015_4_26",
@@ -1753,7 +2153,7 @@
       "normalized_entropy": 0.423827,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 922.91,
+      "latency_ms": 923.72,
       "candidates": [
         {
           "label": "A: preparing for migration",
@@ -1783,7 +2183,17 @@
           "softcapped_logit": 15.595483,
           "probability": 0.826886
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 735.579,
+        "prompt_p0_ms": 369.357,
+        "prompt_transfer_ms": 0.271,
+        "prompt_p1_ms": 365.952,
+        "canvas_step1_ms": 183.882,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 923.717,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_SC_401620",
@@ -1796,7 +2206,7 @@
       "normalized_entropy": 0.172871,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 818.15,
+      "latency_ms": 819.98,
       "candidates": [
         {
           "label": "A: The Moon passes in front of the Sun.",
@@ -1826,7 +2236,17 @@
           "softcapped_logit": 12.594237,
           "probability": 0.001171
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 634.491,
+        "prompt_p0_ms": 319.899,
+        "prompt_transfer_ms": 0.239,
+        "prompt_p1_ms": 314.353,
+        "canvas_step1_ms": 182.052,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 819.978,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_400877",
@@ -1839,7 +2259,7 @@
       "normalized_entropy": 0.495472,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 828.31,
+      "latency_ms": 822.10,
       "candidates": [
         {
           "label": "A: 19",
@@ -1869,7 +2289,17 @@
           "softcapped_logit": 13.349213,
           "probability": 0.774941
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 636.909,
+        "prompt_p0_ms": 322.280,
+        "prompt_transfer_ms": 0.253,
+        "prompt_p1_ms": 314.376,
+        "canvas_step1_ms": 181.968,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 822.100,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7174213",
@@ -1882,7 +2312,7 @@
       "normalized_entropy": 0.930933,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1017.05,
+      "latency_ms": 1002.75,
       "candidates": [
         {
           "label": "A: the distance between molecules in the medium",
@@ -1912,7 +2342,17 @@
           "softcapped_logit": 17.064886,
           "probability": 0.136026
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 812.661,
+        "prompt_p0_ms": 410.353,
+        "prompt_transfer_ms": 0.296,
+        "prompt_p1_ms": 402.011,
+        "canvas_step1_ms": 185.466,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1002.748,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "NYSEDREGENTS_2008_8_34",
@@ -1925,7 +2365,7 @@
       "normalized_entropy": 0.050667,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1291.66,
+      "latency_ms": 1293.83,
       "candidates": [
         {
           "label": "A: Both potential energy and kinetic energy increase.",
@@ -1955,7 +2395,17 @@
           "softcapped_logit": 13.831332,
           "probability": 0.000634
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1099.543,
+        "prompt_p0_ms": 554.371,
+        "prompt_transfer_ms": 0.452,
+        "prompt_p1_ms": 544.720,
+        "canvas_step1_ms": 188.215,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1293.823,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7212398",
@@ -1968,7 +2418,7 @@
       "normalized_entropy": 0.059202,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 758.74,
+      "latency_ms": 748.38,
       "candidates": [
         {
           "label": "A: rubbing alcohol.",
@@ -1998,7 +2448,17 @@
           "softcapped_logit": 16.182621,
           "probability": 0.000846
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 565.146,
+        "prompt_p0_ms": 283.817,
+        "prompt_transfer_ms": 0.225,
+        "prompt_p1_ms": 281.103,
+        "canvas_step1_ms": 180.325,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 748.375,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_SC_401290",
@@ -2011,7 +2471,7 @@
       "normalized_entropy": 0.691536,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 762.01,
+      "latency_ms": 760.74,
       "candidates": [
         {
           "label": "A: radio",
@@ -2041,7 +2501,17 @@
           "softcapped_logit": 14.843028,
           "probability": 0.122151
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 574.804,
+        "prompt_p0_ms": 291.203,
+        "prompt_transfer_ms": 0.230,
+        "prompt_p1_ms": 283.371,
+        "canvas_step1_ms": 182.840,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 760.736,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_SC_402120",
@@ -2054,7 +2524,7 @@
       "normalized_entropy": 0.600576,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 789.84,
+      "latency_ms": 793.05,
       "candidates": [
         {
           "label": "A: thermometer",
@@ -2084,7 +2554,17 @@
           "softcapped_logit": 8.044607,
           "probability": 0.073263
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 608.649,
+        "prompt_p0_ms": 310.143,
+        "prompt_transfer_ms": 0.235,
+        "prompt_p1_ms": 298.271,
+        "canvas_step1_ms": 181.232,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 793.046,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_184975",
@@ -2097,7 +2577,7 @@
       "normalized_entropy": 0.131701,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 962.99,
+      "latency_ms": 963.37,
       "candidates": [
         {
           "label": "A: vestigial structures.",
@@ -2127,7 +2607,17 @@
           "softcapped_logit": 13.472546,
           "probability": 0.014088
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 777.176,
+        "prompt_p0_ms": 393.831,
+        "prompt_transfer_ms": 0.294,
+        "prompt_p1_ms": 383.051,
+        "canvas_step1_ms": 182.304,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 963.362,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_SC_400578",
@@ -2140,7 +2630,7 @@
       "normalized_entropy": 0.398856,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 938.33,
+      "latency_ms": 935.53,
       "candidates": [
         {
           "label": "A: A woodpecker taps a tree for insects.",
@@ -2170,7 +2660,17 @@
           "softcapped_logit": 16.671663,
           "probability": 0.011570
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 747.392,
+        "prompt_p0_ms": 377.373,
+        "prompt_transfer_ms": 0.295,
+        "prompt_p1_ms": 369.724,
+        "canvas_step1_ms": 184.356,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 935.522,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "MCAS_2001_8_4",
@@ -2183,7 +2683,7 @@
       "normalized_entropy": 0.672485,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1405.06,
+      "latency_ms": 1425.07,
       "candidates": [
         {
           "label": "A: 20 g because no matter is added or removed",
@@ -2213,7 +2713,17 @@
           "softcapped_logit": 16.148819,
           "probability": 0.201141
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1223.806,
+        "prompt_p0_ms": 623.866,
+        "prompt_transfer_ms": 0.514,
+        "prompt_p1_ms": 599.426,
+        "canvas_step1_ms": 194.361,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1425.063,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "MCAS_2003_5_33",
@@ -2226,7 +2736,7 @@
       "normalized_entropy": 0.501036,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1029.95,
+      "latency_ms": 1052.58,
       "candidates": [
         {
           "label": "A: weigh a glass before and after it is filled with water",
@@ -2256,7 +2766,17 @@
           "softcapped_logit": 20.973913,
           "probability": 0.776838
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 861.891,
+        "prompt_p0_ms": 445.101,
+        "prompt_transfer_ms": 0.334,
+        "prompt_p1_ms": 416.455,
+        "canvas_step1_ms": 185.689,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1052.580,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7068513",
@@ -2269,7 +2789,7 @@
       "normalized_entropy": 0.073785,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 866.32,
+      "latency_ms": 863.07,
       "candidates": [
         {
           "label": "A: rift zones",
@@ -2299,7 +2819,17 @@
           "softcapped_logit": 10.054118,
           "probability": 0.001490
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 674.905,
+        "prompt_p0_ms": 341.402,
+        "prompt_transfer_ms": 0.237,
+        "prompt_p1_ms": 333.266,
+        "canvas_step1_ms": 183.945,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 863.063,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "AKDE&ED_2008_4_26",
@@ -2312,7 +2842,7 @@
       "normalized_entropy": 0.005085,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1022.69,
+      "latency_ms": 1019.93,
       "candidates": [
         {
           "label": "A: A flower makes food for a butterfly.",
@@ -2342,7 +2872,17 @@
           "softcapped_logit": 11.148315,
           "probability": 0.000097
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 827.636,
+        "prompt_p0_ms": 419.858,
+        "prompt_transfer_ms": 0.320,
+        "prompt_p1_ms": 407.459,
+        "canvas_step1_ms": 187.243,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1019.930,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7235638",
@@ -2355,7 +2895,7 @@
       "normalized_entropy": 0.186023,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1125.05,
+      "latency_ms": 1128.16,
       "candidates": [
         {
           "label": "A: solar flares",
@@ -2385,7 +2925,17 @@
           "softcapped_logit": 13.659595,
           "probability": 0.000181
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 935.161,
+        "prompt_p0_ms": 474.888,
+        "prompt_transfer_ms": 0.369,
+        "prompt_p1_ms": 459.904,
+        "canvas_step1_ms": 187.376,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1128.151,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "MDSA_2009_5_20",
@@ -2398,7 +2948,7 @@
       "normalized_entropy": 0.256145,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1877.19,
+      "latency_ms": 1897.22,
       "candidates": [
         {
           "label": "A: A person bakes a cake with electricity produced by a hydroelectric power plant.",
@@ -2428,7 +2978,17 @@
           "softcapped_logit": 11.884781,
           "probability": 0.001387
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1697.943,
+        "prompt_p0_ms": 861.803,
+        "prompt_transfer_ms": 0.770,
+        "prompt_p1_ms": 835.370,
+        "canvas_step1_ms": 188.774,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1897.213,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_178325",
@@ -2441,7 +3001,7 @@
       "normalized_entropy": 0.315238,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1075.27,
+      "latency_ms": 1089.91,
       "candidates": [
         {
           "label": "A: a graph",
@@ -2471,7 +3031,17 @@
           "softcapped_logit": 16.519814,
           "probability": 0.898015
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 886.526,
+        "prompt_p0_ms": 448.766,
+        "prompt_transfer_ms": 0.342,
+        "prompt_p1_ms": 437.417,
+        "canvas_step1_ms": 198.586,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1089.904,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7212678",
@@ -2484,7 +3054,7 @@
       "normalized_entropy": 0.014503,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1145.36,
+      "latency_ms": 1192.59,
       "candidates": [
         {
           "label": "A: to transfer protons to the lightbulb",
@@ -2514,7 +3084,17 @@
           "softcapped_logit": 8.962823,
           "probability": 0.000046
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 996.639,
+        "prompt_p0_ms": 523.893,
+        "prompt_transfer_ms": 0.489,
+        "prompt_p1_ms": 472.257,
+        "canvas_step1_ms": 189.823,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1192.586,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "TAKS_2009_8_32",
@@ -2527,7 +3107,7 @@
       "normalized_entropy": 0.393622,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 734.34,
+      "latency_ms": 741.37,
       "candidates": [
         {
           "label": "A: Color blindness",
@@ -2557,7 +3137,17 @@
           "softcapped_logit": 11.754437,
           "probability": 0.007771
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 551.542,
+        "prompt_p0_ms": 287.119,
+        "prompt_transfer_ms": 0.923,
+        "prompt_p1_ms": 263.499,
+        "canvas_step1_ms": 186.232,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 741.362,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_412681",
@@ -2570,7 +3160,7 @@
       "normalized_entropy": 0.570590,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1637.60,
+      "latency_ms": 1684.96,
       "candidates": [
         {
           "label": "A: Double the mass of m_{1} and double the distance between m_{1} and m_{2}.",
@@ -2600,7 +3190,17 @@
           "softcapped_logit": 16.243810,
           "probability": 0.711320
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1487.765,
+        "prompt_p0_ms": 775.513,
+        "prompt_transfer_ms": 0.591,
+        "prompt_p1_ms": 711.662,
+        "canvas_step1_ms": 188.506,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1684.953,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_400440",
@@ -2613,7 +3213,7 @@
       "normalized_entropy": 0.279285,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 830.16,
+      "latency_ms": 832.20,
       "candidates": [
         {
           "label": "A: NaCl + H_{2}O",
@@ -2643,7 +3243,17 @@
           "softcapped_logit": 13.823584,
           "probability": 0.001347
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 647.749,
+        "prompt_p0_ms": 329.148,
+        "prompt_transfer_ms": 0.256,
+        "prompt_p1_ms": 318.345,
+        "canvas_step1_ms": 180.748,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 832.194,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_SC_416529",
@@ -2656,7 +3266,7 @@
       "normalized_entropy": 0.103248,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 800.83,
+      "latency_ms": 800.26,
       "candidates": [
         {
           "label": "A: to collect water",
@@ -2686,7 +3296,17 @@
           "softcapped_logit": 9.275467,
           "probability": 0.007511
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 610.552,
+        "prompt_p0_ms": 310.581,
+        "prompt_transfer_ms": 0.248,
+        "prompt_p1_ms": 299.723,
+        "canvas_step1_ms": 186.179,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 800.260,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "MCAS_2006_8_1",
@@ -2699,7 +3319,7 @@
       "normalized_entropy": 0.875574,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 850.08,
+      "latency_ms": 840.79,
       "candidates": [
         {
           "label": "A: respiratory",
@@ -2729,7 +3349,17 @@
           "softcapped_logit": 10.953150,
           "probability": 0.089419
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 654.350,
+        "prompt_p0_ms": 333.049,
+        "prompt_transfer_ms": 0.262,
+        "prompt_p1_ms": 321.039,
+        "canvas_step1_ms": 182.612,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 840.787,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "TIMSS_2003_8_pg80",
@@ -2742,7 +3372,7 @@
       "normalized_entropy": 0.299670,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 704.95,
+      "latency_ms": 706.33,
       "candidates": [
         {
           "label": "A: skin",
@@ -2772,7 +3402,17 @@
           "softcapped_logit": 18.107570,
           "probability": 0.890329
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 521.826,
+        "prompt_p0_ms": 265.773,
+        "prompt_transfer_ms": 0.209,
+        "prompt_p1_ms": 255.844,
+        "canvas_step1_ms": 181.612,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 706.323,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_416645",
@@ -2785,7 +3425,7 @@
       "normalized_entropy": 0.646635,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1462.89,
+      "latency_ms": 1469.58,
       "candidates": [
         {
           "label": "A: They both move toward an energy source.",
@@ -2815,7 +3455,17 @@
           "softcapped_logit": 11.487249,
           "probability": 0.033305
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1275.752,
+        "prompt_p0_ms": 644.666,
+        "prompt_transfer_ms": 0.497,
+        "prompt_p1_ms": 630.589,
+        "canvas_step1_ms": 186.325,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1469.576,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_406777",
@@ -2828,7 +3478,7 @@
       "normalized_entropy": 0.038651,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 936.92,
+      "latency_ms": 937.93,
       "candidates": [
         {
           "label": "A: Offspring come from identical parents.",
@@ -2858,7 +3508,17 @@
           "softcapped_logit": 10.417495,
           "probability": 0.001315
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 750.661,
+        "prompt_p0_ms": 379.900,
+        "prompt_transfer_ms": 0.298,
+        "prompt_p1_ms": 370.463,
+        "canvas_step1_ms": 183.041,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 937.926,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_LBS11018",
@@ -2871,7 +3531,7 @@
       "normalized_entropy": 0.489084,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1210.88,
+      "latency_ms": 1209.85,
       "candidates": [
         {
           "label": "A: W can scratch X.",
@@ -2901,7 +3561,17 @@
           "softcapped_logit": 8.276726,
           "probability": 0.003090
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1017.507,
+        "prompt_p0_ms": 517.182,
+        "prompt_transfer_ms": 0.399,
+        "prompt_p1_ms": 499.926,
+        "canvas_step1_ms": 186.944,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1209.842,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7139878",
@@ -2914,7 +3584,7 @@
       "normalized_entropy": 0.743475,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1121.32,
+      "latency_ms": 1113.25,
       "candidates": [
         {
           "label": "A: amounts of sunlight",
@@ -2944,7 +3614,17 @@
           "softcapped_logit": 15.187515,
           "probability": 0.351859
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 919.494,
+        "prompt_p0_ms": 463.701,
+        "prompt_transfer_ms": 0.431,
+        "prompt_p1_ms": 455.361,
+        "canvas_step1_ms": 188.547,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1113.247,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_417147",
@@ -2957,7 +3637,7 @@
       "normalized_entropy": 0.677220,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 815.64,
+      "latency_ms": 828.59,
       "candidates": [
         {
           "label": "A: reactions on the sea floor.",
@@ -2987,7 +3667,17 @@
           "softcapped_logit": 15.531586,
           "probability": 0.059599
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 640.325,
+        "prompt_p0_ms": 328.382,
+        "prompt_transfer_ms": 0.253,
+        "prompt_p1_ms": 311.689,
+        "canvas_step1_ms": 184.641,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 828.587,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7016765",
@@ -3000,7 +3690,7 @@
       "normalized_entropy": 0.757692,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 874.30,
+      "latency_ms": 873.35,
       "candidates": [
         {
           "label": "A: Most of Earth is covered with water.",
@@ -3030,7 +3720,17 @@
           "softcapped_logit": 13.979983,
           "probability": 0.155114
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 685.142,
+        "prompt_p0_ms": 345.713,
+        "prompt_transfer_ms": 0.262,
+        "prompt_p1_ms": 339.168,
+        "canvas_step1_ms": 184.372,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 873.342,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_415303",
@@ -3043,7 +3743,7 @@
       "normalized_entropy": 0.722838,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1008.20,
+      "latency_ms": 1012.93,
       "candidates": [
         {
           "label": "A: 1",
@@ -3073,7 +3773,17 @@
           "softcapped_logit": 14.336957,
           "probability": 0.544748
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 825.721,
+        "prompt_p0_ms": 419.982,
+        "prompt_transfer_ms": 0.333,
+        "prompt_p1_ms": 405.406,
+        "canvas_step1_ms": 182.975,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1012.925,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7215845",
@@ -3086,7 +3796,7 @@
       "normalized_entropy": 0.073806,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 853.94,
+      "latency_ms": 852.92,
       "candidates": [
         {
           "label": "A: a magnifying glass",
@@ -3116,7 +3826,17 @@
           "softcapped_logit": 12.354139,
           "probability": 0.018926
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 666.098,
+        "prompt_p0_ms": 336.417,
+        "prompt_transfer_ms": 0.263,
+        "prompt_p1_ms": 329.419,
+        "canvas_step1_ms": 183.225,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 852.918,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7136885",
@@ -3129,7 +3849,7 @@
       "normalized_entropy": 0.710558,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1304.00,
+      "latency_ms": 1309.83,
       "candidates": [
         {
           "label": "A: amount of dissolved oxygen in the oceans.",
@@ -3159,7 +3879,17 @@
           "softcapped_logit": 18.635094,
           "probability": 0.022888
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1115.565,
+        "prompt_p0_ms": 564.916,
+        "prompt_transfer_ms": 0.469,
+        "prompt_p1_ms": 550.179,
+        "canvas_step1_ms": 187.781,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1309.823,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_SC_400059",
@@ -3172,7 +3902,7 @@
       "normalized_entropy": 0.737273,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 912.27,
+      "latency_ms": 898.74,
       "candidates": [
         {
           "label": "A: become deeper and wider.",
@@ -3202,7 +3932,17 @@
           "softcapped_logit": 14.627883,
           "probability": 0.064960
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 711.796,
+        "prompt_p0_ms": 359.665,
+        "prompt_transfer_ms": 0.281,
+        "prompt_p1_ms": 351.850,
+        "canvas_step1_ms": 183.099,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 898.737,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7044328",
@@ -3215,7 +3955,7 @@
       "normalized_entropy": 0.766541,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 972.81,
+      "latency_ms": 973.83,
       "candidates": [
         {
           "label": "A: protection, management, and renewal of resources",
@@ -3245,7 +3985,17 @@
           "softcapped_logit": 15.588520,
           "probability": 0.354337
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 783.521,
+        "prompt_p0_ms": 396.472,
+        "prompt_transfer_ms": 0.300,
+        "prompt_p1_ms": 386.748,
+        "canvas_step1_ms": 185.846,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 973.830,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "MEA_2010_8_1",
@@ -3258,7 +4008,7 @@
       "normalized_entropy": 0.318398,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 906.27,
+      "latency_ms": 909.62,
       "candidates": [
         {
           "label": "A: the Sun, the Moon, some planets, and comets",
@@ -3288,7 +4038,17 @@
           "softcapped_logit": 12.721275,
           "probability": 0.032629
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 723.492,
+        "prompt_p0_ms": 366.778,
+        "prompt_transfer_ms": 0.287,
+        "prompt_p1_ms": 356.427,
+        "canvas_step1_ms": 182.244,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 909.620,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_414099",
@@ -3301,7 +4061,7 @@
       "normalized_entropy": 0.001544,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1213.11,
+      "latency_ms": 1219.09,
       "candidates": [
         {
           "label": "A: compare the number of vacuoles in the two cells",
@@ -3331,7 +4091,17 @@
           "softcapped_logit": 6.673922,
           "probability": 0.000003
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1027.075,
+        "prompt_p0_ms": 520.704,
+        "prompt_transfer_ms": 0.410,
+        "prompt_p1_ms": 505.961,
+        "canvas_step1_ms": 185.825,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1219.085,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_410807",
@@ -3344,7 +4114,7 @@
       "normalized_entropy": 0.024892,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1218.49,
+      "latency_ms": 1219.82,
       "candidates": [
         {
           "label": "A: when tadpoles need to blend in with their surroundings",
@@ -3374,7 +4144,17 @@
           "softcapped_logit": 13.709896,
           "probability": 0.000720
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1028.251,
+        "prompt_p0_ms": 517.876,
+        "prompt_transfer_ms": 0.387,
+        "prompt_p1_ms": 509.988,
+        "canvas_step1_ms": 186.034,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1219.821,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_403234",
@@ -3387,7 +4167,7 @@
       "normalized_entropy": 0.287351,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1161.98,
+      "latency_ms": 1163.14,
       "candidates": [
         {
           "label": "A: The forces acting on the object are in equilibrium.",
@@ -3417,7 +4197,17 @@
           "softcapped_logit": 13.306259,
           "probability": 0.066315
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 973.073,
+        "prompt_p0_ms": 492.851,
+        "prompt_transfer_ms": 0.360,
+        "prompt_p1_ms": 479.862,
+        "canvas_step1_ms": 184.814,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1163.133,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7011323",
@@ -3430,7 +4220,7 @@
       "normalized_entropy": 0.870682,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 718.70,
+      "latency_ms": 719.88,
       "candidates": [
         {
           "label": "A: cut down trees",
@@ -3460,7 +4250,17 @@
           "softcapped_logit": 15.962544,
           "probability": 0.171401
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 535.143,
+        "prompt_p0_ms": 270.418,
+        "prompt_transfer_ms": 0.187,
+        "prompt_p1_ms": 264.538,
+        "canvas_step1_ms": 181.795,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 719.873,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7109463",
@@ -3473,7 +4273,7 @@
       "normalized_entropy": 0.611169,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 776.99,
+      "latency_ms": 783.00,
       "candidates": [
         {
           "label": "A: formation of fossil fuels",
@@ -3503,7 +4303,17 @@
           "softcapped_logit": 8.914196,
           "probability": 0.026889
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 597.188,
+        "prompt_p0_ms": 302.944,
+        "prompt_transfer_ms": 0.238,
+        "prompt_p1_ms": 294.006,
+        "canvas_step1_ms": 182.391,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 783.000,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_SC_401277",
@@ -3516,7 +4326,7 @@
       "normalized_entropy": 0.447008,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 897.70,
+      "latency_ms": 900.27,
       "candidates": [
         {
           "label": "A: escaping predators",
@@ -3546,7 +4356,17 @@
           "softcapped_logit": 22.207037,
           "probability": 0.821981
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 712.924,
+        "prompt_p0_ms": 360.099,
+        "prompt_transfer_ms": 0.260,
+        "prompt_p1_ms": 352.565,
+        "canvas_step1_ms": 183.235,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 900.268,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "MCAS_2005_5_25",
@@ -3559,7 +4379,7 @@
       "normalized_entropy": 0.558229,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 824.75,
+      "latency_ms": 830.43,
       "candidates": [
         {
           "label": "A: a vapor.",
@@ -3589,7 +4409,17 @@
           "softcapped_logit": 16.996508,
           "probability": 0.702695
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 644.036,
+        "prompt_p0_ms": 327.512,
+        "prompt_transfer_ms": 0.250,
+        "prompt_p1_ms": 316.274,
+        "canvas_step1_ms": 183.279,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 830.431,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_SC_401272",
@@ -3602,7 +4432,7 @@
       "normalized_entropy": 0.697392,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 780.88,
+      "latency_ms": 783.20,
       "candidates": [
         {
           "label": "A: the scientific method.",
@@ -3632,7 +4462,17 @@
           "softcapped_logit": 14.830720,
           "probability": 0.048351
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 597.874,
+        "prompt_p0_ms": 303.059,
+        "prompt_transfer_ms": 0.226,
+        "prompt_p1_ms": 294.589,
+        "canvas_step1_ms": 182.166,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 783.192,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7103600",
@@ -3645,7 +4485,7 @@
       "normalized_entropy": 0.434259,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1549.69,
+      "latency_ms": 1556.92,
       "candidates": [
         {
           "label": "A: type of fertilizer",
@@ -3675,7 +4515,17 @@
           "softcapped_logit": 16.780336,
           "probability": 0.043770
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1359.642,
+        "prompt_p0_ms": 689.421,
+        "prompt_transfer_ms": 0.530,
+        "prompt_p1_ms": 669.691,
+        "canvas_step1_ms": 189.212,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1556.917,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "MDSA_2009_8_2",
@@ -3688,7 +4538,7 @@
       "normalized_entropy": 0.161282,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 850.15,
+      "latency_ms": 853.96,
       "candidates": [
         {
           "label": "A: 1 year",
@@ -3718,7 +4568,17 @@
           "softcapped_logit": 10.228077,
           "probability": 0.004064
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 668.452,
+        "prompt_p0_ms": 340.393,
+        "prompt_transfer_ms": 0.308,
+        "prompt_p1_ms": 327.751,
+        "canvas_step1_ms": 182.064,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 853.956,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7127943",
@@ -3731,7 +4591,7 @@
       "normalized_entropy": 0.193789,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1775.57,
+      "latency_ms": 1783.05,
       "candidates": [
         {
           "label": "A: to consider it unlikely that the continents were once together",
@@ -3761,7 +4621,17 @@
           "softcapped_logit": 13.916691,
           "probability": 0.002780
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1581.766,
+        "prompt_p0_ms": 798.848,
+        "prompt_transfer_ms": 0.669,
+        "prompt_p1_ms": 782.249,
+        "canvas_step1_ms": 189.814,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1783.047,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "ACTAAP_2009_7_8",
@@ -3774,7 +4644,7 @@
       "normalized_entropy": 0.609378,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1287.30,
+      "latency_ms": 1290.99,
       "candidates": [
         {
           "label": "A: An individual who flosses daily will be less likely to get gum disease than one who flosses weekly.",
@@ -3804,7 +4674,17 @@
           "softcapped_logit": 17.480074,
           "probability": 0.003661
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1097.671,
+        "prompt_p0_ms": 553.663,
+        "prompt_transfer_ms": 0.458,
+        "prompt_p1_ms": 543.550,
+        "canvas_step1_ms": 186.268,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1290.989,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "MCAS_2006_9_43",
@@ -3817,7 +4697,7 @@
       "normalized_entropy": 0.089410,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1264.92,
+      "latency_ms": 1261.93,
       "candidates": [
         {
           "label": "A: 270 kg x m/s",
@@ -3847,7 +4727,17 @@
           "softcapped_logit": 9.898549,
           "probability": 0.015372
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1070.307,
+        "prompt_p0_ms": 541.903,
+        "prompt_transfer_ms": 0.440,
+        "prompt_p1_ms": 527.965,
+        "canvas_step1_ms": 186.453,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1261.931,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7252088",
@@ -3860,7 +4750,7 @@
       "normalized_entropy": 0.000437,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 838.26,
+      "latency_ms": 828.39,
       "candidates": [
         {
           "label": "A: being passed on to offspring",
@@ -3890,7 +4780,17 @@
           "softcapped_logit": 15.891184,
           "probability": 0.999947
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 641.232,
+        "prompt_p0_ms": 323.940,
+        "prompt_transfer_ms": 0.258,
+        "prompt_p1_ms": 317.034,
+        "canvas_step1_ms": 183.460,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 828.382,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7084665",
@@ -3903,7 +4803,7 @@
       "normalized_entropy": 0.664820,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 793.46,
+      "latency_ms": 789.34,
       "candidates": [
         {
           "label": "A: Pluto",
@@ -3933,7 +4833,17 @@
           "softcapped_logit": 14.206222,
           "probability": 0.060458
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 603.390,
+        "prompt_p0_ms": 306.187,
+        "prompt_transfer_ms": 0.240,
+        "prompt_p1_ms": 296.963,
+        "canvas_step1_ms": 182.721,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 789.332,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "FCAT_2008_5_2",
@@ -3946,7 +4856,7 @@
       "normalized_entropy": 0.551239,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1111.41,
+      "latency_ms": 1113.50,
       "candidates": [
         {
           "label": "A: an elevator transporting supplies from one floor to another",
@@ -3976,7 +4886,17 @@
           "softcapped_logit": 16.019264,
           "probability": 0.027209
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 922.010,
+        "prompt_p0_ms": 467.339,
+        "prompt_transfer_ms": 0.363,
+        "prompt_p1_ms": 454.309,
+        "canvas_step1_ms": 186.148,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1113.498,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_SC_414041",
@@ -3989,7 +4909,7 @@
       "normalized_entropy": 0.650230,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1081.43,
+      "latency_ms": 1083.78,
       "candidates": [
         {
           "label": "A: Both jars contain mixtures.",
@@ -4019,7 +4939,17 @@
           "softcapped_logit": 10.250971,
           "probability": 0.029045
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 894.752,
+        "prompt_p0_ms": 453.651,
+        "prompt_transfer_ms": 0.359,
+        "prompt_p1_ms": 440.742,
+        "canvas_step1_ms": 184.196,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1083.777,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "MCAS_2014_8_20",
@@ -4032,7 +4962,7 @@
       "normalized_entropy": 0.253083,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1482.12,
+      "latency_ms": 1475.45,
       "candidates": [
         {
           "label": "A: test the strength of each material used to construct the boats",
@@ -4062,7 +4992,17 @@
           "softcapped_logit": 14.398731,
           "probability": 0.012043
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1279.137,
+        "prompt_p0_ms": 645.093,
+        "prompt_transfer_ms": 0.486,
+        "prompt_p1_ms": 633.558,
+        "canvas_step1_ms": 187.533,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1475.449,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_SC_401116",
@@ -4075,7 +5015,7 @@
       "normalized_entropy": 0.015013,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1150.11,
+      "latency_ms": 1140.90,
       "candidates": [
         {
           "label": "A: advise people of an increase in temperature in the home.",
@@ -4105,7 +5045,17 @@
           "softcapped_logit": 9.350424,
           "probability": 0.000102
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 949.712,
+        "prompt_p0_ms": 479.963,
+        "prompt_transfer_ms": 0.358,
+        "prompt_p1_ms": 469.391,
+        "canvas_step1_ms": 186.255,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1140.898,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7064680",
@@ -4118,7 +5068,7 @@
       "normalized_entropy": 0.444010,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 931.75,
+      "latency_ms": 934.21,
       "candidates": [
         {
           "label": "A: changes in properties.",
@@ -4148,7 +5098,17 @@
           "softcapped_logit": 18.184994,
           "probability": 0.253294
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 746.693,
+        "prompt_p0_ms": 377.212,
+        "prompt_transfer_ms": 0.281,
+        "prompt_p1_ms": 369.200,
+        "canvas_step1_ms": 183.414,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 934.208,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7211680",
@@ -4161,7 +5121,7 @@
       "normalized_entropy": 0.519331,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1177.67,
+      "latency_ms": 1181.78,
       "candidates": [
         {
           "label": "A: change their environment in beneficial ways.",
@@ -4191,7 +5151,17 @@
           "softcapped_logit": 14.994135,
           "probability": 0.690033
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 989.728,
+        "prompt_p0_ms": 500.630,
+        "prompt_transfer_ms": 0.402,
+        "prompt_p1_ms": 488.696,
+        "canvas_step1_ms": 185.975,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1181.780,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_180373",
@@ -4204,7 +5174,7 @@
       "normalized_entropy": 0.004495,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 847.98,
+      "latency_ms": 848.51,
       "candidates": [
         {
           "label": "A: Earthquakes cause small pieces to fall.",
@@ -4234,7 +5204,17 @@
           "softcapped_logit": 9.064055,
           "probability": 0.000008
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 663.423,
+        "prompt_p0_ms": 334.761,
+        "prompt_transfer_ms": 0.247,
+        "prompt_p1_ms": 328.415,
+        "canvas_step1_ms": 181.567,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 848.502,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7216248",
@@ -4247,7 +5227,7 @@
       "normalized_entropy": 0.036809,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 928.69,
+      "latency_ms": 928.70,
       "candidates": [
         {
           "label": "A: mitochondrion, vacuole, cell wall",
@@ -4277,7 +5257,17 @@
           "softcapped_logit": 7.339879,
           "probability": 0.000765
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 741.770,
+        "prompt_p0_ms": 375.468,
+        "prompt_transfer_ms": 0.273,
+        "prompt_p1_ms": 366.028,
+        "canvas_step1_ms": 183.025,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 928.698,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_SC_417677",
@@ -4290,7 +5280,7 @@
       "normalized_entropy": 0.002673,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 976.94,
+      "latency_ms": 977.30,
       "candidates": [
         {
           "label": "A: The ball absorbs light and keeps it inside.",
@@ -4320,7 +5310,17 @@
           "softcapped_logit": 5.653963,
           "probability": 0.000025
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 791.009,
+        "prompt_p0_ms": 400.228,
+        "prompt_transfer_ms": 0.282,
+        "prompt_p1_ms": 390.499,
+        "canvas_step1_ms": 181.958,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 977.295,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7221655",
@@ -4333,7 +5333,7 @@
       "normalized_entropy": 0.778986,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1435.41,
+      "latency_ms": 1439.52,
       "candidates": [
         {
           "label": "A: Everyone is getting an electric car.",
@@ -4363,7 +5363,17 @@
           "softcapped_logit": 15.030997,
           "probability": 0.317017
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1245.427,
+        "prompt_p0_ms": 628.466,
+        "prompt_transfer_ms": 0.514,
+        "prompt_p1_ms": 616.447,
+        "canvas_step1_ms": 186.841,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1439.518,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "MCAS_2006_9_12",
@@ -4376,7 +5386,7 @@
       "normalized_entropy": 0.769073,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1030.51,
+      "latency_ms": 1031.66,
       "candidates": [
         {
           "label": "A: The rod gains electrons from the fur.",
@@ -4406,7 +5416,17 @@
           "softcapped_logit": 11.364718,
           "probability": 0.008464
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 841.813,
+        "prompt_p0_ms": 425.612,
+        "prompt_transfer_ms": 0.333,
+        "prompt_p1_ms": 415.867,
+        "canvas_step1_ms": 185.426,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1031.659,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "MCAS_2004_9_2",
@@ -4419,7 +5439,7 @@
       "normalized_entropy": 0.145035,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 778.89,
+      "latency_ms": 779.37,
       "candidates": [
         {
           "label": "A: disinfecting instruments.",
@@ -4449,7 +5469,17 @@
           "softcapped_logit": 12.893773,
           "probability": 0.005003
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 594.085,
+        "prompt_p0_ms": 300.236,
+        "prompt_transfer_ms": 0.230,
+        "prompt_p1_ms": 293.619,
+        "canvas_step1_ms": 182.072,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 779.366,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_180005",
@@ -4462,7 +5492,7 @@
       "normalized_entropy": 0.015504,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 793.43,
+      "latency_ms": 794.01,
       "candidates": [
         {
           "label": "A: coldest temperature.",
@@ -4492,7 +5522,17 @@
           "softcapped_logit": 10.519672,
           "probability": 0.000123
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 607.245,
+        "prompt_p0_ms": 307.784,
+        "prompt_transfer_ms": 0.241,
+        "prompt_p1_ms": 299.220,
+        "canvas_step1_ms": 183.418,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 794.011,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7071523",
@@ -4505,7 +5545,7 @@
       "normalized_entropy": 0.711410,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 888.92,
+      "latency_ms": 886.03,
       "candidates": [
         {
           "label": "A: hot plates",
@@ -4535,7 +5575,17 @@
           "softcapped_logit": 18.816055,
           "probability": 0.647572
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 697.382,
+        "prompt_p0_ms": 352.072,
+        "prompt_transfer_ms": 0.256,
+        "prompt_p1_ms": 345.054,
+        "canvas_step1_ms": 184.745,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 886.028,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7263375",
@@ -4548,7 +5598,7 @@
       "normalized_entropy": 0.073905,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1167.04,
+      "latency_ms": 1151.57,
       "candidates": [
         {
           "label": "A: You get hungry and sweat less.",
@@ -4578,7 +5628,17 @@
           "softcapped_logit": 13.485415,
           "probability": 0.008988
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 959.731,
+        "prompt_p0_ms": 483.713,
+        "prompt_transfer_ms": 0.381,
+        "prompt_p1_ms": 475.637,
+        "canvas_step1_ms": 186.945,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1151.566,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "TIMSS_2011_8_pg102",
@@ -4591,7 +5651,7 @@
       "normalized_entropy": 0.973162,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 949.29,
+      "latency_ms": 937.30,
       "candidates": [
         {
           "label": "A: neutralization",
@@ -4621,7 +5681,17 @@
           "softcapped_logit": 11.287217,
           "probability": 0.190263
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 748.754,
+        "prompt_p0_ms": 378.156,
+        "prompt_transfer_ms": 0.277,
+        "prompt_p1_ms": 370.322,
+        "canvas_step1_ms": 184.491,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 937.296,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_406550",
@@ -4634,7 +5704,7 @@
       "normalized_entropy": 0.333444,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1166.15,
+      "latency_ms": 1158.62,
       "candidates": [
         {
           "label": "A: The tapeworm helps the dog survive.",
@@ -4664,7 +5734,17 @@
           "softcapped_logit": 14.086093,
           "probability": 0.020933
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 968.126,
+        "prompt_p0_ms": 491.407,
+        "prompt_transfer_ms": 0.395,
+        "prompt_p1_ms": 476.324,
+        "canvas_step1_ms": 185.098,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1158.611,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_SC_400057",
@@ -4677,7 +5757,7 @@
       "normalized_entropy": 0.388293,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1046.76,
+      "latency_ms": 1043.62,
       "candidates": [
         {
           "label": "A: learning a new behavior.",
@@ -4707,7 +5787,17 @@
           "softcapped_logit": 10.692103,
           "probability": 0.009393
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 854.534,
+        "prompt_p0_ms": 431.143,
+        "prompt_transfer_ms": 0.316,
+        "prompt_p1_ms": 423.075,
+        "canvas_step1_ms": 184.406,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1043.619,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "TAKS_2009_5_26",
@@ -4720,7 +5810,7 @@
       "normalized_entropy": 0.461019,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 724.62,
+      "latency_ms": 719.59,
       "candidates": [
         {
           "label": "A: Oceans",
@@ -4750,7 +5840,17 @@
           "softcapped_logit": 14.187233,
           "probability": 0.025866
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 535.294,
+        "prompt_p0_ms": 270.768,
+        "prompt_transfer_ms": 0.200,
+        "prompt_p1_ms": 264.326,
+        "canvas_step1_ms": 181.352,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 719.590,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "LEAP_2007_8_10417",
@@ -4763,7 +5863,7 @@
       "normalized_entropy": 0.636536,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1554.09,
+      "latency_ms": 1551.72,
       "candidates": [
         {
           "label": "A: Unless the plant with wrinkled seeds was pure recessive, no prediction can be made.",
@@ -4793,7 +5893,17 @@
           "softcapped_logit": 11.586075,
           "probability": 0.043834
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1355.189,
+        "prompt_p0_ms": 687.089,
+        "prompt_transfer_ms": 0.582,
+        "prompt_p1_ms": 667.518,
+        "canvas_step1_ms": 188.696,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1551.715,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7027405",
@@ -4806,7 +5916,7 @@
       "normalized_entropy": 0.554539,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 938.52,
+      "latency_ms": 936.93,
       "candidates": [
         {
           "label": "A: litmus paper",
@@ -4836,7 +5946,17 @@
           "softcapped_logit": 13.282336,
           "probability": 0.086181
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 748.663,
+        "prompt_p0_ms": 379.430,
+        "prompt_transfer_ms": 0.293,
+        "prompt_p1_ms": 368.940,
+        "canvas_step1_ms": 184.120,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 936.924,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7058415",
@@ -4849,7 +5969,7 @@
       "normalized_entropy": 0.055564,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1004.05,
+      "latency_ms": 1006.76,
       "candidates": [
         {
           "label": "A: is considered to be free of oxygen atoms.",
@@ -4879,7 +5999,17 @@
           "softcapped_logit": 8.475588,
           "probability": 0.001623
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 817.468,
+        "prompt_p0_ms": 413.685,
+        "prompt_transfer_ms": 0.312,
+        "prompt_p1_ms": 403.471,
+        "canvas_step1_ms": 184.757,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1006.753,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7215828",
@@ -4892,7 +6022,7 @@
       "normalized_entropy": 0.642150,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 795.05,
+      "latency_ms": 793.15,
       "candidates": [
         {
           "label": "A: motor oil",
@@ -4922,7 +6052,17 @@
           "softcapped_logit": 13.087030,
           "probability": 0.032305
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 607.157,
+        "prompt_p0_ms": 307.351,
+        "prompt_transfer_ms": 0.230,
+        "prompt_p1_ms": 299.576,
+        "canvas_step1_ms": 182.676,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 793.148,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7064575",
@@ -4935,7 +6075,7 @@
       "normalized_entropy": 0.086635,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 895.02,
+      "latency_ms": 894.14,
       "candidates": [
         {
           "label": "A: kinetic energy to potential energy.",
@@ -4965,7 +6105,17 @@
           "softcapped_logit": 16.137272,
           "probability": 0.001579
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 705.450,
+        "prompt_p0_ms": 357.549,
+        "prompt_transfer_ms": 0.263,
+        "prompt_p1_ms": 347.638,
+        "canvas_step1_ms": 184.749,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 894.139,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7097493",
@@ -4978,7 +6128,7 @@
       "normalized_entropy": 0.823909,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 910.85,
+      "latency_ms": 914.44,
       "candidates": [
         {
           "label": "A: The atom becomes negatively charged.",
@@ -5008,7 +6158,17 @@
           "softcapped_logit": 15.402567,
           "probability": 0.075946
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 726.159,
+        "prompt_p0_ms": 369.387,
+        "prompt_transfer_ms": 0.282,
+        "prompt_p1_ms": 356.490,
+        "canvas_step1_ms": 184.464,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 914.438,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "AKDE&ED_2008_8_47",
@@ -5021,7 +6181,7 @@
       "normalized_entropy": 0.006341,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 932.22,
+      "latency_ms": 935.26,
       "candidates": [
         {
           "label": "A: size of the particles carried downstream",
@@ -5051,7 +6211,17 @@
           "softcapped_logit": 11.751675,
           "probability": 0.000571
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 747.520,
+        "prompt_p0_ms": 379.672,
+        "prompt_transfer_ms": 0.288,
+        "prompt_p1_ms": 367.560,
+        "canvas_step1_ms": 183.665,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 935.253,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_405136",
@@ -5064,7 +6234,7 @@
       "normalized_entropy": 0.635129,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 850.49,
+      "latency_ms": 851.96,
       "candidates": [
         {
           "label": "A: Magma is made of solid rock.",
@@ -5094,7 +6264,17 @@
           "softcapped_logit": 14.681988,
           "probability": 0.620131
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 665.626,
+        "prompt_p0_ms": 338.585,
+        "prompt_transfer_ms": 0.247,
+        "prompt_p1_ms": 326.794,
+        "canvas_step1_ms": 181.894,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 851.957,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_415086",
@@ -5107,7 +6287,7 @@
       "normalized_entropy": 0.666840,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1163.52,
+      "latency_ms": 1165.29,
       "candidates": [
         {
           "label": "A: 210 km/h",
@@ -5137,7 +6317,17 @@
           "softcapped_logit": 10.512042,
           "probability": 0.528481
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 975.298,
+        "prompt_p0_ms": 496.006,
+        "prompt_transfer_ms": 0.392,
+        "prompt_p1_ms": 478.900,
+        "canvas_step1_ms": 185.215,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1165.286,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7228725",
@@ -5150,7 +6340,7 @@
       "normalized_entropy": 0.253039,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1181.89,
+      "latency_ms": 1179.95,
       "candidates": [
         {
           "label": "A: to understand the role of organisms in a food web",
@@ -5180,7 +6370,17 @@
           "softcapped_logit": 17.292433,
           "probability": 0.923144
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 989.534,
+        "prompt_p0_ms": 497.367,
+        "prompt_transfer_ms": 0.347,
+        "prompt_p1_ms": 491.819,
+        "canvas_step1_ms": 184.682,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1179.944,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7201740",
@@ -5193,7 +6393,7 @@
       "normalized_entropy": 0.476142,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1166.82,
+      "latency_ms": 1161.69,
       "candidates": [
         {
           "label": "A: a source of thermal energy",
@@ -5223,7 +6423,17 @@
           "softcapped_logit": 8.925698,
           "probability": 0.003458
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 971.328,
+        "prompt_p0_ms": 491.512,
+        "prompt_transfer_ms": 0.368,
+        "prompt_p1_ms": 479.448,
+        "canvas_step1_ms": 184.908,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1161.690,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "NYSEDREGENTS_2010_4_4",
@@ -5236,7 +6446,7 @@
       "normalized_entropy": 0.153124,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 771.43,
+      "latency_ms": 765.65,
       "candidates": [
         {
           "label": "A: at the same speed",
@@ -5259,7 +6469,17 @@
           "softcapped_logit": 16.612286,
           "probability": 0.039369
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 580.972,
+        "prompt_p0_ms": 293.344,
+        "prompt_transfer_ms": 0.211,
+        "prompt_p1_ms": 287.418,
+        "canvas_step1_ms": 181.523,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 765.645,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "MEAP_2005_8_21",
@@ -5272,7 +6492,7 @@
       "normalized_entropy": 0.357953,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1019.17,
+      "latency_ms": 1017.51,
       "candidates": [
         {
           "label": "A: create recreational ponds and lakes.",
@@ -5302,7 +6522,17 @@
           "softcapped_logit": 10.235568,
           "probability": 0.001375
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 828.093,
+        "prompt_p0_ms": 417.173,
+        "prompt_transfer_ms": 0.327,
+        "prompt_p1_ms": 410.593,
+        "canvas_step1_ms": 184.550,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1017.503,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7026355",
@@ -5315,7 +6545,7 @@
       "normalized_entropy": 0.238844,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1156.05,
+      "latency_ms": 1149.04,
       "candidates": [
         {
           "label": "A: the rate of rotation of Earth's surface is less at the equator.",
@@ -5345,7 +6575,17 @@
           "softcapped_logit": 10.030878,
           "probability": 0.003648
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 958.755,
+        "prompt_p0_ms": 482.364,
+        "prompt_transfer_ms": 0.370,
+        "prompt_p1_ms": 476.020,
+        "canvas_step1_ms": 185.205,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1149.038,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7249708",
@@ -5358,7 +6598,7 @@
       "normalized_entropy": 0.007888,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 999.37,
+      "latency_ms": 996.44,
       "candidates": [
         {
           "label": "A: Antibodies release enzymes that lyse the invading virus.",
@@ -5388,7 +6628,17 @@
           "softcapped_logit": 6.578585,
           "probability": 0.000007
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 807.027,
+        "prompt_p0_ms": 407.920,
+        "prompt_transfer_ms": 0.295,
+        "prompt_p1_ms": 398.812,
+        "canvas_step1_ms": 184.372,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 996.440,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7107170",
@@ -5401,7 +6651,7 @@
       "normalized_entropy": 0.897759,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 889.41,
+      "latency_ms": 893.41,
       "candidates": [
         {
           "label": "A: stop sending signals to the brain.",
@@ -5431,7 +6681,17 @@
           "softcapped_logit": 13.413141,
           "probability": 0.075003
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 704.139,
+        "prompt_p0_ms": 357.077,
+        "prompt_transfer_ms": 0.294,
+        "prompt_p1_ms": 346.768,
+        "canvas_step1_ms": 185.443,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 893.406,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_183820",
@@ -5444,7 +6704,7 @@
       "normalized_entropy": 0.532487,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 712.92,
+      "latency_ms": 711.35,
       "candidates": [
         {
           "label": "A: hydrogen",
@@ -5474,7 +6734,17 @@
           "softcapped_logit": 12.738200,
           "probability": 0.007409
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 525.777,
+        "prompt_p0_ms": 266.637,
+        "prompt_transfer_ms": 0.244,
+        "prompt_p1_ms": 258.897,
+        "canvas_step1_ms": 182.332,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 711.342,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_SC_401357",
@@ -5487,7 +6757,7 @@
       "normalized_entropy": 0.055740,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 727.79,
+      "latency_ms": 725.01,
       "candidates": [
         {
           "label": "A: transpiration",
@@ -5517,7 +6787,17 @@
           "softcapped_logit": 10.651239,
           "probability": 0.001419
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 540.021,
+        "prompt_p0_ms": 272.313,
+        "prompt_transfer_ms": 0.205,
+        "prompt_p1_ms": 267.503,
+        "canvas_step1_ms": 181.788,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 725.004,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "NYSEDREGENTS_2008_8_11",
@@ -5530,7 +6810,7 @@
       "normalized_entropy": 0.760125,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 701.36,
+      "latency_ms": 712.56,
       "candidates": [
         {
           "label": "A: dead organisms",
@@ -5560,7 +6840,17 @@
           "softcapped_logit": 14.347592,
           "probability": 0.025766
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 522.321,
+        "prompt_p0_ms": 264.735,
+        "prompt_transfer_ms": 0.199,
+        "prompt_p1_ms": 257.387,
+        "canvas_step1_ms": 185.095,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 712.559,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_416650",
@@ -5573,7 +6863,7 @@
       "normalized_entropy": 0.219942,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 835.63,
+      "latency_ms": 838.49,
       "candidates": [
         {
           "label": "A: separation of chromatids",
@@ -5603,7 +6893,17 @@
           "softcapped_logit": 16.081078,
           "probability": 0.932299
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 649.640,
+        "prompt_p0_ms": 331.467,
+        "prompt_transfer_ms": 0.272,
+        "prompt_p1_ms": 317.901,
+        "canvas_step1_ms": 184.716,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 838.485,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "NCEOGA_2013_5_20",
@@ -5616,7 +6916,7 @@
       "normalized_entropy": 0.363973,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 775.33,
+      "latency_ms": 771.86,
       "candidates": [
         {
           "label": "A: dimples",
@@ -5646,7 +6946,17 @@
           "softcapped_logit": 12.480277,
           "probability": 0.005416
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 583.876,
+        "prompt_p0_ms": 297.442,
+        "prompt_transfer_ms": 0.245,
+        "prompt_p1_ms": 286.189,
+        "canvas_step1_ms": 184.631,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 771.857,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_400500",
@@ -5659,7 +6969,7 @@
       "normalized_entropy": 0.723068,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 897.12,
+      "latency_ms": 899.58,
       "candidates": [
         {
           "label": "A: phosphorus, nitrogen, oxygen",
@@ -5689,7 +6999,17 @@
           "softcapped_logit": 16.564583,
           "probability": 0.388577
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 713.080,
+        "prompt_p0_ms": 365.894,
+        "prompt_transfer_ms": 0.279,
+        "prompt_p1_ms": 346.908,
+        "canvas_step1_ms": 182.800,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 899.576,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_SC_401366",
@@ -5702,7 +7022,7 @@
       "normalized_entropy": 0.555011,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 763.03,
+      "latency_ms": 762.35,
       "candidates": [
         {
           "label": "A: decomposition of plants and animals.",
@@ -5732,7 +7052,17 @@
           "softcapped_logit": 11.271779,
           "probability": 0.024670
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 577.971,
+        "prompt_p0_ms": 293.333,
+        "prompt_transfer_ms": 0.224,
+        "prompt_p1_ms": 284.414,
+        "canvas_step1_ms": 180.923,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 762.345,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7141610",
@@ -5745,7 +7075,7 @@
       "normalized_entropy": 0.045646,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 886.62,
+      "latency_ms": 885.78,
       "candidates": [
         {
           "label": "A: body temperature",
@@ -5775,7 +7105,17 @@
           "softcapped_logit": 13.011740,
           "probability": 0.004279
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 698.970,
+        "prompt_p0_ms": 354.066,
+        "prompt_transfer_ms": 0.283,
+        "prompt_p1_ms": 344.621,
+        "canvas_step1_ms": 182.963,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 885.775,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7247013",
@@ -5788,7 +7128,7 @@
       "normalized_entropy": 0.426181,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1184.19,
+      "latency_ms": 1179.86,
       "candidates": [
         {
           "label": "A: the buildup of organic material from oil rigs along the coast",
@@ -5818,7 +7158,17 @@
           "softcapped_logit": 7.581298,
           "probability": 0.000120
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 988.949,
+        "prompt_p0_ms": 499.361,
+        "prompt_transfer_ms": 0.397,
+        "prompt_p1_ms": 489.191,
+        "canvas_step1_ms": 185.596,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1179.852,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "NYSEDREGENTS_2008_8_30",
@@ -5831,7 +7181,7 @@
       "normalized_entropy": 0.074047,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1156.82,
+      "latency_ms": 1150.07,
       "candidates": [
         {
           "label": "A: in a different hemisphere",
@@ -5861,7 +7211,17 @@
           "softcapped_logit": 14.777033,
           "probability": 0.000556
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 958.622,
+        "prompt_p0_ms": 483.057,
+        "prompt_transfer_ms": 0.372,
+        "prompt_p1_ms": 475.193,
+        "canvas_step1_ms": 186.233,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1150.061,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "ACTAAP_2011_5_16",
@@ -5874,7 +7234,7 @@
       "normalized_entropy": 0.018434,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1270.43,
+      "latency_ms": 1267.22,
       "candidates": [
         {
           "label": "A: sedimentation of granules",
@@ -5904,7 +7264,17 @@
           "softcapped_logit": 10.930178,
           "probability": 0.000252
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1073.473,
+        "prompt_p0_ms": 540.463,
+        "prompt_transfer_ms": 0.401,
+        "prompt_p1_ms": 532.609,
+        "canvas_step1_ms": 187.719,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1267.219,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7093153",
@@ -5917,7 +7287,7 @@
       "normalized_entropy": 0.001026,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 984.25,
+      "latency_ms": 973.77,
       "candidates": [
         {
           "label": "A: Which color of tulips is the prettiest?",
@@ -5947,7 +7317,17 @@
           "softcapped_logit": 9.829411,
           "probability": 0.000027
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 785.258,
+        "prompt_p0_ms": 395.541,
+        "prompt_transfer_ms": 0.327,
+        "prompt_p1_ms": 389.391,
+        "canvas_step1_ms": 184.217,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 973.768,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7013965",
@@ -5960,7 +7340,7 @@
       "normalized_entropy": 0.241041,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1010.79,
+      "latency_ms": 1015.22,
       "candidates": [
         {
           "label": "A: speed with which the bridge can be constructed",
@@ -5990,7 +7370,17 @@
           "softcapped_logit": 9.433123,
           "probability": 0.011679
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 826.031,
+        "prompt_p0_ms": 417.634,
+        "prompt_transfer_ms": 0.323,
+        "prompt_p1_ms": 408.074,
+        "canvas_step1_ms": 184.364,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1015.217,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7034843",
@@ -6003,7 +7393,7 @@
       "normalized_entropy": 0.611469,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 873.10,
+      "latency_ms": 872.29,
       "candidates": [
         {
           "label": "A: temperature",
@@ -6033,7 +7423,17 @@
           "softcapped_logit": 16.965070,
           "probability": 0.036043
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 685.783,
+        "prompt_p0_ms": 346.455,
+        "prompt_transfer_ms": 0.241,
+        "prompt_p1_ms": 339.087,
+        "canvas_step1_ms": 182.753,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 872.287,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_SC_407610",
@@ -6046,7 +7446,7 @@
       "normalized_entropy": 0.510788,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1179.93,
+      "latency_ms": 1185.16,
       "candidates": [
         {
           "label": "A: It made cars safer to drive in bad weather.",
@@ -6076,7 +7476,17 @@
           "softcapped_logit": 15.832207,
           "probability": 0.023585
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 994.873,
+        "prompt_p0_ms": 501.043,
+        "prompt_transfer_ms": 0.401,
+        "prompt_p1_ms": 493.429,
+        "canvas_step1_ms": 185.271,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1185.159,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_405947",
@@ -6089,7 +7499,7 @@
       "normalized_entropy": 0.769259,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1174.85,
+      "latency_ms": 1177.39,
       "candidates": [
         {
           "label": "A: More mistakes are made during the assembly.",
@@ -6119,7 +7529,17 @@
           "softcapped_logit": 16.827675,
           "probability": 0.425237
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 988.334,
+        "prompt_p0_ms": 498.064,
+        "prompt_transfer_ms": 0.382,
+        "prompt_p1_ms": 489.888,
+        "canvas_step1_ms": 183.952,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1177.381,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "AKDE&ED_2012_8_6",
@@ -6132,7 +7552,7 @@
       "normalized_entropy": 0.501037,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 897.58,
+      "latency_ms": 891.90,
       "candidates": [
         {
           "label": "A: movement of tectonic plates",
@@ -6162,7 +7582,17 @@
           "softcapped_logit": 11.988755,
           "probability": 0.018373
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 704.678,
+        "prompt_p0_ms": 355.602,
+        "prompt_transfer_ms": 0.262,
+        "prompt_p1_ms": 348.815,
+        "canvas_step1_ms": 183.480,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 891.893,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7011130",
@@ -6175,7 +7605,7 @@
       "normalized_entropy": 0.784340,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1152.99,
+      "latency_ms": 1131.19,
       "candidates": [
         {
           "label": "A: Exothermic because energy is released.",
@@ -6205,7 +7635,17 @@
           "softcapped_logit": 13.273178,
           "probability": 0.021321
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 940.645,
+        "prompt_p0_ms": 477.282,
+        "prompt_transfer_ms": 0.375,
+        "prompt_p1_ms": 462.988,
+        "canvas_step1_ms": 184.846,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1131.185,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_LBS11022",
@@ -6218,7 +7658,7 @@
       "normalized_entropy": 0.408472,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 799.57,
+      "latency_ms": 791.07,
       "candidates": [
         {
           "label": "A: copper pot",
@@ -6248,7 +7688,17 @@
           "softcapped_logit": 12.052763,
           "probability": 0.003090
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 605.442,
+        "prompt_p0_ms": 305.868,
+        "prompt_transfer_ms": 0.218,
+        "prompt_p1_ms": 299.357,
+        "canvas_step1_ms": 182.310,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 791.066,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "TIMSS_1995_8_J1",
@@ -6261,7 +7711,7 @@
       "normalized_entropy": 0.548324,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 1350.62,
+      "latency_ms": 1358.08,
       "candidates": [
         {
           "label": "A: High mountains and flat plains stay side by side for billions of years with little change.",
@@ -6291,7 +7741,17 @@
           "softcapped_logit": 13.696885,
           "probability": 0.376347
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1164.510,
+        "prompt_p0_ms": 589.439,
+        "prompt_transfer_ms": 0.483,
+        "prompt_p1_ms": 574.589,
+        "canvas_step1_ms": 186.223,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1358.079,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_SC_408366",
@@ -6304,7 +7764,7 @@
       "normalized_entropy": 0.050364,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 768.21,
+      "latency_ms": 764.10,
       "candidates": [
         {
           "label": "A: sea shells",
@@ -6334,7 +7794,17 @@
           "softcapped_logit": 9.633025,
           "probability": 0.001621
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 578.133,
+        "prompt_p0_ms": 292.083,
+        "prompt_transfer_ms": 0.227,
+        "prompt_p1_ms": 285.823,
+        "canvas_step1_ms": 182.702,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 764.097,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7009993",
@@ -6347,7 +7817,7 @@
       "normalized_entropy": 0.780145,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 873.88,
+      "latency_ms": 876.84,
       "candidates": [
         {
           "label": "A: fuses hydrogen to make helium.",
@@ -6377,7 +7847,17 @@
           "softcapped_logit": 13.825552,
           "probability": 0.024873
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 689.679,
+        "prompt_p0_ms": 348.976,
+        "prompt_transfer_ms": 0.288,
+        "prompt_p1_ms": 340.415,
+        "canvas_step1_ms": 183.384,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 876.837,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_401699",
@@ -6390,7 +7870,7 @@
       "normalized_entropy": 0.270952,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 685.61,
+      "latency_ms": 686.66,
       "candidates": [
         {
           "label": "A: 8",
@@ -6420,7 +7900,17 @@
           "softcapped_logit": 15.793045,
           "probability": 0.106706
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 502.819,
+        "prompt_p0_ms": 256.707,
+        "prompt_transfer_ms": 0.192,
+        "prompt_p1_ms": 245.919,
+        "canvas_step1_ms": 181.020,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 686.658,
+        "prompt_cache_hit": false
+      }
     },
     {
       "id": "Mercury_7056858",
@@ -6433,7 +7923,7 @@
       "normalized_entropy": 0.123543,
       "uncertain": false,
       "steps_executed": 1,
-      "latency_ms": 857.34,
+      "latency_ms": 856.54,
       "candidates": [
         {
           "label": "A: stomach",
@@ -6463,7 +7953,17 @@
           "softcapped_logit": 10.648080,
           "probability": 0.000362
         }
-      ]
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 671.217,
+        "prompt_p0_ms": 338.146,
+        "prompt_transfer_ms": 0.247,
+        "prompt_p1_ms": 332.823,
+        "canvas_step1_ms": 181.566,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 856.533,
+        "prompt_cache_hit": false
+      }
     }
   ]
 }
