@@ -1497,6 +1497,67 @@ pub fn moeGemvGateUpSorted(
     if (rc != 0) return cuda.mapCudaErrorCode(rc);
 }
 
+/// Phase 10: Fused Token-sorted expert gate/up projection + GeGLU activation on GPU (WP2):
+/// Streams weights once, evaluates gate and up simultaneously, applies gelu_tanh(gate) * up in registers,
+/// and writes directly to out_act (exp_act_buf), bypassing intermediate gate_up buffer and kernel launch.
+pub fn moeGemvGateUpGegluSorted(
+    all_expert_weights: DeviceSlice(u8),
+    tokens_in: DeviceSlice(f32),
+    expert_counts: DeviceSlice(i32),
+    expert_offsets: DeviceSlice(i32),
+    sorted_instances: DeviceSlice(i32),
+    out_act: DeviceSlice(f32),
+    num_tokens: usize,
+    in_dim: usize,
+    half_dim: usize,
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (num_tokens == 0 or in_dim == 0 or half_dim == 0) return error.InvalidParam;
+    const dev = all_expert_weights.device_id;
+    if (tokens_in.device_id != dev or expert_counts.device_id != dev or
+        expert_offsets.device_id != dev or sorted_instances.device_id != dev or
+        out_act.device_id != dev)
+    {
+        return error.DeviceMismatch;
+    }
+    if (stream) |s| {
+        if (s.device_id != dev) return error.DeviceMismatch;
+    }
+    const num_instances = std.math.mul(usize, num_tokens, 8) catch return error.InvalidParam;
+    const expected_in_len = std.math.mul(usize, num_tokens, in_dim) catch return error.InvalidParam;
+    const expected_out_len = std.math.mul(usize, num_instances, half_dim) catch return error.InvalidParam;
+    if (tokens_in.len < expected_in_len or sorted_instances.len < num_instances or out_act.len < expected_out_len) {
+        return error.InvalidParam;
+    }
+    if (expert_counts.len < 128 or expert_offsets.len < 128) {
+        return error.InvalidParam;
+    }
+
+    const w_ptr = all_expert_weights.ptr orelse return error.InvalidParam;
+    const in_ptr = tokens_in.ptr orelse return error.InvalidParam;
+    const cnt_ptr = expert_counts.ptr orelse return error.InvalidParam;
+    const off_ptr = expert_offsets.ptr orelse return error.InvalidParam;
+    const sort_ptr = sorted_instances.ptr orelse return error.InvalidParam;
+    const out_ptr = out_act.ptr orelse return error.InvalidParam;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_moe_gemv_gate_up_geglu_sorted(
+        w_ptr,
+        in_ptr,
+        @ptrCast(cnt_ptr),
+        @ptrCast(off_ptr),
+        @ptrCast(sort_ptr),
+        out_ptr,
+        @intCast(num_tokens),
+        @intCast(in_dim),
+        @intCast(half_dim),
+        dev,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
 /// Stage 7A: Token-sorted expert down projection on GPU:
 /// For each active expert, streams weights once and down-projects all assigned tokens in parallel.
 pub fn moeGemvDownSorted(

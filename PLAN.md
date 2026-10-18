@@ -335,10 +335,10 @@ Implement and validate the CPU representation of one denoising step.
 **Current objective:**
 
 ```text
-Implement token-sorted expert batched GEMV/GEMM and prompt KV reuse to compress MoE weight streaming toward the sub-100ms decision latency target.
+Evaluate further fused GEMV kernels (QKV projection fusion and device-resident tensor core kernels) to push cached decision canvas latency across the sub-100ms barrier.
 ```
 
-This active objective builds upon the completed Phase 6 CUDA Graph capture, 4x GEMV batching, and 1x4 MoE warp coarsening (which brought C=16 latency to 600ms), focusing on token sorting by expert to load expert weights exactly once per layer.
+This active objective builds upon completed Phase 10 GEMV optimizations (shared-memory tiling, fused MoE gate+up+geglu, vectorized MoE down coalescing, and Q5_0 16x kernel) which reduced C=16 canvas latency from 183.37ms to 146.27ms (-20.2%) and full-width C=256 latency from 2807ms to 2059ms (-26.6%).
 
 ---
 

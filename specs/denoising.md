@@ -351,3 +351,67 @@ Evaluated on dual NVIDIA GeForce RTX 3060 GPUs (CUDA backend, canvas length $C=1
 
 
 
+---
+
+## 10. CUDA Phase 10: Canvas Step Kernel Profiling & Sub-100ms GEMV Optimization
+
+To accelerate cached decision canvas evaluation from ~183 ms toward sub-100ms latency on dual NVIDIA GeForce RTX 3060 12GB GPUs, an Nsight Systems node-level graph profiling investigation was conducted, isolating the exact execution time of every kernel in the 30-layer canvas execution graph.
+
+### 10.1 Pre-Optimization Canvas Step Kernel Decomposition ($C=16$)
+
+From Nsight Systems graph node profiling (`--cuda-graph-trace=node`) on dual RTX 3060 GPUs across 30 transformer layers (total GPU canvas graph execution time: **178.29 ms**):
+
+| Kernel Function | Calls / Step | Total Time (ms) | Avg (ms) | % of Step | Primary Performance Bottleneck |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| `moe_gemv_gate_up_sorted_kernel` | 30 | 59.98 ms | 1.999 ms | 33.6% | Gate & up projected separately; intermediate DRAM write of 1,408 floats; separate `moeGegluBatched` launch |
+| `gemv_q4k_batched_16x_kernel` | 102 | 50.48 ms | 0.495 ms | 28.3% | Zero shared memory; 8 warps $\times$ 64 blocks redundantly streamed 16 activation vectors from global memory |
+| `moe_gemv_down_sorted_kernel` | 30 | 31.91 ms | 1.064 ms | 17.9% | Repeated scalar activation reads inside inner loops across all 8 rows |
+| `dense_gemv_gate_up_geglu_q4k_kernel` | 30 | 17.76 ms | 0.592 ms | 10.0% | Redundant global memory activation reads for gate and up rows |
+| Dense Down Projections (`q5_0`, `q8_0`, `q6_k`) | 43 | 12.77 ms | 0.297 ms | 7.2% | Missing 16x kernel for Q5_0 (ran 4x batched kernel 4 times per layer) |
+| Non-GEMV Ops (Attention, RMSNorm, RoPE, Router) | 571 | 5.39 ms | 0.009 ms | 3.0% | Negligible overhead (SWA/global attention: 2.38 ms, RMSNorm: 1.20 ms) |
+| **Total Canvas Step GPU Kernel Time** | **836** | **178.29 ms** | — | **100.0%** | **GEMV operations account for 97.0% of total execution time** |
+
+### 10.2 Implemented Work Packages
+
+1. **WP1: Shared-Memory Activation Tiling in Dense GEMV** ([`src/cuda/gemv.cu`](../src/cuda/gemv.cu)):
+   - Cooperative 128-bit `float4` activation loading into `__shared__ float s_x[16][256]` (16 KB) for `gemv_q4k_batched_16x_kernel` and `dense_gemv_gate_up_geglu_q4k_kernel`.
+   - Eliminated redundant global memory activation loads across all 8 warps and grid blocks with zero bank conflicts.
+2. **WP2: Fused MoE Gate+Up+GeGLU Kernel** ([`src/cuda/moe.cu`](../src/cuda/moe.cu), [`src/infer_cuda.zig`](../src/infer_cuda.zig)):
+   - Implemented `moe_gemv_gate_up_geglu_sorted_kernel` that evaluates gate row $r$ and up row $r+704$ simultaneously in registers, applies `gelu_tanh_scalar(gate) * up`, and writes the 704 activated floats directly to `exp_act_buf`.
+   - Completely bypassed intermediate `exp_gate_up_buf` (1,408 floats per token instance) and eliminated 30 `moeGegluBatched` kernel launches per step.
+3. **WP3: Vectorized Shared-Memory Coalescing in MoE Down Projection** ([`src/cuda/moe.cu`](../src/cuda/moe.cu)):
+   - Implemented cooperative 128-bit `float4` shared-memory loading in `moe_gemv_down_sorted_kernel` (`__shared__ alignas(16) float s_acts[4][704]`, 11.26 KB).
+   - Eliminated 64x redundant DRAM activation transactions across warps and rows.
+4. **WP4: Shared-Memory Tiled Q5_0 16x Kernel** ([`src/cuda/gemv.cu`](../src/cuda/gemv.cu)):
+   - Implemented `gemv_q5_0_batched_16x_kernel` using 2 KB shared memory (`__shared__ float s_x[16][32]`), replacing repeated 4x kernel dispatches with a single 16x pass for dense FFN down projections.
+
+### 10.3 Post-Optimization Kernel Decomposition ($C=16$)
+
+From Nsight Systems graph node profiling (`--cuda-graph-trace=node`) on dual RTX 3060 GPUs post-optimization (total GPU canvas graph execution time: **146.93 ms**):
+
+| Kernel Function | Calls / Step | Pre-Phase 10 (ms) | Post-Phase 10 (ms) | Net $\Delta$ (ms) | Speedup |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| `moe_gemv_gate_up_geglu_sorted_kernel` | 30 | 59.98 ms | 51.56 ms | -8.42 ms | 1.16x |
+| `gemv_q4k_batched_16x_kernel` | 102 | 50.48 ms | 34.66 ms | -15.82 ms | 1.46x |
+| `moe_gemv_down_sorted_kernel` | 30 | 31.91 ms | 30.74 ms | -1.17 ms | 1.04x |
+| `dense_gemv_gate_up_geglu_q4k_kernel` | 30 | 17.76 ms | 11.21 ms | -6.55 ms | 1.58x |
+| Dense Down Projections (`q5_0`, `q8_0`, `q6_k`) | 43 | 12.77 ms | 13.29 ms | +0.52 ms | 0.96x |
+| Non-GEMV Ops (Attention, RMSNorm, RoPE, Router) | 571 | 5.39 ms | 5.47 ms | +0.08 ms | 0.99x |
+| **Total 30-Layer Canvas Step GPU Time** | **806** | **178.29 ms** | **146.93 ms** | **-31.36 ms** | **1.21x** |
+
+### 10.4 End-to-End Benchmark Progression Across Canvas Widths
+
+Evaluated with `zeno benchmark` (3 samples per width post-warmup, reporting median latency):
+
+| Canvas C | Pre-Phase 10 Median (ms) | Post-WP1 Median (ms) | Post-Phase 10 Median (ms) | Net Latency Reduction | End-to-End Speedup vs C=256 |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| **16** | 183.37 ms | 159.56 ms | **146.27 ms** | **-37.10 ms (-20.2%)** | **14.25x** |
+| **32** | 339.46 ms | 296.83 ms | **270.51 ms** | **-68.95 ms (-20.3%)** | **7.71x** |
+| **64** | 680.64 ms | 575.65 ms | **514.46 ms** | **-166.18 ms (-24.4%)** | **4.05x** |
+| **128** | 1398.24 ms | 1146.71 ms | **1015.48 ms** | **-382.76 ms (-27.4%)** | **2.05x** |
+| **256** | 2807.38 ms | 2366.35 ms | **2059.53 ms** | **-747.85 ms (-26.6%)** | **1.01x** |
+
+### 10.5 Numerical Parity & Verification
+- **Oracle Verification**: 5/5 golden test fixtures passed with 100% discrete decision parity under `zeno.tolerance/v1`.
+- **Integration Test Suite**: 15/15 HTTP server integration tests passed (`python3 tools/test_server.py --cuda`).
+- **CPU Isolation**: `zig build test -Dcuda=false` passes without linking CUDA libraries.

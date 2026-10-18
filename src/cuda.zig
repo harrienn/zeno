@@ -385,6 +385,20 @@ pub const c = if (is_enabled) struct {
         stream: ?*anyopaque,
     ) c_int;
 
+    pub extern "c" fn zeno_cuda_moe_gemv_gate_up_geglu_sorted(
+        all_expert_weights: [*]const u8,
+        tokens_in: [*]const f32,
+        expert_counts: [*]const c_int,
+        expert_offsets: [*]const c_int,
+        sorted_instances: [*]const c_int,
+        out_act: [*]f32,
+        num_tokens: c_int,
+        in_dim: c_int,
+        half_dim: c_int,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
+
     pub extern "c" fn zeno_cuda_moe_gemv_down_sorted(
         all_expert_weights: [*]const u8,
         expert_type: c_int,

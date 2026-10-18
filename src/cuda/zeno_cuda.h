@@ -356,6 +356,20 @@ int zeno_cuda_moe_gemv_gate_up_sorted(
     void *stream
 );
 
+int zeno_cuda_moe_gemv_gate_up_geglu_sorted(
+    const uint8_t *all_expert_weights,
+    const float *tokens_in,
+    const int *expert_counts,
+    const int *expert_offsets,
+    const int *sorted_instances,
+    float *out_act,
+    int num_tokens,
+    int in_dim,
+    int half_dim,
+    int device_id,
+    void *stream
+);
+
 int zeno_cuda_moe_gemv_down_sorted(
     const uint8_t *all_expert_weights,
     int expert_type,

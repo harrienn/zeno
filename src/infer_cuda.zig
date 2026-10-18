@@ -1025,22 +1025,19 @@ pub fn runLayerCuda(
         stream,
     );
 
-    const exp_gu_slice = try ws.exp_gate_up_buf.slice().subslice(0, num_instances * 1408);
-    try cuda_mem.moeGemvGateUpSorted(
+    const exp_act_slice = try ws.exp_act_buf.slice().subslice(0, num_instances * 704);
+    try cuda_mem.moeGemvGateUpGegluSorted(
         layer.expert_gate_up.slice(),
         moe_in_slice,
         exp_counts_slice,
         exp_offsets_slice,
         sorted_inst_slice,
-        exp_gu_slice,
+        exp_act_slice,
         num_tokens,
         ModelConfig.embedding_dim,
-        1408,
+        704,
         stream,
     );
-
-    const exp_act_slice = try ws.exp_act_buf.slice().subslice(0, num_instances * 704);
-    try cuda_mem.moeGegluBatched(exp_gu_slice, exp_act_slice, num_instances, 704, stream);
 
     const exp_down_slice = try ws.exp_down_buf.slice().subslice(0, num_instances * ModelConfig.embedding_dim);
     try cuda_mem.moeGemvDownSorted(
@@ -1244,22 +1241,19 @@ pub fn runLayerCanvasCuda(
         stream,
     );
 
-    const exp_gu_slice = try ws.exp_gate_up_buf.slice().subslice(0, num_instances * 1408);
-    try cuda_mem.moeGemvGateUpSorted(
+    const exp_act_slice = try ws.exp_act_buf.slice().subslice(0, num_instances * 704);
+    try cuda_mem.moeGemvGateUpGegluSorted(
         layer.expert_gate_up.slice(),
         moe_in_slice,
         exp_counts_slice,
         exp_offsets_slice,
         sorted_inst_slice,
-        exp_gu_slice,
+        exp_act_slice,
         canvas_len,
         ModelConfig.embedding_dim,
-        1408,
+        704,
         stream,
     );
-
-    const exp_act_slice = try ws.exp_act_buf.slice().subslice(0, num_instances * 704);
-    try cuda_mem.moeGegluBatched(exp_gu_slice, exp_act_slice, num_instances, 704, stream);
 
     const exp_down_slice = try ws.exp_down_buf.slice().subslice(0, num_instances * ModelConfig.embedding_dim);
     try cuda_mem.moeGemvDownSorted(
