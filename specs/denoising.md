@@ -415,3 +415,32 @@ Evaluated with `zeno benchmark` (3 samples per width post-warmup, reporting medi
 - **Oracle Verification**: 5/5 golden test fixtures passed with 100% discrete decision parity under `zeno.tolerance/v1`.
 - **Integration Test Suite**: 15/15 HTTP server integration tests passed (`python3 tools/test_server.py --cuda`).
 - **CPU Isolation**: `zig build test -Dcuda=false` passes without linking CUDA libraries.
+
+### 10.6 Full Benchmark Suite Evaluation & Calibration Parity (ARC-Challenge & BoolQ)
+
+To verify real-world workload acceleration, accuracy preservation, and numerical calibration stability, both benchmark suites (150 items each) were evaluated end-to-end on the dual RTX 3060 system before and after Phase 10 GEMV optimizations.
+
+#### Comparative Dataset Evaluation Matrix:
+
+| Benchmark Suite | Config / Stepping | Baseline Acc (%) | Phase 10 Acc (%) | Net Acc $\Delta$ | Baseline ECE | Phase 10 ECE | Baseline Latency (ms) | Phase 10 Latency (ms) | Net Latency Reduction | Canvas Step Mean |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **ARC-Challenge 150** | $T=1$ (Single-Step) | 75.33% (113/150) | 75.33% (113/150) | **+0.00%** | 0.0679 | 0.0679 | 1046.0 ms (med: 1005.8) | **899.7 ms** (med: **860.5**) | **-146.3 ms (-14.0%)** | 187.0 ms $\rightarrow$ **150.0 ms** (-19.8%) |
+| **ARC-Challenge 150** | $T=2, \tau=0.5$ (Adaptive) | 86.00% (129/150) | 86.00% (129/150) | **+0.00%** | 0.0593 | 0.0593 | 1109.3 ms (med: 1067.7) | **959.2 ms** (med: **925.0**) | **-150.1 ms (-13.5%)** | 188.0 ms $\rightarrow$ **151.6 ms** (-19.4%) |
+| **BoolQ 150** | $T=1$ (Single-Step) | 85.33% (128/150) | 85.33% (128/150) | **+0.00%** | 0.0862 | 0.0862 | 1890.7 ms (med: 1750.7) | **1626.4 ms** (med: **1518.0**) | **-264.3 ms (-14.0%)** | 190.2 ms $\rightarrow$ **155.2 ms** (-18.4%) |
+| **BoolQ 150** | $T=2, \tau=0.5$ (Adaptive) | 84.00% (126/150) | 84.00% (126/150) | **+0.00%** | 0.1179 | 0.1179 | 1929.8 ms (med: 1774.2) | **1657.7 ms** (med: **1537.6**) | **-272.1 ms (-14.1%)** | 190.1 ms $\rightarrow$ **154.4 ms** (-18.8%) |
+
+#### Key Calibration & Profiling Observations:
+1. **100.00% Decision & Content Invariance Across 600 Evaluated Decisions**:
+   - Paired contingency analysis with `tools/compare_runs.py` confirms **zero discordant pairs ($b=0, c=0$)** across all 600 query evaluations (150 ARC $T=1$, 150 ARC $T=2$, 150 BoolQ $T=1$, 150 BoolQ $T=2$).
+   - 100% letter selection and content identity preservation confirms that register-level fusion and shared-memory tiling introduce zero numerical drift in discrete decisions.
+2. **Numerical Calibration Invariance**:
+   - Every calibration metric (ECE, MCE, Brier score, Negative Log-Likelihood, and normalized entropy) matched the pre-optimization baselines across all decimal places:
+     - ARC $T=1$: Brier = 0.3956, NLL = 0.9413, ECE = 0.0679.
+     - ARC $T=2$: Brier = 0.2449, NLL = 0.6357, ECE = 0.0593.
+     - BoolQ $T=1$: Brier = 0.2430, NLL = 0.4772, ECE = 0.0862.
+     - BoolQ $T=2$: Brier = 0.2659, NLL = 0.5553, ECE = 0.1179.
+3. **Stage-Synchronized Latency Reductions in Production Workloads**:
+   - **Canvas Step Acceleration**: Mean canvas step execution dropped from ~187–190 ms down to **150.0–155.2 ms** per step across both reasoning datasets (a **~35–37 ms, -19%** speedup per canvas pass).
+   - **Prefill Acceleration**: The shared-memory GEMV and FFN kernel improvements accelerated prompt prefill token passes by ~95–217 ms (ARC prefill dropped from ~850 ms to ~750 ms; BoolQ prefill dropped from ~1686 ms to ~1469 ms).
+   - **End-to-End Latency**: Yielded a consistent **~14% reduction in total query turnaround time** across both multi-choice reasoning (ARC) and passage-based comprehension (BoolQ).
+

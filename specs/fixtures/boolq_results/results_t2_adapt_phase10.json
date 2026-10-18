@@ -1,0 +1,5876 @@
+{
+  "schema": "zeno.evaluation/v1",
+  "config": {
+    "backend": "cuda",
+    "step_cap": 2,
+    "entropy_threshold": 0.5000,
+    "canvas_length": 16
+  },
+  "summary": {
+    "total_examples": 150,
+    "correct_count": 126,
+    "accuracy": 0.8400,
+    "mean_latency_ms": 1657.65,
+    "median_latency_ms": 1537.56,
+    "mean_normalized_entropy": 0.1989,
+    "uncertain_count": 12,
+    "step_distribution": {
+      "step_1": 119,
+      "step_2": 31,
+      "step_3": 0,
+      "step_4": 0
+    }
+  },
+  "results": [
+    {
+      "id": "boolq_0",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.997148,
+      "entropy_nats": 0.019557,
+      "normalized_entropy": 0.028215,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 185.72,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 15.090615,
+          "softcapped_logit": 13.934680,
+          "probability": 0.002852
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 23.769745,
+          "softcapped_logit": 19.791721,
+          "probability": 0.997148
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 0.000,
+        "prompt_p0_ms": 0.000,
+        "prompt_transfer_ms": 0.000,
+        "prompt_p1_ms": 0.000,
+        "canvas_step1_ms": 163.234,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 185.719,
+        "prompt_cache_hit": true
+      }
+    },
+    {
+      "id": "boolq_1",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.990779,
+      "entropy_nats": 0.052392,
+      "normalized_entropy": 0.075585,
+      "uncertain": false,
+      "steps_executed": 2,
+      "latency_ms": 3188.57,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 21.553970,
+          "softcapped_logit": 18.478739,
+          "probability": 0.990779
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 14.921572,
+          "softcapped_logit": 13.801760,
+          "probability": 0.009221
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 2836.786,
+        "prompt_p0_ms": 1458.196,
+        "prompt_transfer_ms": 1.291,
+        "prompt_p1_ms": 1377.299,
+        "canvas_step1_ms": 162.167,
+        "canvas_step2_ms": 161.861,
+        "total_engine_ms": 3188.568,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_2",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.969654,
+      "entropy_nats": 0.135944,
+      "normalized_entropy": 0.196126,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1099.60,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 19.072838,
+          "softcapped_logit": 16.860197,
+          "probability": 0.969654
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 14.410774,
+          "softcapped_logit": 13.395935,
+          "probability": 0.030346
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 943.315,
+        "prompt_p0_ms": 475.340,
+        "prompt_transfer_ms": 0.429,
+        "prompt_p1_ms": 467.546,
+        "canvas_step1_ms": 149.877,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1099.592,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_3",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.991300,
+      "entropy_nats": 0.049938,
+      "normalized_entropy": 0.072045,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1630.92,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 13.410175,
+          "softcapped_logit": 12.583041,
+          "probability": 0.991300
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 8.034028,
+          "softcapped_logit": 7.847323,
+          "probability": 0.008700
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1468.056,
+        "prompt_p0_ms": 740.509,
+        "prompt_transfer_ms": 0.654,
+        "prompt_p1_ms": 726.892,
+        "canvas_step1_ms": 152.485,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1630.911,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_4",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.891369,
+      "entropy_nats": 0.343643,
+      "normalized_entropy": 0.495772,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1355.37,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 17.798115,
+          "softcapped_logit": 15.967310,
+          "probability": 0.891369
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 14.998714,
+          "softcapped_logit": 13.862504,
+          "probability": 0.108631
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1196.558,
+        "prompt_p0_ms": 603.118,
+        "prompt_transfer_ms": 0.533,
+        "prompt_p1_ms": 592.907,
+        "canvas_step1_ms": 151.770,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1355.367,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_5",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.988891,
+      "entropy_nats": 0.061038,
+      "normalized_entropy": 0.088059,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1235.26,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 10.999139,
+          "softcapped_logit": 10.531425,
+          "probability": 0.011109
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 16.506190,
+          "softcapped_logit": 15.020246,
+          "probability": 0.988891
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1071.682,
+        "prompt_p0_ms": 540.561,
+        "prompt_transfer_ms": 0.523,
+        "prompt_p1_ms": 530.597,
+        "canvas_step1_ms": 157.034,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1235.252,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_6",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "No",
+      "is_correct": false,
+      "decision_probability": 0.924650,
+      "entropy_nats": 0.267263,
+      "normalized_entropy": 0.385579,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1659.70,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 13.225505,
+          "softcapped_logit": 12.430467,
+          "probability": 0.075350
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 16.396280,
+          "softcapped_logit": 14.937737,
+          "probability": 0.924650
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1492.760,
+        "prompt_p0_ms": 765.309,
+        "prompt_transfer_ms": 0.663,
+        "prompt_p1_ms": 726.787,
+        "canvas_step1_ms": 156.546,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1659.699,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_7",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.943432,
+      "entropy_nats": 0.217417,
+      "normalized_entropy": 0.313666,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1763.04,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 25.025078,
+          "softcapped_logit": 20.481250,
+          "probability": 0.943432
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 20.279661,
+          "softcapped_logit": 17.667164,
+          "probability": 0.056568
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1595.133,
+        "prompt_p0_ms": 813.815,
+        "prompt_transfer_ms": 0.709,
+        "prompt_p1_ms": 780.610,
+        "canvas_step1_ms": 156.096,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1763.040,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_8",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.984913,
+      "entropy_nats": 0.078248,
+      "normalized_entropy": 0.112887,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 634.01,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 14.316207,
+          "softcapped_logit": 13.320117,
+          "probability": 0.984913
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 9.441235,
+          "softcapped_logit": 9.141417,
+          "probability": 0.015087
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 479.640,
+        "prompt_p0_ms": 244.052,
+        "prompt_transfer_ms": 0.898,
+        "prompt_p1_ms": 234.690,
+        "canvas_step1_ms": 150.338,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 634.010,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_9",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.934589,
+      "entropy_nats": 0.241604,
+      "normalized_entropy": 0.348561,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1524.68,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 17.806599,
+          "softcapped_logit": 15.973392,
+          "probability": 0.934589
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 14.308560,
+          "softcapped_logit": 13.313978,
+          "probability": 0.065411
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1356.765,
+        "prompt_p0_ms": 702.176,
+        "prompt_transfer_ms": 0.948,
+        "prompt_p1_ms": 653.640,
+        "canvas_step1_ms": 158.660,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1524.674,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_10",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.971801,
+      "entropy_nats": 0.128424,
+      "normalized_entropy": 0.185277,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 2231.60,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 19.565620,
+          "softcapped_logit": 17.194218,
+          "probability": 0.971801
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 14.735109,
+          "softcapped_logit": 13.654344,
+          "probability": 0.028199
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 2060.167,
+        "prompt_p0_ms": 1066.650,
+        "prompt_transfer_ms": 0.986,
+        "prompt_p1_ms": 992.530,
+        "canvas_step1_ms": 155.370,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 2231.594,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_11",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.996581,
+      "entropy_nats": 0.022830,
+      "normalized_entropy": 0.032937,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1508.07,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 9.616752,
+          "softcapped_logit": 9.300352,
+          "probability": 0.003419
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 16.446138,
+          "softcapped_logit": 14.975202,
+          "probability": 0.996581
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1344.498,
+        "prompt_p0_ms": 688.746,
+        "prompt_transfer_ms": 0.626,
+        "prompt_p1_ms": 655.126,
+        "canvas_step1_ms": 153.372,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1508.068,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_12",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "No",
+      "is_correct": false,
+      "decision_probability": 0.999804,
+      "entropy_nats": 0.001874,
+      "normalized_entropy": 0.002703,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1543.93,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 14.409892,
+          "softcapped_logit": 13.395229,
+          "probability": 0.000197
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 27.925772,
+          "softcapped_logit": 21.929823,
+          "probability": 0.999804
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1368.424,
+        "prompt_p0_ms": 701.817,
+        "prompt_transfer_ms": 0.696,
+        "prompt_p1_ms": 665.910,
+        "canvas_step1_ms": 155.771,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1543.925,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_13",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.879355,
+      "entropy_nats": 0.368209,
+      "normalized_entropy": 0.531213,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1738.89,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 21.922289,
+          "softcapped_logit": 18.705590,
+          "probability": 0.879355
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 18.867619,
+          "softcapped_logit": 16.719257,
+          "probability": 0.120645
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1415.218,
+        "prompt_p0_ms": 748.763,
+        "prompt_transfer_ms": 0.662,
+        "prompt_p1_ms": 665.793,
+        "canvas_step1_ms": 156.451,
+        "canvas_step2_ms": 156.635,
+        "total_engine_ms": 1738.889,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_14",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.984162,
+      "entropy_nats": 0.081365,
+      "normalized_entropy": 0.117384,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 2035.84,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 16.697460,
+          "softcapped_logit": 15.163111,
+          "probability": 0.984162
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 11.575964,
+          "softcapped_logit": 11.033713,
+          "probability": 0.015838
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1860.261,
+        "prompt_p0_ms": 955.463,
+        "prompt_transfer_ms": 0.894,
+        "prompt_p1_ms": 903.903,
+        "canvas_step1_ms": 162.130,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 2035.839,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_15",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.839076,
+      "entropy_nats": 0.441200,
+      "normalized_entropy": 0.636517,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1428.49,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 19.097378,
+          "softcapped_logit": 16.876978,
+          "probability": 0.839076
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 16.781525,
+          "softcapped_logit": 15.225613,
+          "probability": 0.160925
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1109.869,
+        "prompt_p0_ms": 567.024,
+        "prompt_transfer_ms": 0.547,
+        "prompt_p1_ms": 542.298,
+        "canvas_step1_ms": 152.945,
+        "canvas_step2_ms": 158.064,
+        "total_engine_ms": 1428.484,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_16",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "No",
+      "is_correct": false,
+      "decision_probability": 0.961387,
+      "entropy_nats": 0.163511,
+      "normalized_entropy": 0.235897,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1965.07,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 8.703369,
+          "softcapped_logit": 8.467146,
+          "probability": 0.038613
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 12.332696,
+          "softcapped_logit": 11.681931,
+          "probability": 0.961387
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1791.465,
+        "prompt_p0_ms": 945.205,
+        "prompt_transfer_ms": 0.868,
+        "prompt_p1_ms": 845.392,
+        "canvas_step1_ms": 160.716,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1965.068,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_17",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.942456,
+      "entropy_nats": 0.220156,
+      "normalized_entropy": 0.317618,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1135.80,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 17.949219,
+          "softcapped_logit": 16.075320,
+          "probability": 0.942456
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 14.265507,
+          "softcapped_logit": 13.279383,
+          "probability": 0.057544
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 976.024,
+        "prompt_p0_ms": 507.149,
+        "prompt_transfer_ms": 0.466,
+        "prompt_p1_ms": 468.409,
+        "canvas_step1_ms": 153.970,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1135.796,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_18",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "No",
+      "is_correct": false,
+      "decision_probability": 0.991331,
+      "entropy_nats": 0.049792,
+      "normalized_entropy": 0.071835,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 2006.83,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 17.212606,
+          "softcapped_logit": 15.543317,
+          "probability": 0.008669
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 24.656124,
+          "softcapped_logit": 20.282606,
+          "probability": 0.991331
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1835.898,
+        "prompt_p0_ms": 929.812,
+        "prompt_transfer_ms": 0.846,
+        "prompt_p1_ms": 905.240,
+        "canvas_step1_ms": 156.108,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 2006.825,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_19",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "No",
+      "is_correct": false,
+      "decision_probability": 0.987540,
+      "entropy_nats": 0.067021,
+      "normalized_entropy": 0.096690,
+      "uncertain": false,
+      "steps_executed": 2,
+      "latency_ms": 1305.21,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 18.828434,
+          "softcapped_logit": 16.692220,
+          "probability": 0.012460
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 26.146729,
+          "softcapped_logit": 21.064940,
+          "probability": 0.987540
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 994.596,
+        "prompt_p0_ms": 502.214,
+        "prompt_transfer_ms": 0.460,
+        "prompt_p1_ms": 491.922,
+        "canvas_step1_ms": 150.128,
+        "canvas_step2_ms": 154.018,
+        "total_engine_ms": 1305.204,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_20",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.996788,
+      "entropy_nats": 0.021645,
+      "normalized_entropy": 0.031227,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 2062.63,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 12.352326,
+          "softcapped_logit": 11.698580,
+          "probability": 0.003212
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 19.928644,
+          "softcapped_logit": 17.436304,
+          "probability": 0.996788
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1893.826,
+        "prompt_p0_ms": 956.789,
+        "prompt_transfer_ms": 0.876,
+        "prompt_p1_ms": 936.162,
+        "canvas_step1_ms": 154.693,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 2062.623,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_21",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "No",
+      "is_correct": false,
+      "decision_probability": 0.756623,
+      "entropy_nats": 0.554941,
+      "normalized_entropy": 0.800611,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 2361.00,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 23.872790,
+          "softcapped_logit": 19.849785,
+          "probability": 0.243377
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 25.987743,
+          "softcapped_logit": 20.984040,
+          "probability": 0.756623
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 2016.802,
+        "prompt_p0_ms": 1017.114,
+        "prompt_transfer_ms": 0.963,
+        "prompt_p1_ms": 998.726,
+        "canvas_step1_ms": 161.132,
+        "canvas_step2_ms": 156.861,
+        "total_engine_ms": 2360.996,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_22",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "No",
+      "is_correct": false,
+      "decision_probability": 0.978625,
+      "entropy_nats": 0.103342,
+      "normalized_entropy": 0.149091,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1053.96,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 22.535662,
+          "softcapped_logit": 19.075727,
+          "probability": 0.021375
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 30.123838,
+          "softcapped_logit": 22.899670,
+          "probability": 0.978625
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 898.693,
+        "prompt_p0_ms": 453.957,
+        "prompt_transfer_ms": 0.435,
+        "prompt_p1_ms": 444.301,
+        "canvas_step1_ms": 149.736,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1053.959,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_23",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.974176,
+      "entropy_nats": 0.119911,
+      "normalized_entropy": 0.172995,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1440.22,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 23.270561,
+          "softcapped_logit": 19.506699,
+          "probability": 0.974176
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 17.671555,
+          "softcapped_logit": 15.876401,
+          "probability": 0.025824
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1279.436,
+        "prompt_p0_ms": 647.370,
+        "prompt_transfer_ms": 0.607,
+        "prompt_p1_ms": 631.458,
+        "canvas_step1_ms": 153.734,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1440.216,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_24",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "No",
+      "is_correct": false,
+      "decision_probability": 0.918560,
+      "entropy_nats": 0.282271,
+      "normalized_entropy": 0.407231,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 2029.47,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 19.616392,
+          "softcapped_logit": 17.228280,
+          "probability": 0.081440
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 23.522327,
+          "softcapped_logit": 19.651226,
+          "probability": 0.918560
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1859.575,
+        "prompt_p0_ms": 939.684,
+        "prompt_transfer_ms": 0.890,
+        "prompt_p1_ms": 919.001,
+        "canvas_step1_ms": 156.415,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 2029.467,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_25",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.950618,
+      "entropy_nats": 0.196692,
+      "normalized_entropy": 0.283766,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1356.43,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 17.266930,
+          "softcapped_logit": 15.583019,
+          "probability": 0.950618
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 13.461732,
+          "softcapped_logit": 12.625496,
+          "probability": 0.049382
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1197.450,
+        "prompt_p0_ms": 604.755,
+        "prompt_transfer_ms": 0.539,
+        "prompt_p1_ms": 592.155,
+        "canvas_step1_ms": 150.262,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1356.422,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_26",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "No",
+      "is_correct": false,
+      "decision_probability": 0.948804,
+      "entropy_nats": 0.202021,
+      "normalized_entropy": 0.291454,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1483.39,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 18.407475,
+          "softcapped_logit": 16.399319,
+          "probability": 0.051196
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 22.947420,
+          "softcapped_logit": 19.318869,
+          "probability": 0.948804
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1319.784,
+        "prompt_p0_ms": 667.278,
+        "prompt_transfer_ms": 0.680,
+        "prompt_p1_ms": 651.826,
+        "canvas_step1_ms": 153.776,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1483.391,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_27",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.995270,
+      "entropy_nats": 0.030044,
+      "normalized_entropy": 0.043344,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 2554.85,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 8.000857,
+          "softcapped_logit": 7.816412,
+          "probability": 0.004730
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 14.124103,
+          "softcapped_logit": 13.165447,
+          "probability": 0.995270
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 2369.858,
+        "prompt_p0_ms": 1228.002,
+        "prompt_transfer_ms": 1.017,
+        "prompt_p1_ms": 1140.839,
+        "canvas_step1_ms": 160.256,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 2554.847,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_28",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.952584,
+      "entropy_nats": 0.190837,
+      "normalized_entropy": 0.275319,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1138.16,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 17.598179,
+          "softcapped_logit": 15.823506,
+          "probability": 0.952584
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 13.702926,
+          "softcapped_logit": 12.823298,
+          "probability": 0.047416
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 975.747,
+        "prompt_p0_ms": 493.675,
+        "prompt_transfer_ms": 0.456,
+        "prompt_p1_ms": 481.616,
+        "canvas_step1_ms": 156.177,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1138.151,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_29",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.897991,
+      "entropy_nats": 0.329474,
+      "normalized_entropy": 0.475331,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1528.68,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 14.055206,
+          "softcapped_logit": 13.109763,
+          "probability": 0.897991
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 11.461576,
+          "softcapped_logit": 10.934660,
+          "probability": 0.102009
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1364.294,
+        "prompt_p0_ms": 697.265,
+        "prompt_transfer_ms": 0.616,
+        "prompt_p1_ms": 666.413,
+        "canvas_step1_ms": 153.848,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1528.676,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_30",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.957342,
+      "entropy_nats": 0.176302,
+      "normalized_entropy": 0.254351,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1644.42,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 20.738108,
+          "softcapped_logit": 17.963923,
+          "probability": 0.957342
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 16.283800,
+          "softcapped_logit": 14.852985,
+          "probability": 0.042658
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1478.543,
+        "prompt_p0_ms": 766.236,
+        "prompt_transfer_ms": 0.636,
+        "prompt_p1_ms": 711.670,
+        "canvas_step1_ms": 153.406,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1644.419,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_31",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.966588,
+      "entropy_nats": 0.146409,
+      "normalized_entropy": 0.211223,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1048.15,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 31.274998,
+          "softcapped_logit": 23.366200,
+          "probability": 0.966588
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 24.143965,
+          "softcapped_logit": 20.001333,
+          "probability": 0.033412
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 890.994,
+        "prompt_p0_ms": 459.594,
+        "prompt_transfer_ms": 0.476,
+        "prompt_p1_ms": 430.924,
+        "canvas_step1_ms": 151.623,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1048.148,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_32",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.998202,
+      "entropy_nats": 0.013162,
+      "normalized_entropy": 0.018989,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1431.30,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 14.485897,
+          "softcapped_logit": 13.456013,
+          "probability": 0.001798
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 23.740574,
+          "softcapped_logit": 19.775236,
+          "probability": 0.998202
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1270.916,
+        "prompt_p0_ms": 655.797,
+        "prompt_transfer_ms": 0.591,
+        "prompt_p1_ms": 614.528,
+        "canvas_step1_ms": 151.742,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1431.294,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_33",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "No",
+      "is_correct": false,
+      "decision_probability": 0.998906,
+      "entropy_nats": 0.008556,
+      "normalized_entropy": 0.012343,
+      "uncertain": false,
+      "steps_executed": 2,
+      "latency_ms": 1439.52,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 16.093891,
+          "softcapped_logit": 14.709178,
+          "probability": 0.001095
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 27.075302,
+          "softcapped_logit": 21.525536,
+          "probability": 0.998906
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1118.170,
+        "prompt_p0_ms": 569.985,
+        "prompt_transfer_ms": 0.685,
+        "prompt_p1_ms": 547.500,
+        "canvas_step1_ms": 158.020,
+        "canvas_step2_ms": 153.867,
+        "total_engine_ms": 1439.518,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_34",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.967115,
+      "entropy_nats": 0.144632,
+      "normalized_entropy": 0.208660,
+      "uncertain": false,
+      "steps_executed": 2,
+      "latency_ms": 1697.44,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 18.513668,
+          "softcapped_logit": 16.473637,
+          "probability": 0.967115
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 14.033676,
+          "softcapped_logit": 13.092339,
+          "probability": 0.032885
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1382.898,
+        "prompt_p0_ms": 716.221,
+        "prompt_transfer_ms": 0.584,
+        "prompt_p1_ms": 666.093,
+        "canvas_step1_ms": 153.017,
+        "canvas_step2_ms": 151.141,
+        "total_engine_ms": 1697.440,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_35",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.984761,
+      "entropy_nats": 0.078880,
+      "normalized_entropy": 0.113800,
+      "uncertain": false,
+      "steps_executed": 2,
+      "latency_ms": 2029.84,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 20.119180,
+          "softcapped_logit": 17.562006,
+          "probability": 0.984761
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 14.407681,
+          "softcapped_logit": 13.393458,
+          "probability": 0.015239
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1706.435,
+        "prompt_p0_ms": 861.785,
+        "prompt_transfer_ms": 0.767,
+        "prompt_p1_ms": 843.883,
+        "canvas_step1_ms": 154.886,
+        "canvas_step2_ms": 154.395,
+        "total_engine_ms": 2029.830,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_36",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.997426,
+      "entropy_nats": 0.017919,
+      "normalized_entropy": 0.025851,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1603.93,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 15.601227,
+          "softcapped_logit": 14.331946,
+          "probability": 0.002574
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 24.672693,
+          "softcapped_logit": 20.291597,
+          "probability": 0.997426
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1440.673,
+        "prompt_p0_ms": 727.398,
+        "prompt_transfer_ms": 0.672,
+        "prompt_p1_ms": 712.602,
+        "canvas_step1_ms": 153.183,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1603.928,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_37",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.986918,
+      "entropy_nats": 0.069727,
+      "normalized_entropy": 0.100594,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 2083.53,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 19.637228,
+          "softcapped_logit": 17.242237,
+          "probability": 0.986918
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 13.820086,
+          "softcapped_logit": 12.918892,
+          "probability": 0.013082
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1911.311,
+        "prompt_p0_ms": 979.491,
+        "prompt_transfer_ms": 1.029,
+        "prompt_p1_ms": 930.791,
+        "canvas_step1_ms": 154.901,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 2083.522,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_38",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.915106,
+      "entropy_nats": 0.290563,
+      "normalized_entropy": 0.419193,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 2229.83,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 17.234776,
+          "softcapped_logit": 15.559530,
+          "probability": 0.084894
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 20.696426,
+          "softcapped_logit": 17.937166,
+          "probability": 0.915106
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 2055.196,
+        "prompt_p0_ms": 1044.715,
+        "prompt_transfer_ms": 0.945,
+        "prompt_p1_ms": 1009.535,
+        "canvas_step1_ms": 156.751,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 2229.825,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_39",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.991795,
+      "entropy_nats": 0.047582,
+      "normalized_entropy": 0.068647,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 838.78,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 13.376531,
+          "softcapped_logit": 12.555303,
+          "probability": 0.008206
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 19.798664,
+          "softcapped_logit": 17.350012,
+          "probability": 0.991795
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 687.549,
+        "prompt_p0_ms": 347.946,
+        "prompt_transfer_ms": 0.310,
+        "prompt_p1_ms": 339.293,
+        "canvas_step1_ms": 146.867,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 838.778,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_40",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.941638,
+      "entropy_nats": 0.222435,
+      "normalized_entropy": 0.320906,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 3007.05,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 18.552890,
+          "softcapped_logit": 16.501015,
+          "probability": 0.941638
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 14.818089,
+          "softcapped_logit": 13.720051,
+          "probability": 0.058362
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 2809.375,
+        "prompt_p0_ms": 1421.226,
+        "prompt_transfer_ms": 1.234,
+        "prompt_p1_ms": 1386.915,
+        "canvas_step1_ms": 171.101,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 3007.044,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_41",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.999952,
+      "entropy_nats": 0.000522,
+      "normalized_entropy": 0.000753,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1901.23,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 5.296936,
+          "softcapped_logit": 5.242569,
+          "probability": 0.000048
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 16.739964,
+          "softcapped_logit": 15.194732,
+          "probability": 0.999952
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1728.117,
+        "prompt_p0_ms": 885.032,
+        "prompt_transfer_ms": 0.797,
+        "prompt_p1_ms": 842.289,
+        "canvas_step1_ms": 158.450,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1901.229,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_42",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "No",
+      "is_correct": false,
+      "decision_probability": 0.966099,
+      "entropy_nats": 0.148052,
+      "normalized_entropy": 0.213594,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1942.74,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 14.265927,
+          "softcapped_logit": 13.279720,
+          "probability": 0.033901
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 18.737793,
+          "softcapped_logit": 16.629538,
+          "probability": 0.966099
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1774.291,
+        "prompt_p0_ms": 916.243,
+        "prompt_transfer_ms": 0.954,
+        "prompt_p1_ms": 857.094,
+        "canvas_step1_ms": 156.379,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1942.740,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_43",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.998715,
+      "entropy_nats": 0.009838,
+      "normalized_entropy": 0.014194,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 852.62,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 14.979349,
+          "softcapped_logit": 13.847269,
+          "probability": 0.001285
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 25.065857,
+          "softcapped_logit": 20.503002,
+          "probability": 0.998715
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 697.532,
+        "prompt_p0_ms": 352.351,
+        "prompt_transfer_ms": 0.306,
+        "prompt_p1_ms": 344.875,
+        "canvas_step1_ms": 149.907,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 852.615,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_44",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.987329,
+      "entropy_nats": 0.067944,
+      "normalized_entropy": 0.098023,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1296.51,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 27.083405,
+          "softcapped_logit": 21.529467,
+          "probability": 0.987329
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 19.535234,
+          "softcapped_logit": 17.173803,
+          "probability": 0.012671
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1134.714,
+        "prompt_p0_ms": 580.587,
+        "prompt_transfer_ms": 0.539,
+        "prompt_p1_ms": 553.589,
+        "canvas_step1_ms": 154.262,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1296.509,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_45",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.725296,
+      "entropy_nats": 0.587882,
+      "normalized_entropy": 0.848134,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1380.97,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 26.376059,
+          "softcapped_logit": 21.180578,
+          "probability": 0.725296
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 24.522232,
+          "softcapped_logit": 20.209694,
+          "probability": 0.274704
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1072.974,
+        "prompt_p0_ms": 543.745,
+        "prompt_transfer_ms": 0.506,
+        "prompt_p1_ms": 528.724,
+        "canvas_step1_ms": 149.413,
+        "canvas_step2_ms": 150.074,
+        "total_engine_ms": 1380.969,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_46",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.987901,
+      "entropy_nats": 0.065439,
+      "normalized_entropy": 0.094408,
+      "uncertain": false,
+      "steps_executed": 2,
+      "latency_ms": 1605.01,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 21.593319,
+          "softcapped_logit": 18.503140,
+          "probability": 0.987901
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 15.302996,
+          "softcapped_logit": 14.100690,
+          "probability": 0.012099
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1291.576,
+        "prompt_p0_ms": 655.431,
+        "prompt_transfer_ms": 0.614,
+        "prompt_p1_ms": 635.531,
+        "canvas_step1_ms": 152.644,
+        "canvas_step2_ms": 150.739,
+        "total_engine_ms": 1605.004,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_47",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.996921,
+      "entropy_nats": 0.020882,
+      "normalized_entropy": 0.030127,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 2042.39,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 20.634462,
+          "softcapped_logit": 17.897305,
+          "probability": 0.996921
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 12.849419,
+          "softcapped_logit": 12.117339,
+          "probability": 0.003079
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1869.728,
+        "prompt_p0_ms": 950.433,
+        "prompt_transfer_ms": 0.848,
+        "prompt_p1_ms": 918.447,
+        "canvas_step1_ms": 158.834,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 2042.384,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_48",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.946735,
+      "entropy_nats": 0.208020,
+      "normalized_entropy": 0.300109,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 2016.69,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 16.635353,
+          "softcapped_logit": 15.116821,
+          "probability": 0.946735
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 12.995191,
+          "softcapped_logit": 12.239089,
+          "probability": 0.053265
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1843.899,
+        "prompt_p0_ms": 937.296,
+        "prompt_transfer_ms": 0.871,
+        "prompt_p1_ms": 905.731,
+        "canvas_step1_ms": 155.099,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 2016.690,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_49",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "No",
+      "is_correct": false,
+      "decision_probability": 0.995982,
+      "entropy_nats": 0.026175,
+      "normalized_entropy": 0.037762,
+      "uncertain": false,
+      "steps_executed": 2,
+      "latency_ms": 1570.35,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 21.163343,
+          "softcapped_logit": 18.234371,
+          "probability": 0.004018
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 32.269516,
+          "softcapped_logit": 23.747420,
+          "probability": 0.995982
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1256.995,
+        "prompt_p0_ms": 634.840,
+        "prompt_transfer_ms": 0.575,
+        "prompt_p1_ms": 621.581,
+        "canvas_step1_ms": 150.692,
+        "canvas_step2_ms": 153.474,
+        "total_engine_ms": 1570.344,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_50",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.944950,
+      "entropy_nats": 0.213123,
+      "normalized_entropy": 0.307471,
+      "uncertain": false,
+      "steps_executed": 2,
+      "latency_ms": 1026.99,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 20.534122,
+          "softcapped_logit": 17.832544,
+          "probability": 0.944950
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 16.465380,
+          "softcapped_logit": 14.989644,
+          "probability": 0.055049
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 725.412,
+        "prompt_p0_ms": 365.857,
+        "prompt_transfer_ms": 0.306,
+        "prompt_p1_ms": 359.250,
+        "canvas_step1_ms": 148.559,
+        "canvas_step2_ms": 147.889,
+        "total_engine_ms": 1026.982,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_51",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.992689,
+      "entropy_nats": 0.043245,
+      "normalized_entropy": 0.062389,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1629.02,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 16.567003,
+          "softcapped_logit": 15.065767,
+          "probability": 0.992689
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 10.571688,
+          "softcapped_logit": 10.154792,
+          "probability": 0.007311
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1463.660,
+        "prompt_p0_ms": 746.600,
+        "prompt_transfer_ms": 0.664,
+        "prompt_p1_ms": 716.396,
+        "canvas_step1_ms": 154.760,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1629.018,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_52",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.997554,
+      "entropy_nats": 0.017151,
+      "normalized_entropy": 0.024744,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 2170.99,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 14.025867,
+          "softcapped_logit": 13.086017,
+          "probability": 0.002446
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 22.571238,
+          "softcapped_logit": 19.096905,
+          "probability": 0.997554
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1994.041,
+        "prompt_p0_ms": 1014.638,
+        "prompt_transfer_ms": 0.904,
+        "prompt_p1_ms": 978.499,
+        "canvas_step1_ms": 157.096,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 2170.987,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_53",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "No",
+      "is_correct": false,
+      "decision_probability": 0.936474,
+      "entropy_nats": 0.236560,
+      "normalized_entropy": 0.341285,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 2066.00,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 15.707241,
+          "softcapped_logit": 14.413628,
+          "probability": 0.063526
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 19.432062,
+          "softcapped_logit": 17.104305,
+          "probability": 0.936474
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1892.680,
+        "prompt_p0_ms": 953.585,
+        "prompt_transfer_ms": 0.809,
+        "prompt_p1_ms": 938.286,
+        "canvas_step1_ms": 156.973,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 2066.000,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_54",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.996237,
+      "entropy_nats": 0.024761,
+      "normalized_entropy": 0.035722,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1165.45,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 9.203909,
+          "softcapped_logit": 8.925612,
+          "probability": 0.003763
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 15.825584,
+          "softcapped_logit": 14.504480,
+          "probability": 0.996237
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1009.547,
+        "prompt_p0_ms": 508.923,
+        "prompt_transfer_ms": 0.480,
+        "prompt_p1_ms": 500.144,
+        "canvas_step1_ms": 149.557,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1165.441,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_55",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.965965,
+      "entropy_nats": 0.148498,
+      "normalized_entropy": 0.214238,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 3814.89,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 22.680485,
+          "softcapped_logit": 19.161732,
+          "probability": 0.034035
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 29.205765,
+          "softcapped_logit": 22.507483,
+          "probability": 0.965965
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 3593.965,
+        "prompt_p0_ms": 1813.855,
+        "prompt_transfer_ms": 1.605,
+        "prompt_p1_ms": 1778.505,
+        "canvas_step1_ms": 173.085,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 3814.888,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_56",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.970725,
+      "entropy_nats": 0.132214,
+      "normalized_entropy": 0.190745,
+      "uncertain": false,
+      "steps_executed": 2,
+      "latency_ms": 1825.14,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 17.428644,
+          "softcapped_logit": 15.700771,
+          "probability": 0.970725
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 12.947697,
+          "softcapped_logit": 12.199474,
+          "probability": 0.029275
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1510.280,
+        "prompt_p0_ms": 782.394,
+        "prompt_transfer_ms": 0.662,
+        "prompt_p1_ms": 727.223,
+        "canvas_step1_ms": 151.742,
+        "canvas_step2_ms": 150.880,
+        "total_engine_ms": 1825.137,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_57",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "No",
+      "is_correct": false,
+      "decision_probability": 0.685570,
+      "entropy_nats": 0.622599,
+      "normalized_entropy": 0.898221,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1120.78,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 24.481113,
+          "softcapped_logit": 20.187216,
+          "probability": 0.314430
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 25.953835,
+          "softcapped_logit": 20.966705,
+          "probability": 0.685570
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 811.302,
+        "prompt_p0_ms": 410.791,
+        "prompt_transfer_ms": 0.360,
+        "prompt_p1_ms": 400.151,
+        "canvas_step1_ms": 151.331,
+        "canvas_step2_ms": 152.392,
+        "total_engine_ms": 1120.772,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_58",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.982395,
+      "entropy_nats": 0.088566,
+      "normalized_entropy": 0.127774,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1184.20,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 16.803413,
+          "softcapped_logit": 15.241857,
+          "probability": 0.017605
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 22.853296,
+          "softcapped_logit": 19.263666,
+          "probability": 0.982395
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1025.886,
+        "prompt_p0_ms": 521.401,
+        "prompt_transfer_ms": 0.519,
+        "prompt_p1_ms": 503.966,
+        "canvas_step1_ms": 149.950,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1184.194,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_59",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.970312,
+      "entropy_nats": 0.133656,
+      "normalized_entropy": 0.192824,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1277.93,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 15.095335,
+          "softcapped_logit": 13.938381,
+          "probability": 0.970312
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 10.908081,
+          "softcapped_logit": 10.451503,
+          "probability": 0.029688
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1118.191,
+        "prompt_p0_ms": 568.661,
+        "prompt_transfer_ms": 0.551,
+        "prompt_p1_ms": 548.979,
+        "canvas_step1_ms": 152.109,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1277.930,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_60",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.975089,
+      "entropy_nats": 0.116579,
+      "normalized_entropy": 0.168188,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1950.16,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 18.734083,
+          "softcapped_logit": 16.626966,
+          "probability": 0.024911
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 24.677496,
+          "softcapped_logit": 20.294203,
+          "probability": 0.975089
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1777.995,
+        "prompt_p0_ms": 897.237,
+        "prompt_transfer_ms": 0.796,
+        "prompt_p1_ms": 879.962,
+        "canvas_step1_ms": 158.193,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1950.158,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_61",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.971226,
+      "entropy_nats": 0.130453,
+      "normalized_entropy": 0.188204,
+      "uncertain": false,
+      "steps_executed": 2,
+      "latency_ms": 1001.43,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 24.626558,
+          "softcapped_logit": 20.266542,
+          "probability": 0.028774
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 32.372170,
+          "softcapped_logit": 23.785645,
+          "probability": 0.971226
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 700.092,
+        "prompt_p0_ms": 354.403,
+        "prompt_transfer_ms": 0.293,
+        "prompt_p1_ms": 345.397,
+        "canvas_step1_ms": 147.984,
+        "canvas_step2_ms": 148.348,
+        "total_engine_ms": 1001.422,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_62",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.999976,
+      "entropy_nats": 0.000281,
+      "normalized_entropy": 0.000406,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1769.64,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 10.878658,
+          "softcapped_logit": 10.425642,
+          "probability": 0.000024
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 26.127937,
+          "softcapped_logit": 21.055408,
+          "probability": 0.999976
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1602.652,
+        "prompt_p0_ms": 813.777,
+        "prompt_transfer_ms": 0.758,
+        "prompt_p1_ms": 788.118,
+        "canvas_step1_ms": 154.695,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1769.637,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_63",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.980293,
+      "entropy_nats": 0.096898,
+      "normalized_entropy": 0.139795,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1518.02,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 9.054162,
+          "softcapped_logit": 8.788918,
+          "probability": 0.980293
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 4.925859,
+          "softcapped_logit": 4.882064,
+          "probability": 0.019707
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1352.146,
+        "prompt_p0_ms": 693.628,
+        "prompt_transfer_ms": 0.631,
+        "prompt_p1_ms": 657.887,
+        "canvas_step1_ms": 154.474,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1518.012,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_64",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.974814,
+      "entropy_nats": 0.117587,
+      "normalized_entropy": 0.169643,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 912.51,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 24.724310,
+          "softcapped_logit": 20.319567,
+          "probability": 0.974814
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 18.787016,
+          "softcapped_logit": 16.663607,
+          "probability": 0.025186
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 756.504,
+        "prompt_p0_ms": 389.214,
+        "prompt_transfer_ms": 0.358,
+        "prompt_p1_ms": 366.931,
+        "canvas_step1_ms": 151.143,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 912.506,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_65",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.937484,
+      "entropy_nats": 0.233835,
+      "normalized_entropy": 0.337353,
+      "uncertain": false,
+      "steps_executed": 2,
+      "latency_ms": 1226.09,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 21.304028,
+          "softcapped_logit": 18.322830,
+          "probability": 0.937484
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 17.310835,
+          "softcapped_logit": 15.615055,
+          "probability": 0.062516
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 918.313,
+        "prompt_p0_ms": 472.521,
+        "prompt_transfer_ms": 0.411,
+        "prompt_p1_ms": 445.380,
+        "canvas_step1_ms": 150.242,
+        "canvas_step2_ms": 151.221,
+        "total_engine_ms": 1226.082,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_66",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "No",
+      "is_correct": false,
+      "decision_probability": 0.978157,
+      "entropy_nats": 0.105129,
+      "normalized_entropy": 0.151669,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1531.20,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 8.026042,
+          "softcapped_logit": 7.839882,
+          "probability": 0.021843
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 12.285254,
+          "softcapped_logit": 11.641657,
+          "probability": 0.978157
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1366.232,
+        "prompt_p0_ms": 699.155,
+        "prompt_transfer_ms": 0.625,
+        "prompt_p1_ms": 666.453,
+        "canvas_step1_ms": 155.460,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1531.191,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_67",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.998980,
+      "entropy_nats": 0.008044,
+      "normalized_entropy": 0.011605,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 870.41,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 11.516678,
+          "softcapped_logit": 10.982410,
+          "probability": 0.001020
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 20.591360,
+          "softcapped_logit": 17.869516,
+          "probability": 0.998980
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 714.944,
+        "prompt_p0_ms": 370.234,
+        "prompt_transfer_ms": 0.295,
+        "prompt_p1_ms": 344.415,
+        "canvas_step1_ms": 149.351,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 870.407,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_68",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.998618,
+      "entropy_nats": 0.010481,
+      "normalized_entropy": 0.015120,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1701.58,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 16.324448,
+          "softcapped_logit": 14.883649,
+          "probability": 0.001382
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 26.953917,
+          "softcapped_logit": 21.466473,
+          "probability": 0.998618
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1533.947,
+        "prompt_p0_ms": 787.690,
+        "prompt_transfer_ms": 0.695,
+        "prompt_p1_ms": 745.562,
+        "canvas_step1_ms": 155.876,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1701.573,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_69",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.986617,
+      "entropy_nats": 0.071025,
+      "normalized_entropy": 0.102467,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 2029.30,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 20.670520,
+          "softcapped_logit": 17.920511,
+          "probability": 0.986617
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 14.692101,
+          "softcapped_logit": 13.620222,
+          "probability": 0.013383
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1861.079,
+        "prompt_p0_ms": 955.809,
+        "prompt_transfer_ms": 0.917,
+        "prompt_p1_ms": 904.353,
+        "canvas_step1_ms": 155.204,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 2029.292,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_70",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.902279,
+      "entropy_nats": 0.320047,
+      "normalized_entropy": 0.461730,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1153.80,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 16.718420,
+          "softcapped_logit": 15.178710,
+          "probability": 0.902279
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 13.865553,
+          "softcapped_logit": 12.955903,
+          "probability": 0.097721
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 995.228,
+        "prompt_p0_ms": 502.656,
+        "prompt_transfer_ms": 0.464,
+        "prompt_p1_ms": 492.109,
+        "canvas_step1_ms": 152.103,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1153.797,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_71",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "No",
+      "is_correct": false,
+      "decision_probability": 0.760391,
+      "entropy_nats": 0.550629,
+      "normalized_entropy": 0.794390,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 2119.54,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 19.550594,
+          "softcapped_logit": 17.184126,
+          "probability": 0.239609
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 21.329750,
+          "softcapped_logit": 18.338950,
+          "probability": 0.760391
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1792.457,
+        "prompt_p0_ms": 907.629,
+        "prompt_transfer_ms": 0.791,
+        "prompt_p1_ms": 884.037,
+        "canvas_step1_ms": 157.135,
+        "canvas_step2_ms": 154.629,
+        "total_engine_ms": 2119.541,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_72",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.989508,
+      "entropy_nats": 0.058251,
+      "normalized_entropy": 0.084038,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1789.76,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 12.340288,
+          "softcapped_logit": 11.688371,
+          "probability": 0.010492
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 18.174065,
+          "softcapped_logit": 16.234960,
+          "probability": 0.989508
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1619.958,
+        "prompt_p0_ms": 823.225,
+        "prompt_transfer_ms": 0.746,
+        "prompt_p1_ms": 795.987,
+        "canvas_step1_ms": 157.909,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1789.756,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_73",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.966208,
+      "entropy_nats": 0.147687,
+      "normalized_entropy": 0.213067,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 910.08,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 21.376060,
+          "softcapped_logit": 18.367926,
+          "probability": 0.966208
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 16.498896,
+          "softcapped_logit": 15.014779,
+          "probability": 0.033792
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 750.819,
+        "prompt_p0_ms": 379.167,
+        "prompt_transfer_ms": 0.329,
+        "prompt_p1_ms": 371.323,
+        "canvas_step1_ms": 154.260,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 910.080,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_74",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.902057,
+      "entropy_nats": 0.320541,
+      "normalized_entropy": 0.462443,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1276.81,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 21.086540,
+          "softcapped_logit": 18.185867,
+          "probability": 0.902057
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 17.795702,
+          "softcapped_logit": 15.965581,
+          "probability": 0.097944
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1117.585,
+        "prompt_p0_ms": 575.944,
+        "prompt_transfer_ms": 0.538,
+        "prompt_p1_ms": 541.104,
+        "canvas_step1_ms": 151.700,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1276.808,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_75",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "No",
+      "is_correct": false,
+      "decision_probability": 0.679059,
+      "entropy_nats": 0.627577,
+      "normalized_entropy": 0.905402,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1770.01,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 24.928219,
+          "softcapped_logit": 20.429422,
+          "probability": 0.320941
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 26.372658,
+          "softcapped_logit": 21.178873,
+          "probability": 0.679059
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1450.658,
+        "prompt_p0_ms": 730.239,
+        "prompt_transfer_ms": 0.680,
+        "prompt_p1_ms": 719.740,
+        "canvas_step1_ms": 154.025,
+        "canvas_step2_ms": 153.203,
+        "total_engine_ms": 1770.001,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_76",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.999804,
+      "entropy_nats": 0.001868,
+      "normalized_entropy": 0.002695,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1761.30,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 9.122266,
+          "softcapped_logit": 8.851135,
+          "probability": 0.000196
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 19.857477,
+          "softcapped_logit": 17.389110,
+          "probability": 0.999804
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1595.238,
+        "prompt_p0_ms": 807.427,
+        "prompt_transfer_ms": 0.797,
+        "prompt_p1_ms": 787.013,
+        "canvas_step1_ms": 154.054,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1761.301,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_77",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.990501,
+      "entropy_nats": 0.053686,
+      "normalized_entropy": 0.077452,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 882.00,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 20.704609,
+          "softcapped_logit": 17.942421,
+          "probability": 0.009499
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 29.394205,
+          "softcapped_logit": 22.589468,
+          "probability": 0.990501
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 730.228,
+        "prompt_p0_ms": 370.202,
+        "prompt_transfer_ms": 0.344,
+        "prompt_p1_ms": 359.682,
+        "canvas_step1_ms": 147.093,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 881.996,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_78",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.974680,
+      "entropy_nats": 0.118076,
+      "normalized_entropy": 0.170347,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 2403.61,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 17.397621,
+          "softcapped_logit": 15.678234,
+          "probability": 0.974680
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 12.742464,
+          "softcapped_logit": 12.027704,
+          "probability": 0.025320
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 2225.783,
+        "prompt_p0_ms": 1129.607,
+        "prompt_transfer_ms": 0.992,
+        "prompt_p1_ms": 1095.185,
+        "canvas_step1_ms": 161.230,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 2403.602,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_79",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.999759,
+      "entropy_nats": 0.002247,
+      "normalized_entropy": 0.003242,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1122.84,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 9.319256,
+          "softcapped_logit": 9.030626,
+          "probability": 0.000241
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 19.816212,
+          "softcapped_logit": 17.361689,
+          "probability": 0.999759
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 964.061,
+        "prompt_p0_ms": 498.074,
+        "prompt_transfer_ms": 0.466,
+        "prompt_p1_ms": 465.521,
+        "canvas_step1_ms": 152.079,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1122.840,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_80",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.999953,
+      "entropy_nats": 0.000520,
+      "normalized_entropy": 0.000750,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 982.27,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 6.102408,
+          "softcapped_logit": 6.019612,
+          "probability": 0.000047
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 17.810108,
+          "softcapped_logit": 15.975905,
+          "probability": 0.999953
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 825.602,
+        "prompt_p0_ms": 415.567,
+        "prompt_transfer_ms": 0.371,
+        "prompt_p1_ms": 409.665,
+        "canvas_step1_ms": 150.557,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 982.265,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_81",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.987277,
+      "entropy_nats": 0.068170,
+      "normalized_entropy": 0.098348,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1391.97,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 24.288900,
+          "softcapped_logit": 20.081585,
+          "probability": 0.987277
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 17.469002,
+          "softcapped_logit": 15.730055,
+          "probability": 0.012723
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1230.922,
+        "prompt_p0_ms": 621.067,
+        "prompt_transfer_ms": 0.572,
+        "prompt_p1_ms": 609.283,
+        "canvas_step1_ms": 152.162,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1391.961,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_82",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.961965,
+      "entropy_nats": 0.161647,
+      "normalized_entropy": 0.233208,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 2327.45,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 18.167719,
+          "softcapped_logit": 16.230474,
+          "probability": 0.038035
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 23.191450,
+          "softcapped_logit": 19.460955,
+          "probability": 0.961965
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 2152.347,
+        "prompt_p0_ms": 1086.368,
+        "prompt_transfer_ms": 0.954,
+        "prompt_p1_ms": 1065.025,
+        "canvas_step1_ms": 156.813,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 2327.446,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_83",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.908430,
+      "entropy_nats": 0.306156,
+      "normalized_entropy": 0.441690,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 2211.62,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 23.981382,
+          "softcapped_logit": 19.910692,
+          "probability": 0.908430
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 20.201580,
+          "softcapped_logit": 17.616083,
+          "probability": 0.091570
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 2039.719,
+        "prompt_p0_ms": 1037.124,
+        "prompt_transfer_ms": 0.960,
+        "prompt_p1_ms": 1001.636,
+        "canvas_step1_ms": 155.206,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 2211.612,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_84",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.993377,
+      "entropy_nats": 0.039830,
+      "normalized_entropy": 0.057463,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1817.34,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 19.412619,
+          "softcapped_logit": 17.091175,
+          "probability": 0.006623
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 28.298315,
+          "softcapped_logit": 22.101730,
+          "probability": 0.993377
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1649.487,
+        "prompt_p0_ms": 836.994,
+        "prompt_transfer_ms": 0.770,
+        "prompt_p1_ms": 811.722,
+        "canvas_step1_ms": 154.920,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1817.335,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_85",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.974023,
+      "entropy_nats": 0.120466,
+      "normalized_entropy": 0.173796,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 2467.48,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 18.045254,
+          "softcapped_logit": 16.143661,
+          "probability": 0.974023
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 13.333071,
+          "softcapped_logit": 12.519432,
+          "probability": 0.025977
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 2288.273,
+        "prompt_p0_ms": 1158.302,
+        "prompt_transfer_ms": 1.062,
+        "prompt_p1_ms": 1128.909,
+        "canvas_step1_ms": 159.227,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 2467.472,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_86",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "No",
+      "is_correct": false,
+      "decision_probability": 0.994823,
+      "entropy_nats": 0.032416,
+      "normalized_entropy": 0.046766,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1062.52,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 18.843930,
+          "softcapped_logit": 16.702917,
+          "probability": 0.005178
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 27.993153,
+          "softcapped_logit": 21.961150,
+          "probability": 0.994823
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 905.586,
+        "prompt_p0_ms": 456.101,
+        "prompt_transfer_ms": 0.407,
+        "prompt_p1_ms": 449.079,
+        "canvas_step1_ms": 150.724,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1062.512,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_87",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.998407,
+      "entropy_nats": 0.011853,
+      "normalized_entropy": 0.017101,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1038.44,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 28.792578,
+          "softcapped_logit": 22.324995,
+          "probability": 0.998407
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 17.682642,
+          "softcapped_logit": 15.884379,
+          "probability": 0.001593
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 880.397,
+        "prompt_p0_ms": 443.135,
+        "prompt_transfer_ms": 0.400,
+        "prompt_p1_ms": 436.862,
+        "canvas_step1_ms": 151.820,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1038.439,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_88",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.960873,
+      "entropy_nats": 0.165159,
+      "normalized_entropy": 0.238274,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 792.11,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 21.131224,
+          "softcapped_logit": 18.214106,
+          "probability": 0.960873
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 16.496613,
+          "softcapped_logit": 15.013067,
+          "probability": 0.039127
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 639.184,
+        "prompt_p0_ms": 321.561,
+        "prompt_transfer_ms": 0.281,
+        "prompt_p1_ms": 317.343,
+        "canvas_step1_ms": 148.801,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 792.102,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_89",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.962936,
+      "entropy_nats": 0.158500,
+      "normalized_entropy": 0.228667,
+      "uncertain": false,
+      "steps_executed": 2,
+      "latency_ms": 1730.65,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 23.188484,
+          "softcapped_logit": 19.459236,
+          "probability": 0.962936
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 18.127365,
+          "softcapped_logit": 16.201908,
+          "probability": 0.037064
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1416.041,
+        "prompt_p0_ms": 721.379,
+        "prompt_transfer_ms": 0.667,
+        "prompt_p1_ms": 693.995,
+        "canvas_step1_ms": 152.851,
+        "canvas_step2_ms": 151.459,
+        "total_engine_ms": 1730.646,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_90",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.900805,
+      "entropy_nats": 0.323311,
+      "normalized_entropy": 0.466439,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1420.32,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 18.889683,
+          "softcapped_logit": 16.734459,
+          "probability": 0.900805
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 15.856632,
+          "softcapped_logit": 14.528257,
+          "probability": 0.099195
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1259.811,
+        "prompt_p0_ms": 638.523,
+        "prompt_transfer_ms": 0.582,
+        "prompt_p1_ms": 620.706,
+        "canvas_step1_ms": 152.280,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1420.316,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_91",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "No",
+      "is_correct": false,
+      "decision_probability": 0.916582,
+      "entropy_nats": 0.287039,
+      "normalized_entropy": 0.414110,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1756.71,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 18.832980,
+          "softcapped_logit": 16.695360,
+          "probability": 0.083418
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 22.563240,
+          "softcapped_logit": 19.092146,
+          "probability": 0.916582
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1592.310,
+        "prompt_p0_ms": 805.099,
+        "prompt_transfer_ms": 0.750,
+        "prompt_p1_ms": 786.461,
+        "canvas_step1_ms": 154.458,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1756.706,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_92",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.991068,
+      "entropy_nats": 0.051033,
+      "normalized_entropy": 0.073626,
+      "uncertain": false,
+      "steps_executed": 2,
+      "latency_ms": 1311.34,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 19.701708,
+          "softcapped_logit": 17.285366,
+          "probability": 0.991068
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 13.401883,
+          "softcapped_logit": 12.576206,
+          "probability": 0.008932
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1003.705,
+        "prompt_p0_ms": 507.616,
+        "prompt_transfer_ms": 0.499,
+        "prompt_p1_ms": 495.591,
+        "canvas_step1_ms": 151.094,
+        "canvas_step2_ms": 149.517,
+        "total_engine_ms": 1311.340,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_93",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.975859,
+      "entropy_nats": 0.113744,
+      "normalized_entropy": 0.164099,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1066.84,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 18.572098,
+          "softcapped_logit": 16.514404,
+          "probability": 0.975859
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 13.692770,
+          "softcapped_logit": 12.814997,
+          "probability": 0.024141
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 910.994,
+        "prompt_p0_ms": 459.281,
+        "prompt_transfer_ms": 0.405,
+        "prompt_p1_ms": 451.308,
+        "canvas_step1_ms": 150.474,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1066.831,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_94",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.955116,
+      "entropy_nats": 0.183168,
+      "normalized_entropy": 0.264255,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 672.78,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 19.926805,
+          "softcapped_logit": 17.435085,
+          "probability": 0.955116
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 15.660101,
+          "softcapped_logit": 14.377341,
+          "probability": 0.044884
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 522.500,
+        "prompt_p0_ms": 263.179,
+        "prompt_transfer_ms": 0.229,
+        "prompt_p1_ms": 259.092,
+        "canvas_step1_ms": 146.920,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 672.779,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_95",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.999586,
+      "entropy_nats": 0.003641,
+      "normalized_entropy": 0.005252,
+      "uncertain": false,
+      "steps_executed": 2,
+      "latency_ms": 1027.09,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 12.802071,
+          "softcapped_logit": 12.077690,
+          "probability": 0.000414
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 23.902216,
+          "softcapped_logit": 19.866318,
+          "probability": 0.999586
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 725.515,
+        "prompt_p0_ms": 365.623,
+        "prompt_transfer_ms": 0.298,
+        "prompt_p1_ms": 359.594,
+        "canvas_step1_ms": 148.057,
+        "canvas_step2_ms": 148.341,
+        "total_engine_ms": 1027.082,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_96",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.980519,
+      "entropy_nats": 0.096014,
+      "normalized_entropy": 0.138518,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1510.42,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 17.534426,
+          "softcapped_logit": 15.777436,
+          "probability": 0.980519
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 12.541760,
+          "softcapped_logit": 11.858810,
+          "probability": 0.019481
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1347.202,
+        "prompt_p0_ms": 678.766,
+        "prompt_transfer_ms": 0.644,
+        "prompt_p1_ms": 667.792,
+        "canvas_step1_ms": 150.856,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1510.421,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_97",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.959442,
+      "entropy_nats": 0.169713,
+      "normalized_entropy": 0.244844,
+      "uncertain": false,
+      "steps_executed": 2,
+      "latency_ms": 2441.57,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 26.475720,
+          "softcapped_logit": 21.230446,
+          "probability": 0.959442
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 20.899044,
+          "softcapped_logit": 18.066824,
+          "probability": 0.040558
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 2111.958,
+        "prompt_p0_ms": 1066.332,
+        "prompt_transfer_ms": 0.973,
+        "prompt_p1_ms": 1044.653,
+        "canvas_step1_ms": 158.754,
+        "canvas_step2_ms": 155.455,
+        "total_engine_ms": 2441.568,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_98",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.997621,
+      "entropy_nats": 0.016750,
+      "normalized_entropy": 0.024165,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1504.07,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 9.723599,
+          "softcapped_logit": 9.396824,
+          "probability": 0.002379
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 17.065458,
+          "softcapped_logit": 15.435396,
+          "probability": 0.997621
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1344.482,
+        "prompt_p0_ms": 677.943,
+        "prompt_transfer_ms": 0.625,
+        "prompt_p1_ms": 665.914,
+        "canvas_step1_ms": 150.651,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1504.064,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_99",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.999998,
+      "entropy_nats": 0.000032,
+      "normalized_entropy": 0.000046,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 2524.35,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 2.667256,
+          "softcapped_logit": 2.660250,
+          "probability": 0.000002
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 17.366571,
+          "softcapped_logit": 15.655653,
+          "probability": 0.999998
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 2343.169,
+        "prompt_p0_ms": 1182.475,
+        "prompt_transfer_ms": 1.132,
+        "prompt_p1_ms": 1159.562,
+        "canvas_step1_ms": 159.599,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 2524.342,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_100",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.997443,
+      "entropy_nats": 0.017815,
+      "normalized_entropy": 0.025702,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 2166.65,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 13.289817,
+          "softcapped_logit": 12.483690,
+          "probability": 0.997443
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 6.622786,
+          "softcapped_logit": 6.517256,
+          "probability": 0.002557
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1990.939,
+        "prompt_p0_ms": 1001.432,
+        "prompt_transfer_ms": 0.944,
+        "prompt_p1_ms": 988.563,
+        "canvas_step1_ms": 157.783,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 2166.647,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_101",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.995097,
+      "entropy_nats": 0.030966,
+      "normalized_entropy": 0.044674,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1413.24,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 15.159520,
+          "softcapped_logit": 13.988660,
+          "probability": 0.004903
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 22.917942,
+          "softcapped_logit": 19.301605,
+          "probability": 0.995097
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1254.044,
+        "prompt_p0_ms": 632.441,
+        "prompt_transfer_ms": 0.602,
+        "prompt_p1_ms": 621.001,
+        "canvas_step1_ms": 150.134,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1413.240,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_102",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.967269,
+      "entropy_nats": 0.144110,
+      "normalized_entropy": 0.207907,
+      "uncertain": false,
+      "steps_executed": 2,
+      "latency_ms": 3589.53,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 22.076702,
+          "softcapped_logit": 18.799667,
+          "probability": 0.967269
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 17.035700,
+          "softcapped_logit": 15.413504,
+          "probability": 0.032731
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 3218.627,
+        "prompt_p0_ms": 1622.183,
+        "prompt_transfer_ms": 1.580,
+        "prompt_p1_ms": 1594.863,
+        "canvas_step1_ms": 169.715,
+        "canvas_step2_ms": 166.174,
+        "total_engine_ms": 3589.526,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_103",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.980880,
+      "entropy_nats": 0.094593,
+      "normalized_entropy": 0.136468,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1911.32,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 13.686769,
+          "softcapped_logit": 12.810090,
+          "probability": 0.980880
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 9.145514,
+          "softcapped_logit": 8.872355,
+          "probability": 0.019120
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1742.040,
+        "prompt_p0_ms": 878.219,
+        "prompt_transfer_ms": 0.839,
+        "prompt_p1_ms": 862.982,
+        "canvas_step1_ms": 154.758,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1911.316,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_104",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.976062,
+      "entropy_nats": 0.112993,
+      "normalized_entropy": 0.163015,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 2796.81,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 21.721890,
+          "softcapped_logit": 18.582590,
+          "probability": 0.976062
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 16.312366,
+          "softcapped_logit": 14.874539,
+          "probability": 0.023938
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 2609.819,
+        "prompt_p0_ms": 1322.864,
+        "prompt_transfer_ms": 1.204,
+        "prompt_p1_ms": 1285.750,
+        "canvas_step1_ms": 159.812,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 2796.805,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_105",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.984426,
+      "entropy_nats": 0.080274,
+      "normalized_entropy": 0.115811,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 935.61,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 17.562294,
+          "softcapped_logit": 15.797588,
+          "probability": 0.984426
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 12.296423,
+          "softcapped_logit": 11.651143,
+          "probability": 0.015574
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 782.413,
+        "prompt_p0_ms": 396.364,
+        "prompt_transfer_ms": 0.372,
+        "prompt_p1_ms": 385.678,
+        "canvas_step1_ms": 148.005,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 935.611,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_106",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.999941,
+      "entropy_nats": 0.000637,
+      "normalized_entropy": 0.000919,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 662.80,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 8.800737,
+          "softcapped_logit": 8.556675,
+          "probability": 0.000059
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 21.249950,
+          "softcapped_logit": 18.288889,
+          "probability": 0.999941
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 512.139,
+        "prompt_p0_ms": 257.518,
+        "prompt_transfer_ms": 0.223,
+        "prompt_p1_ms": 254.398,
+        "canvas_step1_ms": 147.594,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 662.792,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_107",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.999358,
+      "entropy_nats": 0.005361,
+      "normalized_entropy": 0.007735,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1663.38,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 12.050881,
+          "softcapped_logit": 11.441978,
+          "probability": 0.000642
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 22.064472,
+          "softcapped_logit": 18.792240,
+          "probability": 0.999358
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1496.126,
+        "prompt_p0_ms": 754.080,
+        "prompt_transfer_ms": 0.710,
+        "prompt_p1_ms": 741.336,
+        "canvas_step1_ms": 156.826,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1663.373,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_108",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.993134,
+      "entropy_nats": 0.041042,
+      "normalized_entropy": 0.059211,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1195.70,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 14.511900,
+          "softcapped_logit": 13.476775,
+          "probability": 0.006866
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 21.509464,
+          "softcapped_logit": 18.451096,
+          "probability": 0.993134
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1036.987,
+        "prompt_p0_ms": 527.837,
+        "prompt_transfer_ms": 0.465,
+        "prompt_p1_ms": 508.685,
+        "canvas_step1_ms": 152.020,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1195.700,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_109",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.999997,
+      "entropy_nats": 0.000037,
+      "normalized_entropy": 0.000053,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 2070.66,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 3.316354,
+          "softcapped_logit": 3.302911,
+          "probability": 0.000003
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 18.043964,
+          "softcapped_logit": 16.142746,
+          "probability": 0.999997
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1900.810,
+        "prompt_p0_ms": 966.510,
+        "prompt_transfer_ms": 0.891,
+        "prompt_p1_ms": 933.410,
+        "canvas_step1_ms": 157.259,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 2070.652,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_110",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.986281,
+      "entropy_nats": 0.072464,
+      "normalized_entropy": 0.104543,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 2547.55,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 17.450932,
+          "softcapped_logit": 15.716948,
+          "probability": 0.986281
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 12.050635,
+          "softcapped_logit": 11.441767,
+          "probability": 0.013719
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 2366.894,
+        "prompt_p0_ms": 1202.208,
+        "prompt_transfer_ms": 1.078,
+        "prompt_p1_ms": 1163.608,
+        "canvas_step1_ms": 161.707,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 2547.544,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_111",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "No",
+      "is_correct": false,
+      "decision_probability": 0.650499,
+      "entropy_nats": 0.647137,
+      "normalized_entropy": 0.933621,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 2055.93,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 23.642593,
+          "softcapped_logit": 19.719711,
+          "probability": 0.349501
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 24.763847,
+          "softcapped_logit": 20.340946,
+          "probability": 0.650499
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1729.418,
+        "prompt_p0_ms": 885.192,
+        "prompt_transfer_ms": 0.820,
+        "prompt_p1_ms": 843.407,
+        "canvas_step1_ms": 159.279,
+        "canvas_step2_ms": 154.383,
+        "total_engine_ms": 2055.930,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_112",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.992230,
+      "entropy_nats": 0.045482,
+      "normalized_entropy": 0.065616,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1194.56,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 12.551002,
+          "softcapped_logit": 11.866609,
+          "probability": 0.007770
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 18.863346,
+          "softcapped_logit": 16.716310,
+          "probability": 0.992230
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1034.481,
+        "prompt_p0_ms": 537.102,
+        "prompt_transfer_ms": 0.484,
+        "prompt_p1_ms": 496.895,
+        "canvas_step1_ms": 152.855,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1194.552,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_113",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.985376,
+      "entropy_nats": 0.076303,
+      "normalized_entropy": 0.110081,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1626.08,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 12.517162,
+          "softcapped_logit": 11.838050,
+          "probability": 0.985376
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 7.798717,
+          "softcapped_logit": 7.627665,
+          "probability": 0.014624
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1457.709,
+        "prompt_p0_ms": 733.659,
+        "prompt_transfer_ms": 0.648,
+        "prompt_p1_ms": 723.402,
+        "canvas_step1_ms": 157.163,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1626.071,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_114",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.945132,
+      "entropy_nats": 0.212608,
+      "normalized_entropy": 0.306728,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1549.95,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 9.777694,
+          "softcapped_logit": 9.445582,
+          "probability": 0.945132
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 6.708839,
+          "softcapped_logit": 6.599196,
+          "probability": 0.054868
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1377.056,
+        "prompt_p0_ms": 706.285,
+        "prompt_transfer_ms": 0.665,
+        "prompt_p1_ms": 670.106,
+        "canvas_step1_ms": 161.215,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1549.942,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_115",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.995836,
+      "entropy_nats": 0.026981,
+      "normalized_entropy": 0.038926,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1556.50,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 24.300053,
+          "softcapped_logit": 20.087736,
+          "probability": 0.995836
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 15.964542,
+          "softcapped_logit": 14.610718,
+          "probability": 0.004164
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1389.951,
+        "prompt_p0_ms": 707.221,
+        "prompt_transfer_ms": 0.648,
+        "prompt_p1_ms": 682.082,
+        "canvas_step1_ms": 156.656,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1556.492,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_116",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.927861,
+      "entropy_nats": 0.259137,
+      "normalized_entropy": 0.373856,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1038.84,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 15.467281,
+          "softcapped_logit": 14.228352,
+          "probability": 0.927861
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 12.323425,
+          "softcapped_logit": 11.674066,
+          "probability": 0.072139
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 886.244,
+        "prompt_p0_ms": 461.247,
+        "prompt_transfer_ms": 0.412,
+        "prompt_p1_ms": 424.585,
+        "canvas_step1_ms": 147.267,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1038.832,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_117",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.984800,
+      "entropy_nats": 0.078719,
+      "normalized_entropy": 0.113567,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 2033.71,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 18.546630,
+          "softcapped_logit": 16.496643,
+          "probability": 0.984800
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 13.099010,
+          "softcapped_logit": 12.325506,
+          "probability": 0.015200
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1865.525,
+        "prompt_p0_ms": 941.222,
+        "prompt_transfer_ms": 0.870,
+        "prompt_p1_ms": 923.433,
+        "canvas_step1_ms": 154.579,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 2033.707,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_118",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.998463,
+      "entropy_nats": 0.011491,
+      "normalized_entropy": 0.016578,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1334.53,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 9.349610,
+          "softcapped_logit": 9.058222,
+          "probability": 0.001537
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 17.200914,
+          "softcapped_logit": 15.534762,
+          "probability": 0.998463
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1175.107,
+        "prompt_p0_ms": 599.379,
+        "prompt_transfer_ms": 0.550,
+        "prompt_p1_ms": 575.178,
+        "canvas_step1_ms": 150.287,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1334.530,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_119",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "No",
+      "is_correct": false,
+      "decision_probability": 0.963112,
+      "entropy_nats": 0.157923,
+      "normalized_entropy": 0.227835,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1807.13,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 12.880736,
+          "softcapped_logit": 12.143536,
+          "probability": 0.036888
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 17.025276,
+          "softcapped_logit": 15.405830,
+          "probability": 0.963112
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1639.650,
+        "prompt_p0_ms": 827.313,
+        "prompt_transfer_ms": 0.824,
+        "prompt_p1_ms": 811.513,
+        "canvas_step1_ms": 153.396,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1807.126,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_120",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "No",
+      "is_correct": false,
+      "decision_probability": 0.732070,
+      "entropy_nats": 0.581190,
+      "normalized_entropy": 0.838479,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 2552.20,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 21.885689,
+          "softcapped_logit": 18.683203,
+          "probability": 0.267930
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 23.587444,
+          "softcapped_logit": 19.688350,
+          "probability": 0.732070
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 2210.973,
+        "prompt_p0_ms": 1139.774,
+        "prompt_transfer_ms": 1.010,
+        "prompt_p1_ms": 1070.189,
+        "canvas_step1_ms": 161.290,
+        "canvas_step2_ms": 157.795,
+        "total_engine_ms": 2552.195,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_121",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.980607,
+      "entropy_nats": 0.095668,
+      "normalized_entropy": 0.138020,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1279.44,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 21.574308,
+          "softcapped_logit": 18.491356,
+          "probability": 0.980607
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 15.908739,
+          "softcapped_logit": 14.568112,
+          "probability": 0.019393
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1120.548,
+        "prompt_p0_ms": 570.422,
+        "prompt_transfer_ms": 0.512,
+        "prompt_p1_ms": 549.614,
+        "canvas_step1_ms": 150.682,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1279.436,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_122",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.806969,
+      "entropy_nats": 0.490588,
+      "normalized_entropy": 0.707769,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1662.76,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 24.818520,
+          "softcapped_logit": 20.370447,
+          "probability": 0.806969
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 22.308918,
+          "softcapped_logit": 18.940012,
+          "probability": 0.193031
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1343.964,
+        "prompt_p0_ms": 681.406,
+        "prompt_transfer_ms": 0.642,
+        "prompt_p1_ms": 661.917,
+        "canvas_step1_ms": 154.362,
+        "canvas_step2_ms": 153.106,
+        "total_engine_ms": 1662.755,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_123",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.998291,
+      "entropy_nats": 0.012599,
+      "normalized_entropy": 0.018177,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1320.15,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 15.330932,
+          "softcapped_logit": 14.122445,
+          "probability": 0.001709
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 25.045904,
+          "softcapped_logit": 20.492365,
+          "probability": 0.998291
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1160.844,
+        "prompt_p0_ms": 602.521,
+        "prompt_transfer_ms": 0.538,
+        "prompt_p1_ms": 557.785,
+        "canvas_step1_ms": 150.635,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1320.143,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_124",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.844721,
+      "entropy_nats": 0.431759,
+      "normalized_entropy": 0.622896,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1728.09,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 22.876099,
+          "softcapped_logit": 19.277061,
+          "probability": 0.844721
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 20.151570,
+          "softcapped_logit": 17.583282,
+          "probability": 0.155280
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1402.266,
+        "prompt_p0_ms": 709.988,
+        "prompt_transfer_ms": 0.654,
+        "prompt_p1_ms": 691.625,
+        "canvas_step1_ms": 158.987,
+        "canvas_step2_ms": 156.135,
+        "total_engine_ms": 1728.088,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_125",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.938422,
+      "entropy_nats": 0.231289,
+      "normalized_entropy": 0.333679,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1234.15,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 20.804007,
+          "softcapped_logit": 18.006138,
+          "probability": 0.061578
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 25.496058,
+          "softcapped_logit": 20.730024,
+          "probability": 0.938422
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1075.900,
+        "prompt_p0_ms": 543.735,
+        "prompt_transfer_ms": 0.547,
+        "prompt_p1_ms": 531.618,
+        "canvas_step1_ms": 150.734,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1234.151,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_126",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.995338,
+      "entropy_nats": 0.029678,
+      "normalized_entropy": 0.042817,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 799.24,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 12.532144,
+          "softcapped_logit": 11.850696,
+          "probability": 0.004662
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 19.595573,
+          "softcapped_logit": 17.214321,
+          "probability": 0.995338
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 643.587,
+        "prompt_p0_ms": 324.958,
+        "prompt_transfer_ms": 0.312,
+        "prompt_p1_ms": 318.318,
+        "canvas_step1_ms": 151.330,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 799.238,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_127",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.995040,
+      "entropy_nats": 0.031265,
+      "normalized_entropy": 0.045106,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1056.28,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 15.015105,
+          "softcapped_logit": 13.875391,
+          "probability": 0.004960
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 22.706017,
+          "softcapped_logit": 19.176840,
+          "probability": 0.995040
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 892.303,
+        "prompt_p0_ms": 451.222,
+        "prompt_transfer_ms": 0.419,
+        "prompt_p1_ms": 440.662,
+        "canvas_step1_ms": 158.538,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1056.276,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_128",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.981615,
+      "entropy_nats": 0.091686,
+      "normalized_entropy": 0.132275,
+      "uncertain": false,
+      "steps_executed": 2,
+      "latency_ms": 1945.41,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 23.524357,
+          "softcapped_logit": 19.652384,
+          "probability": 0.981615
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 17.392792,
+          "softcapped_logit": 15.674723,
+          "probability": 0.018385
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1622.131,
+        "prompt_p0_ms": 830.491,
+        "prompt_transfer_ms": 0.742,
+        "prompt_p1_ms": 790.898,
+        "canvas_step1_ms": 155.280,
+        "canvas_step2_ms": 154.048,
+        "total_engine_ms": 1945.406,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_129",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.999990,
+      "entropy_nats": 0.000120,
+      "normalized_entropy": 0.000173,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 3488.29,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 5.185682,
+          "softcapped_logit": 5.134644,
+          "probability": 0.000010
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 18.833225,
+          "softcapped_logit": 16.695532,
+          "probability": 0.999990
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 3287.973,
+        "prompt_p0_ms": 1659.636,
+        "prompt_transfer_ms": 1.443,
+        "prompt_p1_ms": 1626.894,
+        "canvas_step1_ms": 163.459,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 3488.289,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_130",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.988614,
+      "entropy_nats": 0.062275,
+      "normalized_entropy": 0.089844,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1385.52,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 22.726353,
+          "softcapped_logit": 19.188860,
+          "probability": 0.988614
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 16.114594,
+          "softcapped_logit": 14.724898,
+          "probability": 0.011386
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1222.492,
+        "prompt_p0_ms": 616.514,
+        "prompt_transfer_ms": 0.583,
+        "prompt_p1_ms": 605.396,
+        "canvas_step1_ms": 152.520,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1385.518,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_131",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.934909,
+      "entropy_nats": 0.240752,
+      "normalized_entropy": 0.347332,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 2160.65,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 18.806074,
+          "softcapped_logit": 16.676777,
+          "probability": 0.934909
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 15.189505,
+          "softcapped_logit": 14.012116,
+          "probability": 0.065091
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1985.576,
+        "prompt_p0_ms": 1001.881,
+        "prompt_transfer_ms": 0.956,
+        "prompt_p1_ms": 982.738,
+        "canvas_step1_ms": 155.527,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 2160.648,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_132",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.999976,
+      "entropy_nats": 0.000282,
+      "normalized_entropy": 0.000406,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 2423.38,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 4.840172,
+          "softcapped_logit": 4.798607,
+          "probability": 0.000024
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 17.054066,
+          "softcapped_logit": 15.427018,
+          "probability": 0.999976
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 2241.072,
+        "prompt_p0_ms": 1128.327,
+        "prompt_transfer_ms": 1.081,
+        "prompt_p1_ms": 1111.664,
+        "canvas_step1_ms": 161.055,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 2423.376,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_133",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.997919,
+      "entropy_nats": 0.014930,
+      "normalized_entropy": 0.021539,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1499.81,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 13.294889,
+          "softcapped_logit": 12.487884,
+          "probability": 0.002081
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 21.848835,
+          "softcapped_logit": 18.660625,
+          "probability": 0.997919
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1337.134,
+        "prompt_p0_ms": 677.994,
+        "prompt_transfer_ms": 0.618,
+        "prompt_p1_ms": 658.522,
+        "canvas_step1_ms": 152.450,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1499.804,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_134",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.998685,
+      "entropy_nats": 0.010039,
+      "normalized_entropy": 0.014483,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 2561.39,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 13.272674,
+          "softcapped_logit": 12.469512,
+          "probability": 0.001315
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 22.579771,
+          "softcapped_logit": 19.101978,
+          "probability": 0.998685
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 2381.047,
+        "prompt_p0_ms": 1214.082,
+        "prompt_transfer_ms": 1.092,
+        "prompt_p1_ms": 1165.873,
+        "canvas_step1_ms": 160.819,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 2561.388,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_135",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.983195,
+      "entropy_nats": 0.085329,
+      "normalized_entropy": 0.123103,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 998.50,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 16.636440,
+          "softcapped_logit": 15.117633,
+          "probability": 0.983195
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 11.593056,
+          "softcapped_logit": 11.048489,
+          "probability": 0.016805
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 838.446,
+        "prompt_p0_ms": 433.426,
+        "prompt_transfer_ms": 0.430,
+        "prompt_p1_ms": 404.590,
+        "canvas_step1_ms": 154.538,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 998.497,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_136",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.974670,
+      "entropy_nats": 0.118113,
+      "normalized_entropy": 0.170401,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 2570.88,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 18.917324,
+          "softcapped_logit": 16.753490,
+          "probability": 0.974670
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 14.047308,
+          "softcapped_logit": 13.103373,
+          "probability": 0.025330
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 2391.556,
+        "prompt_p0_ms": 1224.816,
+        "prompt_transfer_ms": 1.030,
+        "prompt_p1_ms": 1165.710,
+        "canvas_step1_ms": 159.801,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 2570.880,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_137",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.999371,
+      "entropy_nats": 0.005264,
+      "normalized_entropy": 0.007594,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 2933.46,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 13.128092,
+          "softcapped_logit": 12.349669,
+          "probability": 0.000629
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 23.644450,
+          "softcapped_logit": 19.720762,
+          "probability": 0.999371
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 2745.009,
+        "prompt_p0_ms": 1389.371,
+        "prompt_transfer_ms": 1.214,
+        "prompt_p1_ms": 1354.424,
+        "canvas_step1_ms": 163.054,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 2933.454,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_138",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.994712,
+      "entropy_nats": 0.032994,
+      "normalized_entropy": 0.047600,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1390.94,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 26.349754,
+          "softcapped_logit": 21.167377,
+          "probability": 0.994712
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 17.746527,
+          "softcapped_logit": 15.930305,
+          "probability": 0.005288
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1228.744,
+        "prompt_p0_ms": 616.294,
+        "prompt_transfer_ms": 0.605,
+        "prompt_p1_ms": 611.845,
+        "canvas_step1_ms": 153.824,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1390.932,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_139",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.992391,
+      "entropy_nats": 0.044700,
+      "normalized_entropy": 0.064489,
+      "uncertain": false,
+      "steps_executed": 2,
+      "latency_ms": 4235.49,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 21.594719,
+          "softcapped_logit": 18.504007,
+          "probability": 0.007609
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 31.296814,
+          "softcapped_logit": 23.374775,
+          "probability": 0.992391
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 3846.963,
+        "prompt_p0_ms": 1949.418,
+        "prompt_transfer_ms": 1.612,
+        "prompt_p1_ms": 1895.933,
+        "canvas_step1_ms": 174.510,
+        "canvas_step2_ms": 167.493,
+        "total_engine_ms": 4235.485,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_140",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.978865,
+      "entropy_nats": 0.102424,
+      "normalized_entropy": 0.147767,
+      "uncertain": false,
+      "steps_executed": 2,
+      "latency_ms": 1466.54,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 22.675209,
+          "softcapped_logit": 19.158607,
+          "probability": 0.021135
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 30.351345,
+          "softcapped_logit": 22.994070,
+          "probability": 0.978865
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1156.410,
+        "prompt_p0_ms": 583.799,
+        "prompt_transfer_ms": 0.541,
+        "prompt_p1_ms": 572.070,
+        "canvas_step1_ms": 150.904,
+        "canvas_step2_ms": 150.414,
+        "total_engine_ms": 1466.536,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_141",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.989514,
+      "entropy_nats": 0.058222,
+      "normalized_entropy": 0.083997,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1289.18,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 15.881095,
+          "softcapped_logit": 14.546978,
+          "probability": 0.010486
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 22.566648,
+          "softcapped_logit": 19.094173,
+          "probability": 0.989514
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1127.468,
+        "prompt_p0_ms": 570.586,
+        "prompt_transfer_ms": 0.521,
+        "prompt_p1_ms": 556.362,
+        "canvas_step1_ms": 153.767,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1289.181,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_142",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.979175,
+      "entropy_nats": 0.101233,
+      "normalized_entropy": 0.146048,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1163.25,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 9.650621,
+          "softcapped_logit": 9.330956,
+          "probability": 0.979175
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 5.542613,
+          "softcapped_logit": 5.480399,
+          "probability": 0.020825
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1006.830,
+        "prompt_p0_ms": 508.941,
+        "prompt_transfer_ms": 0.460,
+        "prompt_p1_ms": 497.429,
+        "canvas_step1_ms": 149.754,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1163.246,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_143",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.941387,
+      "entropy_nats": 0.223133,
+      "normalized_entropy": 0.321913,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1522.20,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 22.083805,
+          "softcapped_logit": 18.803980,
+          "probability": 0.941387
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 17.882322,
+          "softcapped_logit": 16.027575,
+          "probability": 0.058613
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1358.107,
+        "prompt_p0_ms": 683.399,
+        "prompt_transfer_ms": 0.680,
+        "prompt_p1_ms": 674.028,
+        "canvas_step1_ms": 154.045,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1522.200,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_144",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.998906,
+      "entropy_nats": 0.008554,
+      "normalized_entropy": 0.012340,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1260.15,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 13.778194,
+          "softcapped_logit": 12.884748,
+          "probability": 0.001094
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 23.610336,
+          "softcapped_logit": 19.701376,
+          "probability": 0.998906
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1101.590,
+        "prompt_p0_ms": 561.900,
+        "prompt_transfer_ms": 0.519,
+        "prompt_p1_ms": 539.171,
+        "canvas_step1_ms": 150.755,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1260.144,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_145",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.797503,
+      "entropy_nats": 0.503845,
+      "normalized_entropy": 0.726894,
+      "uncertain": true,
+      "steps_executed": 2,
+      "latency_ms": 1244.27,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 20.483828,
+          "softcapped_logit": 17.799990,
+          "probability": 0.797503
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 18.450165,
+          "softcapped_logit": 16.429230,
+          "probability": 0.202497
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 938.382,
+        "prompt_p0_ms": 472.861,
+        "prompt_transfer_ms": 0.417,
+        "prompt_p1_ms": 465.104,
+        "canvas_step1_ms": 149.799,
+        "canvas_step2_ms": 150.327,
+        "total_engine_ms": 1244.268,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_146",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.932382,
+      "entropy_nats": 0.247433,
+      "normalized_entropy": 0.356971,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 933.88,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 16.817509,
+          "softcapped_logit": 15.252310,
+          "probability": 0.932382
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 13.465309,
+          "softcapped_logit": 12.628440,
+          "probability": 0.067618
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 780.765,
+        "prompt_p0_ms": 394.510,
+        "prompt_transfer_ms": 0.326,
+        "prompt_p1_ms": 385.930,
+        "canvas_step1_ms": 148.311,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 933.875,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_147",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.935778,
+      "entropy_nats": 0.238429,
+      "normalized_entropy": 0.343981,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 1875.53,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 16.379683,
+          "softcapped_logit": 14.925249,
+          "probability": 0.935778
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 13.003738,
+          "softcapped_logit": 12.246214,
+          "probability": 0.064222
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 1706.039,
+        "prompt_p0_ms": 860.225,
+        "prompt_transfer_ms": 0.770,
+        "prompt_p1_ms": 845.044,
+        "canvas_step1_ms": 156.177,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 1875.523,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_148",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.999488,
+      "entropy_nats": 0.004394,
+      "normalized_entropy": 0.006339,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 735.04,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 14.140081,
+          "softcapped_logit": 13.178345,
+          "probability": 0.000512
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 25.542904,
+          "softcapped_logit": 20.754475,
+          "probability": 0.999488
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 581.055,
+        "prompt_p0_ms": 293.451,
+        "prompt_transfer_ms": 0.257,
+        "prompt_p1_ms": 287.347,
+        "canvas_step1_ms": 150.511,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 735.036,
+        "prompt_cache_hit": false
+      }
+    },
+    {
+      "id": "boolq_149",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.998239,
+      "entropy_nats": 0.012925,
+      "normalized_entropy": 0.018648,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 2894.92,
+      "candidates": [
+        {
+          "label": "Yes",
+          "token_id": 10784,
+          "raw_logit": 19.474918,
+          "softcapped_logit": 17.133207,
+          "probability": 0.998239
+        },
+        {
+          "label": "No",
+          "token_id": 3771,
+          "raw_logit": 11.298433,
+          "softcapped_logit": 10.792912,
+          "probability": 0.001761
+        }
+      ],
+      "stage_timings": {
+        "prompt_prefill_ms": 2703.621,
+        "prompt_p0_ms": 1374.927,
+        "prompt_transfer_ms": 1.192,
+        "prompt_p1_ms": 1327.502,
+        "canvas_step1_ms": 160.417,
+        "canvas_step2_ms": 0.000,
+        "total_engine_ms": 2894.917,
+        "prompt_cache_hit": false
+      }
+    }
+  ]
+}
