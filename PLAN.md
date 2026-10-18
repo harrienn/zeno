@@ -335,10 +335,10 @@ Implement and validate the CPU representation of one denoising step.
 **Current objective:**
 
 ```text
-Evaluate further fused GEMV kernels (QKV projection fusion and device-resident tensor core kernels) to push cached decision canvas latency across the sub-100ms barrier.
+Evaluate device-resident fused QKV projection and tensor core kernels to push cached decision canvas latency across the sub-100ms barrier.
 ```
 
-This active objective builds upon completed Phase 10 GEMV optimizations (shared-memory tiling, fused MoE gate+up+geglu, vectorized MoE down coalescing, and Q5_0 16x kernel) which reduced C=16 canvas latency from 183.37ms to 146.27ms (-20.2%) and full-width C=256 latency from 2807ms to 2059ms (-26.6%).
+This active objective builds upon completed Phase 11 GEMV optimizations (2-row warp-coarsened Q4_K 16x kernel and shared-memory activation staging for Q8_0 and Q6_K 16x kernels) which brought C=16 canvas latency down to 139.88ms and full-width C=256 latency down to 1945.88ms (-113.65ms, -5.5%).
 
 ---
 

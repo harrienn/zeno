@@ -445,3 +445,44 @@ To verify real-world workload acceleration, accuracy preservation, and numerical
    - **End-to-End Latency**: Yielded an observed **~14% reduction in total query turnaround time** across both multi-choice reasoning (ARC) and passage-based comprehension (BoolQ).
    - *(Evaluation Scope Note)*: While the canvas width microbenchmark in §10.4 evaluated 3 repeated samples per width, dataset turnaround figures reflect single sequential evaluation runs per configuration. These measured ~14% latency reductions provide strong operational evidence but remain exploratory pending repeated, interleaved multi-run evaluations under controlled conditions (see Review Round 35 R35-05).
 
+
+---
+
+## 11. CUDA Phase 11: Warp-Coarsened GEMV & Shared-Memory Activation Staging
+
+To further compress decision canvas execution latency toward the sub-100ms milestone on dual NVIDIA GeForce RTX 3060 12GB GPUs, Phase 11 targeted redundant memory streaming in dense and attention GEMV kernels, evaluating warp coarsening and shared-memory activation staging.
+
+### 11.1 Implemented Work Packages
+
+1. **Warp-Coarsened Q4_K 16x Kernel (WP4)** ([`src/cuda/gemv.cu`](../src/cuda/gemv.cu)):
+   - Coarsened `gemv_q4k_batched_16x_kernel` to evaluate 2 consecutive matrix rows per warp (16 rows per block across 8 warps).
+   - Cut total launched threadblocks per layer in half from 352 blocks to 176 blocks (`grid_x = (out_dim + 15) / 16`).
+   - Shared-memory activation staging (`__shared__ float s_x[16][256]`, 16 KB) is amortized over 16 rows instead of 8 rows, halving redundant DRAM activation loads across threadblocks.
+   - Reused shared memory activation reads `s_x[t][off1]` and `s_x[t][off2]` in registers for both rows, halving shared-memory read transactions with zero bank conflicts while maintaining low register pressure (80 registers, 0 spill stores/loads).
+
+2. **Shared-Memory Staging for Q8_0 & Q6_K 16x Kernels (WP3)** ([`src/cuda/gemv.cu`](../src/cuda/gemv.cu)):
+   - Implemented cooperative 128-bit `float4` shared-memory activation staging for `gemv_q8_0_batched_16x_kernel` (`__shared__ alignas(16) float s_x[16][32]`, 2 KB).
+   - Implemented cooperative 128-bit `float4` shared-memory activation staging for `gemv_q6k_batched_16x_kernel` (`__shared__ float s_x[16][256]`, 16 KB), reducing thread register pressure from 71 to 56 registers.
+   - Eliminated redundant global memory activation loads across warps for all Q8_0 and Q6_K projections.
+
+3. **Negative Empirical Results on MoE Outer-Superblock Loop Inversion (WP1 & WP2)**:
+   - Experimental attempts to invert the row and superblock loops in `moe_gemv_gate_up_geglu_sorted_kernel` and `moe_gemv_down_sorted_kernel` with block-wide `__syncthreads()` barrier synchronization proved counter-productive on the Ampere sm_86 architecture.
+   - Synchronizing all 8 warps inside the 11-iteration superblock loop introduced significant warp stall overhead. Moreover, accumulating across 4 rows $\times$ 4 tokens in multi-dimensional arrays caused `nvcc` to allocate local memory stack frames (spilling 32 bytes per thread to local memory), increasing $C=16$ latency from 146 ms to 185 ms.
+   - In accordance with `AGENTS.md` §7, the uncoalesced MoE loops were preserved at their faster, independent-warp baseline (HEAD), while the demonstrated GEMV coarsening and shared-memory staging were retained.
+
+### 11.2 End-to-End Benchmark Progression Across Canvas Widths
+
+Evaluated with `zeno benchmark` (3 samples per width post-warmup, reporting median latency on dual RTX 3060 GPUs):
+
+| Canvas C | Pre-Phase 10 Median (ms) | Phase 10 Median (ms) | Phase 11 Median (ms) | Net $\Delta$ vs Phase 10 | End-to-End Speedup vs C=256 |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| **16** | 183.37 ms | 146.27 ms | **139.88 ms** | **-6.39 ms (-4.4%)** | **14.08x** |
+| **32** | 339.46 ms | 270.51 ms | **257.14 ms** | **-13.37 ms (-4.9%)** | **7.66x** |
+| **64** | 680.64 ms | 514.46 ms | **489.00 ms** | **-25.46 ms (-5.0%)** | **4.03x** |
+| **128** | 1398.24 ms | 1015.48 ms | **968.67 ms** | **-46.81 ms (-4.6%)** | **2.03x** |
+| **256** | 2807.38 ms | 2059.53 ms | **1945.88 ms** | **-113.65 ms (-5.5%)** | **1.01x** |
+
+### 11.3 Parity Verification
+- **Oracle Verification**: 5/5 golden test fixtures passed with 100% exact discrete decision matches and verified local regression checks (`./tools/verify_all_oracles.sh --cuda`).
+- **Integration Test Suite**: 15/15 HTTP API server integration tests passed (`python3 tools/test_server.py --cuda`).
+- **CPU Test Isolation**: Zero CUDA dependencies in CPU reference tests (`zig build test -Dcuda=false`).
