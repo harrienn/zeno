@@ -218,11 +218,10 @@ pub const DecisionEngine = struct {
         var h_nats: f32 = 0.0;
         var h_norm: f32 = 0.0;
         var uncertain: bool = false;
-        var stage_timings = decision.StageTimings{};
+        var stage_timings: ?decision.StageTimings = if (self.backend == .cuda) decision.StageTimings{} else null;
 
         while (steps_executed < req.step_cap) {
             const step_probs = if (steps_executed == 0) null else prev_probs;
-            const t_step_start = decision.getMonotonicNanos();
 
             switch (self.backend) {
                 .cpu => {
@@ -238,13 +237,6 @@ pub const DecisionEngine = struct {
                         raw_logits,
                         softcapped_logits,
                     );
-                    const t_step_end = decision.getMonotonicNanos();
-                    const step_ms = @as(f32, @floatFromInt(t_step_end - t_step_start)) / 1_000_000.0;
-                    if (steps_executed == 0) {
-                        stage_timings.canvas_step1_ms = step_ms;
-                    } else if (steps_executed == 1) {
-                        stage_timings.canvas_step2_ms = step_ms;
-                    }
                 },
                 .cuda => {
                     const ws = self.cuda_workspace orelse return error.InvalidEngineState;
@@ -261,15 +253,17 @@ pub const DecisionEngine = struct {
                         raw_logits,
                         softcapped_logits,
                     );
-                    if (steps_executed == 0) {
-                        stage_timings.prompt_prefill_ms = ws.last_stage_timings.prompt_prefill_ms;
-                        stage_timings.prompt_p0_ms = ws.last_stage_timings.prompt_p0_ms;
-                        stage_timings.prompt_transfer_ms = ws.last_stage_timings.prompt_transfer_ms;
-                        stage_timings.prompt_p1_ms = ws.last_stage_timings.prompt_p1_ms;
-                        stage_timings.prompt_cache_hit = ws.last_stage_timings.prompt_cache_hit;
-                        stage_timings.canvas_step1_ms = ws.last_canvas_ms;
-                    } else if (steps_executed == 1) {
-                        stage_timings.canvas_step2_ms = ws.last_canvas_ms;
+                    if (stage_timings) |*st| {
+                        if (steps_executed == 0) {
+                            st.prompt_prefill_ms = ws.last_stage_timings.prompt_prefill_ms;
+                            st.prompt_p0_ms = ws.last_stage_timings.prompt_p0_ms;
+                            st.prompt_transfer_ms = ws.last_stage_timings.prompt_transfer_ms;
+                            st.prompt_p1_ms = ws.last_stage_timings.prompt_p1_ms;
+                            st.prompt_cache_hit = ws.last_stage_timings.prompt_cache_hit;
+                            st.canvas_step1_ms = ws.last_canvas_ms;
+                        } else if (steps_executed == 1) {
+                            st.canvas_step2_ms = ws.last_canvas_ms;
+                        }
                     }
                 },
             }
@@ -317,8 +311,10 @@ pub const DecisionEngine = struct {
             };
         }
 
-        const t_engine_end = decision.getMonotonicNanos();
-        stage_timings.total_engine_ms = @as(f32, @floatFromInt(t_engine_end - t_engine_start)) / 1_000_000.0;
+        if (stage_timings) |*st| {
+            const t_engine_end = decision.getMonotonicNanos();
+            st.total_engine_ms = @as(f32, @floatFromInt(t_engine_end - t_engine_start)) / 1_000_000.0;
+        }
 
         return DecisionResponse{
             .decision = req.candidates[best_idx].label,
@@ -372,6 +368,7 @@ test "DecisionEngine: end-to-end boolean decision execution on local model if pr
     try std.testing.expect(resp.normalized_entropy >= 0.0 and resp.normalized_entropy <= 1.0);
     try std.testing.expect(resp.canvas_tokens_used > 0);
     try std.testing.expectEqual(@as(usize, 2), resp.candidates.len);
+    try std.testing.expect(resp.timings == null);
 }
 
 test "DecisionEngine: normative tie-breaking selects lowest candidate index (U-19)" {
@@ -427,6 +424,7 @@ test "DecisionEngine: end-to-end boolean decision execution on CUDA if present" 
     try std.testing.expect(resp.normalized_entropy >= 0.0 and resp.normalized_entropy <= 1.0);
     try std.testing.expect(resp.canvas_tokens_used > 0);
     try std.testing.expectEqual(@as(usize, 2), resp.candidates.len);
+    try std.testing.expect(resp.timings != null);
 }
 
 test "DecisionEngine: adaptive early stopping stepping loop state machine (R27-03)" {

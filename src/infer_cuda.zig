@@ -1914,11 +1914,11 @@ pub fn executeStructuredReadCuda(
             try dev1.stream.synchronize();
         }
 
-        const t_canvas_end = decision.getMonotonicNanos();
-        ws.last_canvas_ms = @as(f32, @floatFromInt(t_canvas_end - t_canvas_start)) / 1_000_000.0;
-
         // Project candidate logits on host using Q6_K dot products
         infer.readCandidateLogits(cpu_model, ws.host_norm_hidden, candidate_token_ids, out_raw_logits, out_softcapped_logits);
+
+        const t_canvas_end = decision.getMonotonicNanos();
+        ws.last_canvas_ms = @as(f32, @floatFromInt(t_canvas_end - t_canvas_start)) / 1_000_000.0;
         return;
     }
 
@@ -2170,6 +2170,9 @@ pub fn executeStructuredReadCuda(
         try dev1.stream.synchronize();
     }
 
+    // 4. Project candidate logits on host using Q6_K dot products
+    infer.readCandidateLogits(cpu_model, ws.host_norm_hidden, candidate_token_ids, out_raw_logits, out_softcapped_logits);
+
     const t_fallback_end = decision.getMonotonicNanos();
     ws.last_canvas_ms = @as(f32, @floatFromInt(t_fallback_end - t_fallback_start)) / 1_000_000.0;
     ws.last_stage_timings.prompt_p0_ms = 0.0;
@@ -2177,9 +2180,6 @@ pub fn executeStructuredReadCuda(
     ws.last_stage_timings.prompt_p1_ms = 0.0;
     ws.last_stage_timings.prompt_prefill_ms = 0.0;
     ws.last_stage_timings.prompt_cache_hit = false;
-
-    // 4. Project candidate logits on host using Q6_K dot products
-    infer.readCandidateLogits(cpu_model, ws.host_norm_hidden, candidate_token_ids, out_raw_logits, out_softcapped_logits);
 }
 
 // ---------------------------------------------------------------------------

@@ -881,6 +881,34 @@ test "serializeDecisionResponse with stage timings metadata" {
     try std.testing.expectEqual(false, timings_obj.get("prompt_cache_hit").?.bool);
 }
 
+test "serializeDecisionResponse with null stage timings (CPU backend) (R35-02)" {
+    const allocator = std.testing.allocator;
+    const candidates = [_]decision.CandidateResult{
+        .{ .label = "Yes", .token_id = 100, .probability = 0.8, .raw_logit = 12.0 },
+        .{ .label = "No", .token_id = 200, .probability = 0.2, .raw_logit = 10.0 },
+    };
+    const resp = DecisionResponse{
+        .decision = "Yes",
+        .decision_probability = 0.8,
+        .entropy_nats = 0.5,
+        .normalized_entropy = 0.72,
+        .uncertain = false,
+        .candidates = &candidates,
+        .steps_executed = 1,
+        .canvas_tokens_used = 40,
+        .timings = null,
+    };
+
+    const json = try Server.serializeDecisionResponse(allocator, resp);
+    defer allocator.free(json);
+
+    var parsed = try std.json.parseFromSlice(std.json.Value, allocator, json, .{});
+    defer parsed.deinit();
+
+    const root_obj = parsed.value.object;
+    try std.testing.expect(root_obj.get("timings") == null);
+}
+
 test "Server GET /health over loopback TCP" {
     const allocator = std.testing.allocator;
     var server_inst = Server.init(allocator, undefined, "127.0.0.1", 0);

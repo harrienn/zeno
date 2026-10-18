@@ -412,7 +412,7 @@ Evaluated with `zeno benchmark` (3 samples per width post-warmup, reporting medi
 | **256** | 2807.38 ms | 2366.35 ms | **2059.53 ms** | **-747.85 ms (-26.6%)** | **1.01x** |
 
 ### 10.5 Numerical Parity & Verification
-- **Oracle Verification**: 5/5 golden test fixtures passed with 100% discrete decision parity under `zeno.tolerance/v1`.
+- **Oracle Verification**: 5/5 golden test fixtures passed with 100% discrete decision parity and local engine regression checks. Cross-engine numerical logit and probability parity against the external reference oracle remains tracked under open gate U-22 in [`specs/UNRESOLVED.md`](UNRESOLVED.md) due to accumulated quantization differences and router boundary expert selection.
 - **Integration Test Suite**: 15/15 HTTP server integration tests passed (`python3 tools/test_server.py --cuda`).
 - **CPU Isolation**: `zig build test -Dcuda=false` passes without linking CUDA libraries.
 
@@ -432,9 +432,9 @@ To verify real-world workload acceleration, accuracy preservation, and numerical
 #### Key Calibration & Profiling Observations:
 1. **100.00% Decision & Content Invariance Across 600 Evaluated Decisions**:
    - Paired contingency analysis with `tools/compare_runs.py` confirms **zero discordant pairs ($b=0, c=0$)** across all 600 query evaluations (150 ARC $T=1$, 150 ARC $T=2$, 150 BoolQ $T=1$, 150 BoolQ $T=2$).
-   - 100% letter selection and content identity preservation confirms that register-level fusion and shared-memory tiling introduce zero numerical drift in discrete decisions.
-2. **Numerical Calibration Invariance**:
-   - Every calibration metric (ECE, MCE, Brier score, Negative Log-Likelihood, and normalized entropy) matched the pre-optimization baselines across all decimal places:
+   - 100% letter selection and content identity preservation confirms that register-level fusion and shared-memory tiling preserve identical discrete decisions across all items.
+2. **Numerical Calibration Invariance at Serialized Precision**:
+   - Every calibration metric (ECE, MCE, Brier score, Negative Log-Likelihood, and normalized entropy) matched the pre-optimization baselines identically at the serialized 6-decimal-place precision (`%.6f`):
      - ARC $T=1$: Brier = 0.3956, NLL = 0.9413, ECE = 0.0679.
      - ARC $T=2$: Brier = 0.2449, NLL = 0.6357, ECE = 0.0593.
      - BoolQ $T=1$: Brier = 0.2430, NLL = 0.4772, ECE = 0.0862.
@@ -442,5 +442,6 @@ To verify real-world workload acceleration, accuracy preservation, and numerical
 3. **Stage-Synchronized Latency Reductions in Production Workloads**:
    - **Canvas Step Acceleration**: Mean canvas step execution dropped from ~187–190 ms down to **150.0–155.2 ms** per step across both reasoning datasets (a **~35–37 ms, -19%** speedup per canvas pass).
    - **Prefill Acceleration**: The shared-memory GEMV and FFN kernel improvements accelerated prompt prefill token passes by ~95–217 ms (ARC prefill dropped from ~850 ms to ~750 ms; BoolQ prefill dropped from ~1686 ms to ~1469 ms).
-   - **End-to-End Latency**: Yielded a consistent **~14% reduction in total query turnaround time** across both multi-choice reasoning (ARC) and passage-based comprehension (BoolQ).
+   - **End-to-End Latency**: Yielded an observed **~14% reduction in total query turnaround time** across both multi-choice reasoning (ARC) and passage-based comprehension (BoolQ).
+   - *(Evaluation Scope Note)*: While the canvas width microbenchmark in §10.4 evaluated 3 repeated samples per width, dataset turnaround figures reflect single sequential evaluation runs per configuration. These measured ~14% latency reductions provide strong operational evidence but remain exploratory pending repeated, interleaved multi-run evaluations under controlled conditions (see Review Round 35 R35-05).
 
