@@ -405,11 +405,13 @@ Evaluated with `zeno benchmark` (3 samples per width post-warmup, reporting medi
 
 | Canvas C | Pre-Phase 10 Median (ms) | Post-WP1 Median (ms) | Post-Phase 10 Median (ms) | Net Latency Reduction | End-to-End Speedup vs C=256 |
 | :---: | :---: | :---: | :---: | :---: | :---: |
-| **16** | 183.37 ms | 159.56 ms | **146.27 ms** | **-37.10 ms (-20.2%)** | **14.25x** |
-| **32** | 339.46 ms | 296.83 ms | **270.51 ms** | **-68.95 ms (-20.3%)** | **7.71x** |
-| **64** | 680.64 ms | 575.65 ms | **514.46 ms** | **-166.18 ms (-24.4%)** | **4.05x** |
-| **128** | 1398.24 ms | 1146.71 ms | **1015.48 ms** | **-382.76 ms (-27.4%)** | **2.05x** |
-| **256** | 2807.38 ms | 2366.35 ms | **2059.53 ms** | **-747.85 ms (-26.6%)** | **1.01x** |
+| **16** | 183.37 ms | 159.56 ms | **146.27 ms** | **-37.10 ms (-20.2%)** | **14.08x** |
+| **32** | 339.46 ms | 296.83 ms | **270.51 ms** | **-68.95 ms (-20.3%)** | **7.61x** |
+| **64** | 680.64 ms | 575.65 ms | **514.46 ms** | **-166.18 ms (-24.4%)** | **4.00x** |
+| **128** | 1398.24 ms | 1146.71 ms | **1015.48 ms** | **-382.76 ms (-27.4%)** | **2.03x** |
+| **256** | 2807.38 ms | 2366.35 ms | **2059.53 ms** | **-747.85 ms (-26.6%)** | **1.00x** |
+
+*(Note on Speedup Ratio Definition)*: End-to-End Speedup vs $C=256$ is defined as $\text{Median}(C=256) / \text{Median}(C)$ relative to the in-table post-Phase 10 reference of $2059.53\text{ ms}$. Raw runner logs used the pre-sweep baseline measurement ($2084.39\text{ ms} \pm 1.40\text{ ms}$), yielding $14.25\text{x}$ and $1.01\text{x}$ respectively.
 
 ### 10.5 Numerical Parity & Verification
 - **Oracle Verification**: 5/5 golden test fixtures passed with 100% discrete decision parity and local engine regression checks. Cross-engine numerical logit and probability parity against the external reference oracle remains tracked under open gate U-22 in [`specs/UNRESOLVED.md`](UNRESOLVED.md) due to accumulated quantization differences and router boundary expert selection.
@@ -474,13 +476,15 @@ To further compress decision canvas execution latency toward the sub-100ms miles
 
 Evaluated with `zeno benchmark` (3 samples per width post-warmup, reporting median latency on dual RTX 3060 GPUs):
 
-| Canvas C | Pre-Phase 10 Median (ms) | Phase 10 Median (ms) | Phase 11 Median (ms) | Net $\Delta$ vs Phase 10 | End-to-End Speedup vs C=256 |
-| :---: | :---: | :---: | :---: | :---: | :---: |
-| **16** | 183.37 ms | 146.27 ms | **139.88 ms** | **-6.39 ms (-4.4%)** | **14.08x** |
-| **32** | 339.46 ms | 270.51 ms | **257.14 ms** | **-13.37 ms (-4.9%)** | **7.66x** |
-| **64** | 680.64 ms | 514.46 ms | **489.00 ms** | **-25.46 ms (-5.0%)** | **4.03x** |
-| **128** | 1398.24 ms | 1015.48 ms | **968.67 ms** | **-46.81 ms (-4.6%)** | **2.03x** |
-| **256** | 2807.38 ms | 2059.53 ms | **1945.88 ms** | **-113.65 ms (-5.5%)** | **1.01x** |
+| Canvas C | Pre-Phase 10 Median (ms) | Phase 10 Median (ms) | Phase 11 Median (ms) | Phase 11 Spread (ms) | Net $\Delta$ vs Phase 10 | End-to-End Speedup vs C=256 |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **16** | 183.37 ms | 146.27 ms | **139.88 ms** | $\pm 3.09$ ms | **-6.39 ms (-4.4%)** | **13.91x** |
+| **32** | 339.46 ms | 270.51 ms | **257.14 ms** | $\pm 3.02$ ms | **-13.37 ms (-4.9%)** | **7.57x** |
+| **64** | 680.64 ms | 514.46 ms | **489.00 ms** | $\pm 0.59$ ms | **-25.46 ms (-5.0%)** | **3.98x** |
+| **128** | 1398.24 ms | 1015.48 ms | **968.67 ms** | $\pm 21.18$ ms | **-46.81 ms (-4.6%)** | **2.01x** |
+| **256** | 2807.38 ms | 2059.53 ms | **1945.88 ms** | $\pm 5.07$ ms | **-113.65 ms (-5.5%)** | **1.00x** |
+
+*(Note on Speedup Ratio Definition)*: End-to-End Speedup vs $C=256$ is defined as $\text{Median}(C=256) / \text{Median}(C)$, computed using the in-table Phase 11 reference latency of $1945.88\text{ ms}$ (yielding $1.00\text{x}$ for $C=256$ compared with itself). In raw CLI benchmark runner logs, speedup was reported against the separate pre-sweep baseline block ($1969.68\text{ ms} \pm 6.19\text{ ms}$), yielding $14.08\text{x}$ and $1.01\text{x}$ respectively.
 
 ### 11.3 Parity Verification
 - **Oracle Verification**: 5/5 golden test fixtures passed with 100% exact discrete decision matches and verified local regression checks (`./tools/verify_all_oracles.sh --cuda`).
