@@ -472,6 +472,168 @@ __global__ void gemv_q4k_batched_16x_kernel(
     }
 }
 
+__global__ void __launch_bounds__(256, 3) gemv_q4k_fused_qk_16x_kernel(
+    const BlockQ4_K *W_q,
+    const BlockQ4_K *W_k,
+    const float *x,
+    float *out_q,
+    float *out_k,
+    float *out_v,
+    int q_dim,
+    int k_dim,
+    int in_dim,
+    int blocks_per_row,
+    int batch_size
+) {
+    __shared__ float s_x[16][256];
+
+    int tid = threadIdx.x;
+    int warp_id = tid >> 5;
+    int lane_id = tid & 31;
+    int row0 = blockIdx.x * 16 + warp_id * 2;
+    int row1 = row0 + 1;
+    int t_base = blockIdx.y * 16;
+    int total_rows = q_dim + k_dim;
+    bool active_row0 = (row0 < total_rows);
+    bool active_row1 = (row1 < total_rows);
+
+    const float *tok_x[16];
+    #pragma unroll
+    for (int t = 0; t < 16; ++t) {
+        int tidx = t_base + t;
+        tok_x[t] = (tidx < batch_size) ? (x + (size_t)tidx * in_dim) : NULL;
+    }
+
+    const BlockQ4_K *row_w0 = NULL;
+    if (active_row0) {
+        if (row0 < q_dim) {
+            row_w0 = W_q + (size_t)row0 * blocks_per_row;
+        } else {
+            row_w0 = W_k + (size_t)(row0 - q_dim) * blocks_per_row;
+        }
+    }
+
+    const BlockQ4_K *row_w1 = NULL;
+    if (active_row1) {
+        if (row1 < q_dim) {
+            row_w1 = W_q + (size_t)row1 * blocks_per_row;
+        } else {
+            row_w1 = W_k + (size_t)(row1 - q_dim) * blocks_per_row;
+        }
+    }
+
+    float sum0[16] = {0.0f};
+    float sum1[16] = {0.0f};
+
+    float4 *s_x4 = (float4*)s_x;
+
+    for (int b = 0; b < blocks_per_row; b++) {
+        size_t base_x = (size_t)b * 256;
+
+        #pragma unroll
+        for (int i = 0; i < 4; ++i) {
+            int idx4 = tid + i * 256;
+            int t = idx4 >> 6;
+            int f_idx = (idx4 & 63) * 4;
+            if (tok_x[t]) {
+                s_x4[idx4] = *(const float4*)&tok_x[t][base_x + f_idx];
+            } else {
+                s_x4[idx4] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+            }
+        }
+        __syncthreads();
+
+        const BlockQ4_K *blk0 = active_row0 ? (row_w0 + b) : NULL;
+        const BlockQ4_K *blk1 = active_row1 ? (row_w1 + b) : NULL;
+        float my_d0 = 0.0f, my_m0 = 0.0f;
+        float my_d1 = 0.0f, my_m1 = 0.0f;
+        if (active_row0) precompute_q4k_scales(blk0, lane_id, &my_d0, &my_m0);
+        if (active_row1) precompute_q4k_scales(blk1, lane_id, &my_d1, &my_m1);
+
+        #pragma unroll
+        for (int chunk = 0; chunk < 4; chunk++) {
+            float d1_0 = __shfl_sync(0xffffffff, my_d0, chunk * 2 + 0);
+            float m1_0 = __shfl_sync(0xffffffff, my_m0, chunk * 2 + 0);
+            float d2_0 = __shfl_sync(0xffffffff, my_d0, chunk * 2 + 1);
+            float m2_0 = __shfl_sync(0xffffffff, my_m0, chunk * 2 + 1);
+
+            float d1_1 = __shfl_sync(0xffffffff, my_d1, chunk * 2 + 0);
+            float m1_1 = __shfl_sync(0xffffffff, my_m1, chunk * 2 + 0);
+            float d2_1 = __shfl_sync(0xffffffff, my_d1, chunk * 2 + 1);
+            float m2_1 = __shfl_sync(0xffffffff, my_m1, chunk * 2 + 1);
+
+            float w1_0 = 0.0f, w2_0 = 0.0f;
+            if (active_row0) {
+                uint8_t q_byte = blk0->qs[chunk * 32 + lane_id];
+                w1_0 = d1_0 * (float)(q_byte & 0x0F) - m1_0;
+                w2_0 = d2_0 * (float)(q_byte >> 4) - m2_0;
+            }
+
+            float w1_1 = 0.0f, w2_1 = 0.0f;
+            if (active_row1) {
+                uint8_t q_byte = blk1->qs[chunk * 32 + lane_id];
+                w1_1 = d1_1 * (float)(q_byte & 0x0F) - m1_1;
+                w2_1 = d2_1 * (float)(q_byte >> 4) - m2_1;
+            }
+
+            int off1 = chunk * 64 + lane_id;
+            int off2 = chunk * 64 + 32 + lane_id;
+
+            #pragma unroll
+            for (int t = 0; t < 16; ++t) {
+                if (tok_x[t]) {
+                    float x1 = s_x[t][off1];
+                    float x2 = s_x[t][off2];
+                    if (active_row0) sum0[t] += w1_0 * x1 + w2_0 * x2;
+                    if (active_row1) sum1[t] += w1_1 * x1 + w2_1 * x2;
+                }
+            }
+        }
+
+        if (b + 1 < blocks_per_row) {
+            __syncthreads();
+        }
+    }
+
+    if (active_row0) {
+        float *dst0 = (row0 < q_dim) ? out_q : out_k;
+        int d_row0 = (row0 < q_dim) ? row0 : (row0 - q_dim);
+        int d_dim0 = (row0 < q_dim) ? q_dim : k_dim;
+        bool write_v0 = (row0 >= q_dim && out_v != NULL);
+
+        for (int t = 0; t < 16; ++t) {
+            if (tok_x[t]) {
+                float r = warp_reduce_sum(sum0[t]);
+                if (lane_id == 0) {
+                    dst0[(size_t)(t_base + t) * d_dim0 + d_row0] = r;
+                    if (write_v0) {
+                        out_v[(size_t)(t_base + t) * k_dim + d_row0] = r;
+                    }
+                }
+            }
+        }
+    }
+
+    if (active_row1) {
+        float *dst1 = (row1 < q_dim) ? out_q : out_k;
+        int d_row1 = (row1 < q_dim) ? row1 : (row1 - q_dim);
+        int d_dim1 = (row1 < q_dim) ? q_dim : k_dim;
+        bool write_v1 = (row1 >= q_dim && out_v != NULL);
+
+        for (int t = 0; t < 16; ++t) {
+            if (tok_x[t]) {
+                float r = warp_reduce_sum(sum1[t]);
+                if (lane_id == 0) {
+                    dst1[(size_t)(t_base + t) * d_dim1 + d_row1] = r;
+                    if (write_v1) {
+                        out_v[(size_t)(t_base + t) * k_dim + d_row1] = r;
+                    }
+                }
+            }
+        }
+    }
+}
+
 __global__ void dense_gemv_gate_up_geglu_q4k_kernel(
     const BlockQ4_K *__restrict__ W_gate,
     const BlockQ4_K *__restrict__ W_up,
@@ -1269,6 +1431,87 @@ int zeno_cuda_gemv_q4k(
             blocks_per_row,
             batch_size
         );
+    }
+
+    cudaError_t err = cudaGetLastError();
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED : ZENO_CUDA_SUCCESS;
+    return restore_cuda_device(orig, op_rc);
+}
+
+int zeno_cuda_gemv_q4k_fused_qk(
+    const void *W_q,
+    const void *W_k,
+    const float *x,
+    float *out_q,
+    float *out_k,
+    float *out_v,
+    int q_dim,
+    int k_dim,
+    int in_dim,
+    int batch_size,
+    int device_id,
+    void *stream
+) {
+    if (!W_q || !W_k || !x || !out_q || !out_k) return ZENO_CUDA_ERR_INVALID_PARAM;
+    if (q_dim <= 0 || k_dim <= 0 || in_dim <= 0 || batch_size <= 0 || batch_size > 65535) return ZENO_CUDA_ERR_INVALID_PARAM;
+    if ((in_dim % 256) != 0) return ZENO_CUDA_ERR_INVALID_PARAM;
+
+    int blocks_per_row = in_dim / 256;
+    size_t w_q_bytes = (size_t)q_dim * (size_t)blocks_per_row * sizeof(BlockQ4_K);
+    size_t w_k_bytes = (size_t)k_dim * (size_t)blocks_per_row * sizeof(BlockQ4_K);
+    size_t x_bytes = (size_t)batch_size * (size_t)in_dim * sizeof(float);
+    size_t out_q_bytes = (size_t)batch_size * (size_t)q_dim * sizeof(float);
+    size_t out_k_bytes = (size_t)batch_size * (size_t)k_dim * sizeof(float);
+
+    if (ranges_overlap(x, x_bytes, out_q, out_q_bytes)) return ZENO_CUDA_ERR_INVALID_PARAM;
+    if (ranges_overlap(x, x_bytes, out_k, out_k_bytes)) return ZENO_CUDA_ERR_INVALID_PARAM;
+    if (ranges_overlap(W_q, w_q_bytes, out_q, out_q_bytes)) return ZENO_CUDA_ERR_INVALID_PARAM;
+    if (ranges_overlap(W_k, w_k_bytes, out_k, out_k_bytes)) return ZENO_CUDA_ERR_INVALID_PARAM;
+    if (ranges_overlap(out_q, out_q_bytes, out_k, out_k_bytes)) return ZENO_CUDA_ERR_INVALID_PARAM;
+
+    if (out_v) {
+        size_t out_v_bytes = (size_t)batch_size * (size_t)k_dim * sizeof(float);
+        if (ranges_overlap(x, x_bytes, out_v, out_v_bytes)) return ZENO_CUDA_ERR_INVALID_PARAM;
+        if (ranges_overlap(W_k, w_k_bytes, out_v, out_v_bytes)) return ZENO_CUDA_ERR_INVALID_PARAM;
+        if (ranges_overlap(out_q, out_q_bytes, out_v, out_v_bytes)) return ZENO_CUDA_ERR_INVALID_PARAM;
+        if (ranges_overlap(out_k, out_k_bytes, out_v, out_v_bytes)) return ZENO_CUDA_ERR_INVALID_PARAM;
+    }
+
+    int orig = 0;
+    int rc = set_cuda_device(device_id, &orig);
+    if (rc != ZENO_CUDA_SUCCESS) return rc;
+
+    cudaStream_t custream = (cudaStream_t)stream;
+
+    if (batch_size >= 16 && (batch_size % 16 == 0)) {
+        const int block_size = 256;
+        int total_rows = q_dim + k_dim;
+        unsigned int grid_x = (unsigned int)((total_rows + 15) / 16);
+        unsigned int grid_y = (unsigned int)(batch_size / 16);
+        dim3 grid(grid_x, grid_y);
+        gemv_q4k_fused_qk_16x_kernel<<<grid, block_size, 0, custream>>>(
+            (const BlockQ4_K*)W_q,
+            (const BlockQ4_K*)W_k,
+            x,
+            out_q,
+            out_k,
+            out_v,
+            q_dim,
+            k_dim,
+            in_dim,
+            blocks_per_row,
+            batch_size
+        );
+    } else {
+        int rc_q = zeno_cuda_gemv_q4k(W_q, x, out_q, q_dim, in_dim, batch_size, device_id, stream);
+        if (rc_q != ZENO_CUDA_SUCCESS) return restore_cuda_device(orig, rc_q);
+        int rc_k = zeno_cuda_gemv_q4k(W_k, x, out_k, k_dim, in_dim, batch_size, device_id, stream);
+        if (rc_k != ZENO_CUDA_SUCCESS) return restore_cuda_device(orig, rc_k);
+        if (out_v != NULL) {
+            size_t kv_bytes = (size_t)batch_size * (size_t)k_dim * sizeof(float);
+            cudaError_t cpy_err = cudaMemcpyAsync(out_v, out_k, kv_bytes, cudaMemcpyDeviceToDevice, custream);
+            if (cpy_err != cudaSuccess) return restore_cuda_device(orig, ZENO_CUDA_ERR_COPY_FAILED);
+        }
     }
 
     cudaError_t err = cudaGetLastError();

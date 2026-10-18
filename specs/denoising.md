@@ -490,3 +490,45 @@ Evaluated with `zeno benchmark` (3 samples per width post-warmup, reporting medi
 - **Oracle Verification**: 5/5 golden test fixtures passed with 100% exact discrete decision matches and verified local regression checks (`./tools/verify_all_oracles.sh --cuda`).
 - **Integration Test Suite**: 15/15 HTTP API server integration tests passed (`python3 tools/test_server.py --cuda`).
 - **CPU Test Isolation**: Zero CUDA dependencies in CPU reference tests (`zig build test -Dcuda=false`).
+
+---
+
+## 12. CUDA Phase 12 — Fused Q+K GEMV Projection & Attention Launch Optimization
+
+### 12.1 Implementation Details
+
+1. **Work Package 1 (WP1) — Fused Attention Q+K GEMV Kernel (`gemv_q4k_fused_qk_16x_kernel`)**:
+   - In both prefill and canvas execution, $Q$ and $K$ projections are executed across all 30 layers using `Q4_K` weights and identical input activation vectors (`nx_slice`).
+   - Implemented `gemv_q4k_fused_qk_16x_kernel` launching a unified grid over `total_rows = q_dim + k_dim` (384 blocks for SWA layers where $Q=4096, K=2048$; 576 blocks for Global layers where $Q=8192, K=1024$).
+   - The 16 activation vectors are loaded into shared memory `s_x[16][256]` (16 KB) **once** per block, halving activation DRAM reads for $K$ projection across all 30 layers and eliminating 30 kernel dispatches per step.
+   - For batch sizes not divisible by 16 (e.g. non-16 prompt lengths in prefill), the host launcher gracefully falls back to individual GEMV dispatches with exact numerical parity.
+
+2. **Work Package 2 (WP2) — Register Allocation & Occupancy Safety**:
+   - Explicitly configured `__launch_bounds__(256, 3)` on `gemv_q4k_fused_qk_16x_kernel`.
+   - Verified via `ptxas` that `gemv_q4k_fused_qk_16x_kernel` compiles to **75 registers per thread**, with **0 bytes stack frame**, **0 spill stores**, and **0 spill loads**, guaranteeing 3 active resident blocks per SM (24 active warps) on Ampere SM 8.6 without occupancy degradation.
+
+3. **Work Package 3 (WP3) — Direct Global Attention V Write-Back**:
+   - In Global attention layers (layers 5, 11, 17, 23, 29), $V$ is mathematically tied to $K$ prior to head normalization and RoPE.
+   - `gemv_q4k_fused_qk_16x_kernel` accepts an optional `out_v` pointer. When active on $K$ rows, the kernel simultaneously writes unnormalized outputs from registers into both `out_k` and `out_v`.
+   - Bypasses intermediate `copyFromDevice` kernel dispatches while preserving distinct physical buffers for `out_k` (which undergoes per-head weighted norm and RoPE) and `out_v` (which undergoes unweighted RMSNorm and zero RoPE), ensuring 100% mathematical and numerical fidelity.
+   - Total attention projection kernel launches per canvas step drop from 84 launches to 55 launches (25 SWA $\times 2$ + 5 Global $\times 1$).
+
+### 12.2 End-to-End Benchmark Progression Across Canvas Widths
+
+Evaluated with `zeno benchmark` (3 samples per width post-warmup, reporting median latency on dual RTX 3060 GPUs):
+
+| Canvas C | Phase 10 Median (ms) | Phase 11 Median (ms) | Phase 12 Median (ms) | Phase 12 Spread (ms) | Net $\Delta$ vs Phase 11 | End-to-End Speedup vs C=256 |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **16** | 146.27 ms | 139.88 ms | **132.67 ms** | $\pm 2.49$ ms | **-7.21 ms (-5.2%)** | **14.07x** |
+| **32** | 270.51 ms | 257.14 ms | **251.52 ms** | $\pm 15.99$ ms | **-5.62 ms (-2.2%)** | **7.42x** |
+| **64** | 514.46 ms | 489.00 ms | **463.77 ms** | $\pm 45.91$ ms | **-25.23 ms (-5.2%)** | **4.02x** |
+| **128** | 1015.48 ms | 968.67 ms | **912.67 ms** | $\pm 2.53$ ms | **-56.00 ms (-5.8%)** | **2.04x** |
+| **256** | 2059.53 ms | 1945.88 ms | **1866.25 ms** | $\pm 12.63$ ms | **-79.63 ms (-4.1%)** | **1.00x** |
+
+*(Note on Speedup Ratio Definition)*: End-to-End Speedup vs $C=256$ is defined as $\text{Median}(C=256) / \text{Median}(C)$, computed using the in-table Phase 12 reference latency of $1866.25\text{ ms}$ (yielding $1.00\text{x}$ for $C=256$ compared with itself). In raw CLI benchmark runner logs, speedup was reported against the separate pre-sweep baseline block ($1889.51\text{ ms} \pm 2.54\text{ ms}$), yielding $14.24\text{x}$ and $1.01\text{x}$ respectively.
+
+### 12.3 Parity Verification
+- **Oracle Verification**: 5/5 golden test fixtures passed with 100% exact discrete decision matches and verified local regression checks (`./tools/verify_all_oracles.sh --cuda`).
+- **Integration Test Suite**: 15/15 HTTP API server integration tests passed (`python3 tools/test_server.py --cuda`).
+- **CPU Test Isolation**: Zero CUDA dependencies in CPU reference tests (`zig build test -Dcuda=false`).
+

@@ -906,13 +906,31 @@ pub fn runLayerCuda(
     const k_slice = try ws.k_buf.slice().subslice(0, num_tokens * k_dim);
     const v_slice = try ws.v_buf.slice().subslice(0, num_tokens * k_dim);
 
-    try gemvTensorCuda(layer.q_weight_type, layer.q_weight.slice(), nx_slice, q_slice, q_dim, ModelConfig.embedding_dim, num_tokens, stream);
-    try gemvTensorCuda(layer.k_weight_type, layer.k_weight.slice(), nx_slice, k_slice, k_dim, ModelConfig.embedding_dim, num_tokens, stream);
-
-    if (is_global) {
-        try v_slice.copyFromDevice(k_slice, stream);
+    if (layer.q_weight_type == GGML_TYPE_Q4_K and layer.k_weight_type == GGML_TYPE_Q4_K) {
+        try cuda_mem.gemvQ4_K_FusedQK(
+            layer.q_weight.slice(),
+            layer.k_weight.slice(),
+            nx_slice,
+            q_slice,
+            k_slice,
+            if (is_global) v_slice else null,
+            q_dim,
+            k_dim,
+            ModelConfig.embedding_dim,
+            num_tokens,
+            stream,
+        );
+        if (!is_global) {
+            try gemvTensorCuda(layer.v_weight_type, layer.v_weight.?.slice(), nx_slice, v_slice, k_dim, ModelConfig.embedding_dim, num_tokens, stream);
+        }
     } else {
-        try gemvTensorCuda(layer.v_weight_type, layer.v_weight.?.slice(), nx_slice, v_slice, k_dim, ModelConfig.embedding_dim, num_tokens, stream);
+        try gemvTensorCuda(layer.q_weight_type, layer.q_weight.slice(), nx_slice, q_slice, q_dim, ModelConfig.embedding_dim, num_tokens, stream);
+        try gemvTensorCuda(layer.k_weight_type, layer.k_weight.slice(), nx_slice, k_slice, k_dim, ModelConfig.embedding_dim, num_tokens, stream);
+        if (is_global) {
+            try v_slice.copyFromDevice(k_slice, stream);
+        } else {
+            try gemvTensorCuda(layer.v_weight_type, layer.v_weight.?.slice(), nx_slice, v_slice, k_dim, ModelConfig.embedding_dim, num_tokens, stream);
+        }
     }
 
     // 3. Per-head RMSNorms
@@ -1126,13 +1144,31 @@ pub fn runLayerCanvasCuda(
     const k_slice = try ws.k_buf.slice().subslice(0, canvas_len * k_dim);
     const v_slice = try ws.v_buf.slice().subslice(0, canvas_len * k_dim);
 
-    try gemvTensorCuda(layer.q_weight_type, layer.q_weight.slice(), nx_slice, q_slice, q_dim, ModelConfig.embedding_dim, canvas_len, stream);
-    try gemvTensorCuda(layer.k_weight_type, layer.k_weight.slice(), nx_slice, k_slice, k_dim, ModelConfig.embedding_dim, canvas_len, stream);
-
-    if (is_global) {
-        try v_slice.copyFromDevice(k_slice, stream);
+    if (layer.q_weight_type == GGML_TYPE_Q4_K and layer.k_weight_type == GGML_TYPE_Q4_K) {
+        try cuda_mem.gemvQ4_K_FusedQK(
+            layer.q_weight.slice(),
+            layer.k_weight.slice(),
+            nx_slice,
+            q_slice,
+            k_slice,
+            if (is_global) v_slice else null,
+            q_dim,
+            k_dim,
+            ModelConfig.embedding_dim,
+            canvas_len,
+            stream,
+        );
+        if (!is_global) {
+            try gemvTensorCuda(layer.v_weight_type, layer.v_weight.?.slice(), nx_slice, v_slice, k_dim, ModelConfig.embedding_dim, canvas_len, stream);
+        }
     } else {
-        try gemvTensorCuda(layer.v_weight_type, layer.v_weight.?.slice(), nx_slice, v_slice, k_dim, ModelConfig.embedding_dim, canvas_len, stream);
+        try gemvTensorCuda(layer.q_weight_type, layer.q_weight.slice(), nx_slice, q_slice, q_dim, ModelConfig.embedding_dim, canvas_len, stream);
+        try gemvTensorCuda(layer.k_weight_type, layer.k_weight.slice(), nx_slice, k_slice, k_dim, ModelConfig.embedding_dim, canvas_len, stream);
+        if (is_global) {
+            try v_slice.copyFromDevice(k_slice, stream);
+        } else {
+            try gemvTensorCuda(layer.v_weight_type, layer.v_weight.?.slice(), nx_slice, v_slice, k_dim, ModelConfig.embedding_dim, canvas_len, stream);
+        }
     }
 
     // 3. Per-head RMSNorms

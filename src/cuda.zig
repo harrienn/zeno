@@ -169,6 +169,20 @@ pub const c = if (is_enabled) struct {
         device_id: c_int,
         stream: ?*anyopaque,
     ) c_int;
+    pub extern "c" fn zeno_cuda_gemv_q4k_fused_qk(
+        W_q: *const anyopaque,
+        W_k: *const anyopaque,
+        x: [*]const f32,
+        out_q: [*]f32,
+        out_k: [*]f32,
+        out_v: ?[*]f32,
+        q_dim: c_int,
+        k_dim: c_int,
+        in_dim: c_int,
+        batch_size: c_int,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
     pub extern "c" fn zeno_cuda_gemv_q6k(
         W: *const anyopaque,
         x: [*]const f32,

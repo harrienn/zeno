@@ -138,6 +138,20 @@ int zeno_cuda_gemv_q4k(
     int device_id,
     void *stream
 );
+int zeno_cuda_gemv_q4k_fused_qk(
+    const void *W_q,
+    const void *W_k,
+    const float *x,
+    float *out_q,
+    float *out_k,
+    float *out_v,
+    int q_dim,
+    int k_dim,
+    int in_dim,
+    int batch_size,
+    int device_id,
+    void *stream
+);
 int zeno_cuda_gemv_q6k(
     const void *W,
     const float *x,

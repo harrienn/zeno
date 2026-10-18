@@ -681,6 +681,77 @@ pub fn gemvQ4_K(
     if (rc != 0) return cuda.mapCudaErrorCode(rc);
 }
 
+/// Fused Attention Q+K (and optional tied V) GEMV Projection (WP1 / WP3):
+/// Computes out_q = W_q * x and out_k = W_k * x in a single unified grid pass.
+/// If out_v is provided (for Global attention layers where V is tied to K prior to norm/RoPE),
+/// out_v also receives the unnormalized K values directly from registers.
+pub fn gemvQ4_K_FusedQK(
+    w_q: DeviceSlice(u8),
+    w_k: DeviceSlice(u8),
+    x: DeviceSlice(f32),
+    out_q: DeviceSlice(f32),
+    out_k: DeviceSlice(f32),
+    out_v: ?DeviceSlice(f32),
+    q_dim: usize,
+    k_dim: usize,
+    in_dim: usize,
+    batch_size: usize,
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (q_dim == 0 or k_dim == 0 or in_dim == 0 or batch_size == 0) return error.InvalidParam;
+    if (in_dim % quant.QK_K != 0) return error.InvalidParam;
+    if (q_dim > std.math.maxInt(c_int) or k_dim > std.math.maxInt(c_int) or in_dim > std.math.maxInt(c_int) or batch_size > 65535) {
+        return error.InvalidParam;
+    }
+
+    const blocks_per_row = in_dim / quant.QK_K;
+    const bytes_per_row = blocks_per_row * @sizeOf(quant.BlockQ4_K);
+    const expected_wq_bytes = std.math.mul(usize, q_dim, bytes_per_row) catch return error.InvalidParam;
+    const expected_wk_bytes = std.math.mul(usize, k_dim, bytes_per_row) catch return error.InvalidParam;
+    const expected_x_len = std.math.mul(usize, batch_size, in_dim) catch return error.InvalidParam;
+    const expected_outq_len = std.math.mul(usize, batch_size, q_dim) catch return error.InvalidParam;
+    const expected_outk_len = std.math.mul(usize, batch_size, k_dim) catch return error.InvalidParam;
+
+    if (w_q.len != expected_wq_bytes or w_k.len != expected_wk_bytes or x.len != expected_x_len or out_q.len != expected_outq_len or out_k.len != expected_outk_len) {
+        return error.InvalidParam;
+    }
+    if (w_q.device_id != w_k.device_id or w_q.device_id != x.device_id or w_q.device_id != out_q.device_id or w_q.device_id != out_k.device_id) {
+        return error.DeviceMismatch;
+    }
+    if (out_v) |ov| {
+        if (ov.len != expected_outk_len) return error.InvalidParam;
+        if (ov.device_id != w_q.device_id) return error.DeviceMismatch;
+    }
+    if (stream) |s| {
+        if (s.device_id != w_q.device_id) return error.DeviceMismatch;
+    }
+
+    const w_q_ptr = w_q.ptr orelse return error.InvalidParam;
+    const w_k_ptr = w_k.ptr orelse return error.InvalidParam;
+    const x_ptr = x.ptr orelse return error.InvalidParam;
+    const out_q_ptr = out_q.ptr orelse return error.InvalidParam;
+    const out_k_ptr = out_k.ptr orelse return error.InvalidParam;
+    const out_v_ptr = if (out_v) |ov| (ov.ptr orelse return error.InvalidParam) else null;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_gemv_q4k_fused_qk(
+        w_q_ptr,
+        w_k_ptr,
+        x_ptr,
+        out_q_ptr,
+        out_k_ptr,
+        out_v_ptr,
+        @intCast(q_dim),
+        @intCast(k_dim),
+        @intCast(in_dim),
+        @intCast(batch_size),
+        w_q.device_id,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
 /// Fused dense FFN Gate + Up projections and GeGLU activation:
 /// out_geglu = GeGLU(W_gate * x, W_up * x)
 /// W_gate, W_up: DeviceSlice(u8) representing row-major BlockQ4_K blocks of shape [out_dim, in_dim]
@@ -3960,6 +4031,133 @@ test "CUDA Review 25: moeAccumulateScaledSorted negative index guard (R25-01)" {
     // Verify non-zero accumulated values
     for (host_out) |v| {
         try std.testing.expect(v > 0.0);
+    }
+}
+
+test "CUDA gemvQ4_K_FusedQK numerical parity with CPU reference" {
+    if (!cuda.is_enabled) return;
+    const dev = requireHardwareDevice() catch |err| switch (err) {
+        error.SkipZigTest => return,
+        else => return err,
+    };
+
+    const allocator = std.testing.allocator;
+    var prng = std.Random.DefaultPrng.init(0x514655);
+    const rand = prng.random();
+
+    const q_dim: usize = 32;
+    const k_dim: usize = 16;
+    const in_dim: usize = 512;
+    const blocks_per_row = in_dim / quant.QK_K; // 2
+
+    // 1. Generate Q and K weights
+    const q_blocks = q_dim * blocks_per_row;
+    const host_wq = try allocator.alloc(quant.BlockQ4_K, q_blocks);
+    defer allocator.free(host_wq);
+    for (host_wq) |*blk| {
+        blk.d = @floatCast((rand.float(f32) * 0.3) + 0.1);
+        blk.dmin = @floatCast((rand.float(f32) * 0.15) + 0.05);
+        for (&blk.scales) |*sc| sc.* = rand.int(u8);
+        for (&blk.qs) |*q| q.* = rand.int(u8);
+    }
+
+    const k_blocks = k_dim * blocks_per_row;
+    const host_wk = try allocator.alloc(quant.BlockQ4_K, k_blocks);
+    defer allocator.free(host_wk);
+    for (host_wk) |*blk| {
+        blk.d = @floatCast((rand.float(f32) * 0.3) + 0.1);
+        blk.dmin = @floatCast((rand.float(f32) * 0.15) + 0.05);
+        for (&blk.scales) |*sc| sc.* = rand.int(u8);
+        for (&blk.qs) |*q| q.* = rand.int(u8);
+    }
+
+    // 2. Upload weights to GPU
+    var d_wq = try DeviceBuffer(u8).init(dev, std.mem.sliceAsBytes(host_wq).len);
+    defer d_wq.deinit();
+    try d_wq.copyFromHost(std.mem.sliceAsBytes(host_wq));
+
+    var d_wk = try DeviceBuffer(u8).init(dev, std.mem.sliceAsBytes(host_wk).len);
+    defer d_wk.deinit();
+    try d_wk.copyFromHost(std.mem.sliceAsBytes(host_wk));
+
+    // Test across batch_size 1 and 16
+    const batch_sizes = [_]usize{ 1, 16 };
+    for (batch_sizes) |batch_size| {
+        const host_x = try allocator.alloc(f32, batch_size * in_dim);
+        defer allocator.free(host_x);
+        for (host_x) |*x| x.* = (rand.float(f32) * 2.0) - 1.0;
+
+        var d_x = try DeviceBuffer(f32).init(dev, host_x.len);
+        defer d_x.deinit();
+        try d_x.copyFromHost(host_x);
+
+        var d_out_q = try DeviceBuffer(f32).init(dev, batch_size * q_dim);
+        defer d_out_q.deinit();
+        var d_out_k = try DeviceBuffer(f32).init(dev, batch_size * k_dim);
+        defer d_out_k.deinit();
+        var d_out_v = try DeviceBuffer(f32).init(dev, batch_size * k_dim);
+        defer d_out_v.deinit();
+
+        // Run fused Q+K GEMV with out_v populated
+        try gemvQ4_K_FusedQK(
+            d_wq.slice(),
+            d_wk.slice(),
+            d_x.slice(),
+            d_out_q.slice(),
+            d_out_k.slice(),
+            d_out_v.slice(),
+            q_dim,
+            k_dim,
+            in_dim,
+            batch_size,
+            null,
+        );
+
+        const gpu_out_q = try allocator.alloc(f32, batch_size * q_dim);
+        defer allocator.free(gpu_out_q);
+        try d_out_q.copyToHost(gpu_out_q);
+
+        const gpu_out_k = try allocator.alloc(f32, batch_size * k_dim);
+        defer allocator.free(gpu_out_k);
+        try d_out_k.copyToHost(gpu_out_k);
+
+        const gpu_out_v = try allocator.alloc(f32, batch_size * k_dim);
+        defer allocator.free(gpu_out_v);
+        try d_out_v.copyToHost(gpu_out_v);
+
+        var max_diff_q: f32 = 0.0;
+        var max_diff_k: f32 = 0.0;
+        // Verify each token against CPU reference
+        for (0..batch_size) |b| {
+            const x_sub = host_x[b * in_dim .. (b + 1) * in_dim];
+
+            // Verify Q
+            var cpu_q: [32]f32 = undefined;
+            infer.gemvQ4_K(host_wq.ptr, x_sub, &cpu_q, q_dim, in_dim);
+            const gpu_q_sub = gpu_out_q[b * q_dim .. (b + 1) * q_dim];
+            for (cpu_q, gpu_q_sub) |c, g| {
+                const diff = @abs(c - g);
+                if (diff > max_diff_q) max_diff_q = diff;
+                try std.testing.expect(diff <= 1e-3 + 1e-4 * @abs(c));
+            }
+
+            // Verify K
+            var cpu_k: [16]f32 = undefined;
+            infer.gemvQ4_K(host_wk.ptr, x_sub, &cpu_k, k_dim, in_dim);
+            const gpu_k_sub = gpu_out_k[b * k_dim .. (b + 1) * k_dim];
+            for (cpu_k, gpu_k_sub) |c, g| {
+                const diff = @abs(c - g);
+                if (diff > max_diff_k) max_diff_k = diff;
+                try std.testing.expect(diff <= 1e-3 + 1e-4 * @abs(c));
+            }
+
+            // Verify tied V matches K exactly
+            const gpu_v_sub = gpu_out_v[b * k_dim .. (b + 1) * k_dim];
+            for (gpu_k_sub, gpu_v_sub) |k, v| {
+                try std.testing.expectEqual(k, v);
+            }
+        }
+        std.debug.print("[parity] gemvQ4_K_FusedQK (batch={d}): max_diff_q = {e:.4}, max_diff_k = {e:.4}\n", .{ batch_size, max_diff_q, max_diff_k });
     }
 }
 
