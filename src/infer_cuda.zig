@@ -861,6 +861,8 @@ pub const CudaWorkspace = struct {
     }
 
     pub fn deinit(self: *CudaWorkspace) void {
+        // R39-01: Drain in-flight work on all referencing streams before releasing pinned staging memory
+        self.synchronize() catch {};
         if (self.graph1) |*g1| g1.deinit();
         if (self.graph0) |*g0| g0.deinit();
         self.allocator.free(self.host_norm_hidden);
@@ -1329,8 +1331,12 @@ pub fn runLayerCanvasCuda(
     ws.swapBuffers();
 }
 
-/// Transfers intermediate hidden state across GPU devices at partition boundary.
-/// Transfers intermediate hidden state across GPU devices at partition boundary with async P2P & event coordination (R22-02).
+/// Transfers intermediate hidden state across GPU devices at partition boundary with async P2P & event coordination (R22-02, R39-01).
+/// NOTE (R39-01 Lifetime Contract): When staging through pinned host memory, this function enqueues
+/// asynchronous D2H on src_stream, records a hardware synchronization event, orders dst_stream to
+/// wait on that event, and enqueues asynchronous H2D on dst_stream. The host buffer remains in-use
+/// by dst_stream until dst_stream is synchronized. Callers must drain active streams (via ws.synchronize())
+/// before modifying staging_buf or destroying the workspace.
 pub fn transferHiddenState(
     src_slice: DeviceSlice(f32),
     dst_slice: DeviceSlice(f32),
@@ -1401,6 +1407,9 @@ pub fn prefillPromptCuda(
     const P = prompt_tokens.len;
     if (P == 0) return;
     if (P > ws.dev0.max_seq_len or P > CudaDeviceWorkspace.max_cached_prompt_tokens) return error.InvalidParam;
+
+    // R39-01: Drain any pending stream operations before overwriting pinned host staging memory
+    try ws.synchronize();
 
     const host_emb = ws.host_staging_buf[0 .. P * ModelConfig.embedding_dim];
     const emb_scale: f32 = @sqrt(@as(f32, @floatFromInt(ModelConfig.embedding_dim)));
@@ -1555,6 +1564,9 @@ pub fn applyDeviceSelfConditioning(
     const intermediate_dim = ModelConfig.self_cond_intermediate_dim;
     const emb_scale: f32 = @sqrt(@as(f32, @floatFromInt(emb_dim)));
 
+    // R39-01: Drain any pending stream operations before overwriting pinned host staging memory
+    try ws.synchronize();
+
     // 1. Construct soft embedding on host staging buffer and copy to Device 0 sc_soft_emb
     const soft_emb = ws.host_staging_buf[0..emb_dim];
     @memset(soft_emb, 0.0);
@@ -1665,6 +1677,9 @@ pub fn executeStructuredReadCuda(
             ws.last_stage_timings.prompt_prefill_ms = 0.0;
             ws.last_stage_timings.prompt_cache_hit = true;
         }
+
+        // R39-01: Drain any pending stream operations before embedding canvas tokens into pinned host staging memory
+        try ws.synchronize();
 
         // Embed canvas tokens on host
         const host_emb = ws.host_staging_buf[0 .. C * ModelConfig.embedding_dim];
@@ -1857,6 +1872,8 @@ pub fn executeStructuredReadCuda(
                 }
 
                 // Boundary transfer H_15 to Device 1 (canvas length C)
+                // R39-01: Ensure streams are drained if subsequent execution fails
+                errdefer ws.synchronize() catch {};
                 try transferHiddenState(d0_out_slice, d1_in_slice, &ws.dev0.stream, &dev1.stream, ev_opt, ws.host_staging_buf, ws.peer_access_enabled);
 
                 // --- Partition 1 (Device 1, Layers 15..29 + Output RMSNorm) ---
@@ -1951,6 +1968,9 @@ pub fn executeStructuredReadCuda(
     // --- Uncached Fallback Execution Path (when enable_prompt_cache == false or P > max_prompt_tokens) ---
     ws.invalidatePromptCache();
     const answer_idx = P + answer_pos;
+
+    // R39-01: Drain any pending stream operations before overwriting pinned host staging memory
+    try ws.synchronize();
 
     // 1. Dual-region input embedding on host (takes ~0.05ms)
     const host_emb = ws.host_staging_buf[0 .. N * ModelConfig.embedding_dim];
@@ -2144,6 +2164,8 @@ pub fn executeStructuredReadCuda(
             }
 
             // Boundary transfer H_15 to Device 1
+            // R39-01: Ensure streams are drained if subsequent execution fails
+            errdefer ws.synchronize() catch {};
             try transferHiddenState(d0_out_slice, d1_in_slice, &ws.dev0.stream, &dev1.stream, ev_opt, ws.host_staging_buf, ws.peer_access_enabled);
 
             // --- Partition 1 (Device 1, Layers 15..29 + Output RMSNorm) ---

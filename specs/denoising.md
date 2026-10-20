@@ -602,18 +602,18 @@ Evaluated with `zeno benchmark models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf --cu
 
 ### 13.3 Floating-Point Atomic Repeatability & Parity Verification
 
-#### 13.3.1 Determinism Contract & Atomic Accumulation Repeatability (R38-03)
-Because floating-point addition is non-associative, threadblock arrival order in `atomicAdd` introduces minor run-to-run variation. To quantify this effect, 5 independent process executions were evaluated on `specs/fixtures/incident_severity_multiclass.json` (NVIDIA RTX 3060, Compute 8.6):
+#### 13.3.1 Empirical Repeatability Characterization & Near-Tie Boundary Condition (R38-03, R39-04)
+Because floating-point addition is non-associative, threadblock arrival order in `atomicAdd` introduces minor run-to-run variation. To quantify this effect, 5 independent process executions were evaluated on `specs/fixtures/incident_severity_multiclass.json` (NVIDIA RTX 3060, Compute 8.6, dual_gpu_split topology) using `models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf`:
 - **Discrete Decision Agreement**: **100.0%** (5/5 identical decision `'Medium'`).
 - **Uncertainty Flag Agreement**: **100.0%** (5/5 identical flag `false`).
 - **Classification Probability**: **$0.8157 \pm 0.0003$** (identical to 3 decimal places; max prob delta = 0.0003).
 - **Entropy (nats)**: **$0.6052 \pm 0.0007$** (max entropy delta = 0.0007).
 - **Raw Logit Drift**: Measured raw logits `[17.4413, 17.4420, 17.4420, 17.4420, 17.4439]`, with $\max - \min$ delta $= \mathbf{0.0026}$ ($0.015\%$ relative drift).
 
-**Zeno Determinism Contract (R38-03)**:
-- **Discrete Decision & Uncertainty**: Guaranteed bit-exact invariance across repeated runs under identical model weights, seed, and input parameters.
-- **Candidate Probability & Entropy**: Guaranteed tolerance-bounded repeatability within $|\Delta p| \le 0.001$ and $|\Delta H| \le 0.002$.
-- **Raw Logit Tolerance**: Subject to schedule-dependent IEEE-754 floating-point reduction jitter bounded to $|\Delta \text{logit}| \le 0.005$.
+**Empirical Repeatability Scope & Near-Tie Boundary Condition (R39-04)**:
+- **Scope of Measured Repeatability**: The observed bit-exact invariance of discrete decisions and bounded score repeatability ($|\Delta p| \le 0.0003$, $|\Delta H| \le 0.0007$) apply specifically to the tested fixture, model weights, seed, dual-GPU execution topology, and hardware. They are empirical measurements, not an absolute theoretical guarantee for all arbitrary inputs.
+- **Near-Tie Boundary Condition**: In the evaluated fixture, the margin between the top decision ('Medium' at $17.44$) and the second-place candidate ('Low' at $15.43$) is $\approx 2.01$, vastly exceeding the measured floating-point reduction jitter of $0.0026$. If an evaluation presents near-tied candidates where the logit margin is smaller than the reduction jitter ($|\Delta \text{margin}| \le 0.0026$), non-deterministic threadblock arrival order in `atomicAdd` could theoretically alter the discrete classification. Universal discrete determinism across all prompts cannot be asserted without exhaustive near-tie evaluation.
+- **Empirical Tolerance Bounds**: For non-tied inputs under this topology, raw logit drift across runs remains within $|\Delta \text{logit}| \le 0.005$.
 
 #### 13.3.2 Verification Summary
 - **Oracle Verification**: 5/5 golden test fixtures passed with 100% exact discrete decision matches (`./tools/verify_all_oracles.sh --cuda`).
@@ -650,9 +650,9 @@ Because floating-point addition is non-associative, threadblock arrival order in
      - Dispatches asynchronous H2D DMA from pinned memory into `dst_slice` on `dst_stream` via `dst_slice.copyFromHostAsync(stage, dst_stream)`.
      - Completely eliminates CPU blocking during the inter-GPU boundary transfer.
 
-### 14.2 Empirical Benchmark Progression Across Canvas Widths
+### 14.2 Preliminary End-to-End Benchmark Progression Across Canvas Widths (R39-03)
 
-Evaluated with `zeno benchmark models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf --cuda --samples 3 specs/fixtures/incident_severity_multiclass.json` on dual NVIDIA GeForce RTX 3060 12GB GPUs (Device 0: 11908 MB, Device 1: 11911 MB, Compute 8.6, `dual_gpu_split` topology; reporting median and full sample spread across $N=3$ post-warmup samples per canvas width):
+Evaluated with `zeno benchmark models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf --cuda --samples 3 specs/fixtures/incident_severity_multiclass.json` on dual NVIDIA GeForce RTX 3060 12GB GPUs (Device 0: 11908 MB, Device 1: 11911 MB, Compute 8.6, `dual_gpu_split` topology; reporting median and full sample spread across $N=3$ post-warmup samples per canvas width). Note that this benchmark measures the combined macro effect of WP1 and WP2 together:
 
 | Canvas C | Phase 12 Median (ms) | Phase 13 Median (ms) | Phase 14 Median (ms) | Phase 14 Spread (ms) | Net $\Delta$ vs Phase 13 | End-to-End Speedup vs C=256 |
 | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -662,15 +662,20 @@ Evaluated with `zeno benchmark models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf --cu
 | **128** | 912.67 ms | 922.85 ms | **924.28 ms** | 17.63 ms | +1.43 ms (+0.2%) | **2.05x** |
 | **256** | 1866.25 ms | 1887.15 ms | **1891.12 ms** | 28.84 ms | +3.97 ms (+0.2%) | **1.00x** |
 
+*(Note on Measurement Spread & Optimization Confounding, R39-03)*: 
+These end-to-end results are preliminary observations. At $C=64$, the sample spread of $39.53\text{ ms}$ significantly exceeds the observed median difference of $-8.44\text{ ms}$, reflecting run-to-run execution variance and thermal clock adjustments rather than an established steady-state gain. Additionally, because WP1 (shared-memory staging) and WP2 (pinned boundary DMA) were benchmarked as a combined pipeline, the macro timings do not isolate the individual contribution of each optimization. At $C=16$, performance is flat (+0.03 ms), while $C=128$ and $C=256$ show minor upward drift (+1.43 ms and +3.97 ms, within noise spread).
+
 ### 14.3 Empirical Research Findings: Analysis of Latency Bounds
 
 In accordance with `AGENTS.md` §7 Research Policy:
 
-1. **Activation Cache Locality vs Shared Memory Synchronization**:
-   - At canvas width $C=16$, the token input activation tensor is only $16 \times 2816 \times 4\text{ bytes} = 176\text{ KB}$.
-   - Because $176\text{ KB}$ fits comfortably within the Ampere RTX 3060's $3\text{ MB}$ L2 cache and each SM's $128\text{ KB}$ L1 data cache, activation reads in the baseline kernel were already resident in high-speed on-chip cache.
-   - Staging activations into shared memory replaces L1 cache hits with shared memory reads while introducing 11 `__syncthreads()` barrier synchronizations across the superblock loop. On Ampere SM 8.6, barrier convergence across 8 warps offsets the bandwidth savings from avoiding L1 reads, keeping $C=16$ execution latency flat at $134.5\text{ ms}$.
-   - At intermediate canvas widths ($C=32, 64$), where activation footprints increase ($352\text{ KB}$ to $704\text{ KB}$) and L1 cache pressure grows, shared-memory staging and boundary DMA yield consistent latency improvements ($-1.01\text{ ms}$ at $C=32$, $-8.44\text{ ms}$ at $C=64$).
+1. **Activation Footprint Arithmetic & Barrier Synchronization Cost (R39-02, R39-03)**:
+   - *Activation Footprint Correction*: At canvas width $C=16$, the token input activation tensor is $16 \times 2816 \times 4\text{ bytes} = 180,224\text{ bytes}$ ($180.2\text{ KB} = 176.0\text{ KiB}$). While this tensor comfortably fits within the RTX 3060's chip-wide $3\text{ MB}$ L2 cache ($180.2\text{ KB} \ll 3\text{ MB}$), it exceeds an individual SM's $128\text{ KB}$ L1 data cache ($180.2\text{ KB} > 128\text{ KB}$). Global activation reads in the baseline kernel were therefore largely served by the high-bandwidth L2 cache rather than fitting wholly in per-SM L1.
+   - *Barrier Accounting from Implementation*: In `moe_gemv_gate_up_geglu_sorted_kernel`, the inverted outer superblock loop introduces up to **22 `__syncthreads()` barrier synchronizations** per 4-token batch:
+     - **11 barriers** immediately after collaboratively loading `s_x[4][256]` via `float4` loads across the 256 threads in each superblock iteration $b \in [0, 11)$.
+     - **10 barriers** at `if (b + 1 < blocks_per_row) __syncthreads();` ensuring warps finish computing all 4 rows before the next superblock overwrites `s_x`.
+     - **1 barrier** at the end of the `m_base` loop ensuring all warps complete row reductions and output writes before the subsequent token batch begins staging.
+   - *Hypothesis on $C=16$ Latency Invariance*: Because activation reads already had high L2 hit rates in the baseline, the latency saved by avoiding redundant L2 reads appears to be offset by the warp stall overhead of 22 barrier synchronizations per CTA across 8 warps. Detailed hardware stall profiling via Nsight Compute is required to confirm warp issue states.
 
 2. **PCIe Boundary Transfer Overhead**:
    - Profiling of inter-GPU boundary transfer with pinned host memory measured `prompt_transfer_ms` at **$0.199\text{ ms}$** and canvas transfer at $< 0.05\text{ ms}$.
