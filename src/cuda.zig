@@ -91,8 +91,12 @@ pub const c = if (is_enabled) struct {
     // Memory & Stream ABI
     pub extern "c" fn zeno_cuda_malloc(out_ptr: *?*anyopaque, bytes: usize, device_id: c_int) c_int;
     pub extern "c" fn zeno_cuda_free(ptr: ?*anyopaque, device_id: c_int) c_int;
+    pub extern "c" fn zeno_cuda_host_alloc(out_ptr: *?*anyopaque, bytes: usize) c_int;
+    pub extern "c" fn zeno_cuda_host_free(ptr: ?*anyopaque) c_int;
     pub extern "c" fn zeno_cuda_memcpy_h2d(dst: ?*anyopaque, src: ?*const anyopaque, bytes: usize, device_id: c_int) c_int;
     pub extern "c" fn zeno_cuda_memcpy_d2h(dst: ?*anyopaque, src: ?*const anyopaque, bytes: usize, device_id: c_int) c_int;
+    pub extern "c" fn zeno_cuda_memcpy_h2d_async(dst: ?*anyopaque, src: ?*const anyopaque, bytes: usize, device_id: c_int, stream: ?*anyopaque) c_int;
+    pub extern "c" fn zeno_cuda_memcpy_d2h_async(dst: ?*anyopaque, src: ?*const anyopaque, bytes: usize, device_id: c_int, stream: ?*anyopaque) c_int;
     pub extern "c" fn zeno_cuda_memcpy_d2d(dst: ?*anyopaque, src: ?*const anyopaque, bytes: usize, device_id: c_int, stream: ?*anyopaque) c_int;
     pub extern "c" fn zeno_cuda_memset(dst: ?*anyopaque, value: c_int, bytes: usize, device_id: c_int) c_int;
     pub extern "c" fn zeno_cuda_stream_create(out_stream: *?*anyopaque, device_id: c_int) c_int;

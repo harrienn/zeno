@@ -253,6 +253,25 @@ int zeno_cuda_free(void *ptr, int device_id) {
     return restore_cuda_device(orig, op_rc);
 }
 
+int zeno_cuda_host_alloc(void **out_ptr, size_t bytes) {
+    if (!out_ptr) return ZENO_CUDA_ERR_INVALID_PARAM;
+    if (bytes == 0) {
+        *out_ptr = NULL;
+        return ZENO_CUDA_SUCCESS;
+    }
+    cudaError_t err = cudaHostAlloc(out_ptr, bytes, cudaHostAllocPortable);
+    if (err == cudaErrorMemoryAllocation) return ZENO_CUDA_ERR_OUT_OF_MEMORY;
+    if (err != cudaSuccess) return ZENO_CUDA_ERR_DRIVER_ERROR;
+    return ZENO_CUDA_SUCCESS;
+}
+
+int zeno_cuda_host_free(void *ptr) {
+    if (!ptr) return ZENO_CUDA_SUCCESS;
+    cudaError_t err = cudaFreeHost(ptr);
+    if (err != cudaSuccess) return ZENO_CUDA_ERR_DRIVER_ERROR;
+    return ZENO_CUDA_SUCCESS;
+}
+
 int zeno_cuda_memcpy_h2d(void *dst, const void *src, size_t bytes, int device_id) {
     if (bytes == 0) return ZENO_CUDA_SUCCESS;
     if (!dst || !src) return ZENO_CUDA_ERR_INVALID_PARAM;
@@ -276,6 +295,36 @@ int zeno_cuda_memcpy_d2h(void *dst, const void *src, size_t bytes, int device_id
     if (rc != ZENO_CUDA_SUCCESS) return rc;
 
     cudaError_t err = cudaMemcpy(dst, src, bytes, cudaMemcpyDeviceToHost);
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_COPY_FAILED : ZENO_CUDA_SUCCESS;
+
+    return restore_cuda_device(orig, op_rc);
+}
+
+int zeno_cuda_memcpy_h2d_async(void *dst, const void *src, size_t bytes, int device_id, void *stream) {
+    if (bytes == 0) return ZENO_CUDA_SUCCESS;
+    if (!dst || !src) return ZENO_CUDA_ERR_INVALID_PARAM;
+
+    int orig = 0;
+    int rc = set_cuda_device(device_id, &orig);
+    if (rc != ZENO_CUDA_SUCCESS) return rc;
+
+    cudaStream_t custream = (cudaStream_t)stream;
+    cudaError_t err = cudaMemcpyAsync(dst, src, bytes, cudaMemcpyHostToDevice, custream);
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_COPY_FAILED : ZENO_CUDA_SUCCESS;
+
+    return restore_cuda_device(orig, op_rc);
+}
+
+int zeno_cuda_memcpy_d2h_async(void *dst, const void *src, size_t bytes, int device_id, void *stream) {
+    if (bytes == 0) return ZENO_CUDA_SUCCESS;
+    if (!dst || !src) return ZENO_CUDA_ERR_INVALID_PARAM;
+
+    int orig = 0;
+    int rc = set_cuda_device(device_id, &orig);
+    if (rc != ZENO_CUDA_SUCCESS) return rc;
+
+    cudaStream_t custream = (cudaStream_t)stream;
+    cudaError_t err = cudaMemcpyAsync(dst, src, bytes, cudaMemcpyDeviceToHost, custream);
     int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_COPY_FAILED : ZENO_CUDA_SUCCESS;
 
     return restore_cuda_device(orig, op_rc);

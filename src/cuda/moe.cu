@@ -589,6 +589,7 @@ __global__ void moe_gemv_gate_up_sorted_kernel(
     }
 }
 
+__launch_bounds__(256, 3)
 __global__ void moe_gemv_gate_up_geglu_sorted_kernel(
     const uint8_t *__restrict__ all_expert_weights,
     const float *__restrict__ tokens_in,
@@ -601,12 +602,15 @@ __global__ void moe_gemv_gate_up_geglu_sorted_kernel(
     int blocks_per_row,
     size_t expert_bytes
 ) {
+    __shared__ alignas(16) float s_x[4][256];
+
     int exp_id = blockIdx.y;
     int count = expert_counts[exp_id];
     if (count <= 0) return;
 
-    int warp_id = threadIdx.x >> 5;
-    int lane_id = threadIdx.x & 31;
+    int tid = threadIdx.x;
+    int warp_id = tid >> 5;
+    int lane_id = tid & 31;
     int row_base = (blockIdx.x * 8 + warp_id) * 4;
     int offset = expert_offsets[exp_id];
 
@@ -632,20 +636,40 @@ __global__ void moe_gemv_gate_up_geglu_sorted_kernel(
             }
         }
 
-        #pragma unroll
-        for (int r = 0; r < 4; ++r) {
-            int row = row_base + r;
-            if (row >= half_dim) continue;
+        const BlockQ4_K *gate_base_w = exp_W + (size_t)row_base * blocks_per_row;
+        const BlockQ4_K *up_base_w   = exp_W + (size_t)(row_base + half_dim) * blocks_per_row;
+        float gate_thread_sum[4][4] = {0.0f};
+        float up_thread_sum[4][4] = {0.0f};
 
-            const BlockQ4_K *gate_row_w = exp_W + (size_t)row * blocks_per_row;
-            const BlockQ4_K *up_row_w = exp_W + (size_t)(row + half_dim) * blocks_per_row;
-            float gate_thread_sum[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-            float up_thread_sum[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        for (int b = 0; b < blocks_per_row; b++) {
+            size_t base_x = (size_t)b * 256;
 
-            for (int b = 0; b < blocks_per_row; b++) {
-                const BlockQ4_K *blk_gate = gate_row_w + b;
-                const BlockQ4_K *blk_up = up_row_w + b;
-                size_t base_x = (size_t)b * 256;
+            // Collaborative 128-bit float4 loading of s_x[4][256] across 256 threads (WP1)
+            int m_load = tid >> 6;
+            int elem = (tid & 63) * 4;
+            float4 loaded_val = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+            if (m_load < batch) {
+                switch (m_load) {
+                    case 0: loaded_val = *(const float4*)&tok_ptrs[0][base_x + elem]; break;
+                    case 1: loaded_val = *(const float4*)&tok_ptrs[1][base_x + elem]; break;
+                    case 2: loaded_val = *(const float4*)&tok_ptrs[2][base_x + elem]; break;
+                    case 3: loaded_val = *(const float4*)&tok_ptrs[3][base_x + elem]; break;
+                }
+            }
+            switch (m_load) {
+                case 0: *(float4*)&s_x[0][elem] = loaded_val; break;
+                case 1: *(float4*)&s_x[1][elem] = loaded_val; break;
+                case 2: *(float4*)&s_x[2][elem] = loaded_val; break;
+                case 3: *(float4*)&s_x[3][elem] = loaded_val; break;
+            }
+            __syncthreads();
+
+            #pragma unroll
+            for (int r = 0; r < 4; ++r) {
+                if (row_base + r >= half_dim) continue;
+
+                const BlockQ4_K *blk_gate = gate_base_w + (size_t)r * blocks_per_row + b;
+                const BlockQ4_K *blk_up   = up_base_w + (size_t)r * blocks_per_row + b;
 
                 float my_d_g, my_m_g;
                 precompute_q4k_scales(blk_gate, lane_id, &my_d_g, &my_m_g);
@@ -685,26 +709,36 @@ __global__ void moe_gemv_gate_up_geglu_sorted_kernel(
                     #pragma unroll
                     for (int m = 0; m < 4; ++m) {
                         if (m < batch) {
-                            float x1 = tok_ptrs[m][base_x + off1];
-                            float x2 = tok_ptrs[m][base_x + off2];
-                            gate_thread_sum[m] += w1_g * x1 + w2_g * x2;
-                            up_thread_sum[m]   += w1_u * x1 + w2_u * x2;
+                            float x1 = s_x[m][off1];
+                            float x2 = s_x[m][off2];
+                            gate_thread_sum[r][m] += w1_g * x1 + w2_g * x2;
+                            up_thread_sum[r][m]   += w1_u * x1 + w2_u * x2;
                         }
                     }
                 }
             }
 
+            if (b + 1 < blocks_per_row) {
+                __syncthreads();
+            }
+        }
+
+        #pragma unroll
+        for (int r = 0; r < 4; ++r) {
+            int row = row_base + r;
+            if (row >= half_dim) continue;
             #pragma unroll
             for (int m = 0; m < 4; ++m) {
                 if (m < batch) {
-                    float g = warp_reduce_sum(gate_thread_sum[m]);
-                    float u = warp_reduce_sum(up_thread_sum[m]);
+                    float g = warp_reduce_sum(gate_thread_sum[r][m]);
+                    float u = warp_reduce_sum(up_thread_sum[r][m]);
                     if (lane_id == 0) {
                         out_ptrs[m][row] = gelu_tanh_scalar(g) * u;
                     }
                 }
             }
         }
+        __syncthreads();
     }
 }
 

@@ -60,8 +60,12 @@ const char *zeno_cuda_get_error_string(int error_code);
 // Stage 2 Device Memory & Stream Functions
 int zeno_cuda_malloc(void **out_ptr, size_t bytes, int device_id);
 int zeno_cuda_free(void *ptr, int device_id);
+int zeno_cuda_host_alloc(void **out_ptr, size_t bytes);
+int zeno_cuda_host_free(void *ptr);
 int zeno_cuda_memcpy_h2d(void *dst, const void *src, size_t bytes, int device_id);
 int zeno_cuda_memcpy_d2h(void *dst, const void *src, size_t bytes, int device_id);
+int zeno_cuda_memcpy_h2d_async(void *dst, const void *src, size_t bytes, int device_id, void *stream);
+int zeno_cuda_memcpy_d2h_async(void *dst, const void *src, size_t bytes, int device_id, void *stream);
 int zeno_cuda_memcpy_d2d(void *dst, const void *src, size_t bytes, int device_id, void *stream);
 int zeno_cuda_memset(void *dst, int value, size_t bytes, int device_id);
 int zeno_cuda_stream_create(void **out_stream, int device_id);

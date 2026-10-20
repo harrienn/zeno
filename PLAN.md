@@ -335,12 +335,13 @@ Implement and validate the CPU representation of one denoising step.
 **Current objective:**
 
 ```text
-Prepare Phase 14 to address dense GEMV memory-bandwidth efficiency and host-staged partition transfer to break the sub-100ms decision canvas execution target.
+Evaluate holistic cross-layer kernel fusion and weight prefetching strategies in CUDA Phase 15 to reduce memory latency stalls towards sub-100ms canvas execution.
 ```
 
-This active objective builds upon completed Phase 13 MoE optimizations and empirical research findings:
-- WP1: Fused down-projection and direct scaled atomic accumulation (`moe_gemv_down_accum_sorted_kernel`), eliminating intermediate `exp_down_buf` round-trips (saving 86.5MB logical traffic/step at C=16) and reclaiming 92.28MB VRAM across dual GPUs.
-- WP2: Active-expert compaction in `moe_build_expert_bins_kernel` and empirical evaluation of persistent work-queue MoE kernels, demonstrating that static 2D sorted grid dispatch delivers superior performance compared to persistent queues (+2.2ms to +14.5ms speed advantage for sorted dispatch, attributed to a single expert's 2.23MB weights fitting within the 3MB L2 cache).
+This active objective builds upon completed Phase 14 optimizations and empirical research findings:
+- WP1: Shared-memory activation staging for MoE Gate/Up projection (`moe_gemv_gate_up_geglu_sorted_kernel`) using collaborative 128-bit `float4` loads into a 4KB tile, verified at 80 registers, 0 stack frame, 0 spills, and 50% theoretical occupancy.
+- WP2: Pinned host DMA memory allocation (`PinnedBuffer(T)` with `cudaHostAllocPortable`) and asynchronous stream coordination (`copyToHostAsync`, `record`, `waitEvent`, `copyFromHostAsync`) eliminating host CPU blocking during dual-GPU boundary transfer.
+- Empirical characterization established that small-batch activation memory ($176\text{ KB}$ at $C=16$) already hits on-chip L1/L2 caches, and PCIe boundary transfer overhead is $<0.2\text{ ms}$, demonstrating that weight streaming latency across 30 layers is the primary bound.
 - 100% discrete decision parity (5/5 golden oracle fixtures) and 15/15 HTTP API server integration tests verified.
 
 ---

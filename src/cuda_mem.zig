@@ -78,6 +78,28 @@ pub fn DeviceSlice(comptime T: type) type {
             if (rc != 0) return cuda.mapCudaErrorCode(rc);
         }
 
+        /// Phase 14 WP2: Asynchronous copy from pinned host slice to device slice.
+        pub fn copyFromHostAsync(self: Self, host_slice: []const T, stream: *const CudaStream) cuda.CudaError!void {
+            if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+            if (host_slice.len != self.len) return error.InvalidParam;
+            if (self.len == 0) return;
+            const dst = self.ptr orelse return error.InvalidParam;
+            const bytes = std.math.mul(usize, self.len, @sizeOf(T)) catch return error.InvalidParam;
+            const rc = cuda.c.zeno_cuda_memcpy_h2d_async(dst, host_slice.ptr, bytes, self.device_id, stream.handle);
+            if (rc != 0) return cuda.mapCudaErrorCode(rc);
+        }
+
+        /// Phase 14 WP2: Asynchronous copy from device slice to pinned host slice.
+        pub fn copyToHostAsync(self: Self, host_slice: []T, stream: *const CudaStream) cuda.CudaError!void {
+            if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+            if (host_slice.len != self.len) return error.InvalidParam;
+            if (self.len == 0) return;
+            const src = self.ptr orelse return error.InvalidParam;
+            const bytes = std.math.mul(usize, self.len, @sizeOf(T)) catch return error.InvalidParam;
+            const rc = cuda.c.zeno_cuda_memcpy_d2h_async(host_slice.ptr, src, bytes, self.device_id, stream.handle);
+            if (rc != 0) return cuda.mapCudaErrorCode(rc);
+        }
+
         /// Synchronous or stream-ordered copy from device slice to device slice.
         pub fn copyFromDevice(self: Self, src: DeviceSlice(T), stream: ?*const CudaStream) cuda.CudaError!void {
             if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
@@ -385,6 +407,79 @@ pub fn DeviceBuffer(comptime T: type) type {
                 .len = self.len,
                 .device_id = self.device_id,
             };
+        }
+    };
+}
+
+/// Phase 14 WP2: Page-locked (pinned) host memory buffer allocated via cudaHostAllocPortable.
+/// Enables zero-copy hardware DMA engine transfers over PCIe Gen4 without CPU bounce buffer overhead.
+pub fn PinnedBuffer(comptime T: type) type {
+    comptime {
+        const valid = switch (T) {
+            f32, f16, i32, u32, u8 => true,
+            else => false,
+        };
+        if (!valid or @sizeOf(T) == 0) {
+            @compileError("PinnedBuffer only supports non-zero-sized POD numeric types (f32, f16, i32, u32, u8)");
+        }
+    }
+
+    return struct {
+        const Self = @This();
+
+        pub const MAX_ALLOC_BYTES: usize = 16 * 1024 * 1024 * 1024;
+
+        ptr: ?[*]T,
+        len: usize,
+
+        pub fn init(count: usize) cuda.CudaError!Self {
+            if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+            if (count == 0) {
+                return .{
+                    .ptr = null,
+                    .len = 0,
+                };
+            }
+
+            const bytes = std.math.mul(usize, count, @sizeOf(T)) catch return error.InvalidParam;
+            if (bytes > MAX_ALLOC_BYTES) return error.InvalidParam;
+
+            var raw_ptr: ?*anyopaque = null;
+            const rc = cuda.c.zeno_cuda_host_alloc(&raw_ptr, bytes);
+            if (rc != 0) return cuda.mapCudaErrorCode(rc);
+
+            return .{
+                .ptr = @ptrCast(@alignCast(raw_ptr.?)),
+                .len = count,
+            };
+        }
+
+        pub fn move(self: *Self) Self {
+            const moved = Self{
+                .ptr = self.ptr,
+                .len = self.len,
+            };
+            self.ptr = null;
+            self.len = 0;
+            return moved;
+        }
+
+        pub fn deinit(self: *Self) void {
+            if (!cuda.is_enabled) return;
+            if (self.ptr) |p| {
+                self.ptr = null;
+                self.len = 0;
+                const rc = cuda.c.zeno_cuda_host_free(p);
+                if (rc != 0) {
+                    std.log.err("zeno_cuda_host_free failed with rc={d}", .{rc});
+                    std.debug.assert(rc == 0);
+                }
+            }
+        }
+
+        pub fn slice(self: Self) []T {
+            if (self.len == 0 or self.ptr == null) return &[_]T{};
+            return self.ptr.?[0..self.len];
         }
     };
 }

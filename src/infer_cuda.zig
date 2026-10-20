@@ -761,6 +761,7 @@ pub const CudaWorkspace = struct {
     dev0: CudaDeviceWorkspace,
     dev1: ?CudaDeviceWorkspace,
     boundary_event: ?cuda_mem.CudaEvent,
+    host_staging_pinned: cuda_mem.PinnedBuffer(f32),
     host_staging_buf: []f32,
     host_norm_hidden: []f32,
     peer_access_enabled: bool,
@@ -811,8 +812,8 @@ pub const CudaWorkspace = struct {
         }
         errdefer if (boundary_event) |*ev| ev.deinit();
 
-        const host_staging = try allocator.alloc(f32, max_seq_len * ModelConfig.embedding_dim);
-        errdefer allocator.free(host_staging);
+        var host_staging_pinned = try cuda_mem.PinnedBuffer(f32).init(max_seq_len * ModelConfig.embedding_dim);
+        errdefer host_staging_pinned.deinit();
 
         const host_norm = try allocator.alloc(f32, ModelConfig.embedding_dim);
         errdefer allocator.free(host_norm);
@@ -822,7 +823,8 @@ pub const CudaWorkspace = struct {
         ws_ptr.dev0 = dev0;
         ws_ptr.dev1 = dev1;
         ws_ptr.boundary_event = boundary_event;
-        ws_ptr.host_staging_buf = host_staging;
+        ws_ptr.host_staging_pinned = host_staging_pinned;
+        ws_ptr.host_staging_buf = host_staging_pinned.slice();
         ws_ptr.host_norm_hidden = host_norm;
         ws_ptr.peer_access_enabled = peer_access_enabled;
         ws_ptr.graph0 = null;
@@ -862,7 +864,7 @@ pub const CudaWorkspace = struct {
         if (self.graph1) |*g1| g1.deinit();
         if (self.graph0) |*g0| g0.deinit();
         self.allocator.free(self.host_norm_hidden);
-        self.allocator.free(self.host_staging_buf);
+        self.host_staging_pinned.deinit();
         if (self.boundary_event) |*ev| ev.deinit();
         if (self.dev1) |*d1| d1.deinit();
         self.dev0.deinit();
@@ -1369,16 +1371,24 @@ pub fn transferHiddenState(
     }
 
     // Fallback: Hardware topology does not support direct P2P DMA (e.g. GeForce RTX 3060 without NVLink).
-    // Staged through host memory; requires host stream synchronization.
+    // Staged through pinned host memory with asynchronous hardware DMA transfer over PCIe Gen4 (Phase 14 WP2).
     if (staging_buf.len < src_slice.len) return error.InvalidParam;
     const stage = staging_buf[0..src_slice.len];
-    try src_stream.synchronize();
-    const rc_d2h = cuda.c.zeno_cuda_memcpy_d2h(stage.ptr, src_slice.ptr, stage.len * @sizeOf(f32), src_slice.device_id);
-    if (rc_d2h != 0) return cuda.mapCudaErrorCode(rc_d2h);
 
-    const rc_h2d = cuda.c.zeno_cuda_memcpy_h2d(dst_slice.ptr, stage.ptr, stage.len * @sizeOf(f32), dst_slice.device_id);
-    if (rc_h2d != 0) return cuda.mapCudaErrorCode(rc_h2d);
-    try dst_stream.synchronize();
+    if (boundary_event) |ev| {
+        try src_slice.copyToHostAsync(stage, src_stream);
+        try ev.record(src_stream);
+        try dst_stream.waitEvent(ev);
+        try dst_slice.copyFromHostAsync(stage, dst_stream);
+    } else {
+        try src_stream.synchronize();
+        const rc_d2h = cuda.c.zeno_cuda_memcpy_d2h(stage.ptr, src_slice.ptr, stage.len * @sizeOf(f32), src_slice.device_id);
+        if (rc_d2h != 0) return cuda.mapCudaErrorCode(rc_d2h);
+
+        const rc_h2d = cuda.c.zeno_cuda_memcpy_h2d(dst_slice.ptr, stage.ptr, stage.len * @sizeOf(f32), dst_slice.device_id);
+        if (rc_h2d != 0) return cuda.mapCudaErrorCode(rc_h2d);
+        try dst_stream.synchronize();
+    }
 }
 
 /// Evaluates prompt tokens through all layers on device and populates prompt KV cache (Phase 7B).
@@ -2245,8 +2255,9 @@ test "transferHiddenState intra-device and cross-device parity" {
     defer allocator.free(host_src);
     const host_dst = try allocator.alloc(f32, count);
     defer allocator.free(host_dst);
-    const staging = try allocator.alloc(f32, count);
-    defer allocator.free(staging);
+    var staging_pinned = try cuda_mem.PinnedBuffer(f32).init(count);
+    defer staging_pinned.deinit();
+    const staging = staging_pinned.slice();
 
     for (host_src, 0..) |*v, i| {
         v.* = @as(f32, @floatFromInt(i % 1000)) * 0.1;
