@@ -1466,6 +1466,8 @@ pub fn moeBuildExpertBins(
     expert_offsets: DeviceSlice(i32),
     sorted_instances: DeviceSlice(i32),
     instance_to_sorted: DeviceSlice(i32),
+    active_experts: ?DeviceSlice(i32),
+    num_active_experts: ?DeviceSlice(i32),
     num_tokens: usize,
     stream: ?*const CudaStream,
 ) cuda.CudaError!void {
@@ -1484,6 +1486,12 @@ pub fn moeBuildExpertBins(
     {
         return error.DeviceMismatch;
     }
+    if (active_experts) |ae| {
+        if (ae.device_id != dev or ae.len < 128) return error.InvalidParam;
+    }
+    if (num_active_experts) |nae| {
+        if (nae.device_id != dev or nae.len < 1) return error.InvalidParam;
+    }
     if (stream) |s| {
         if (s.device_id != dev) return error.DeviceMismatch;
     }
@@ -1493,6 +1501,8 @@ pub fn moeBuildExpertBins(
     const off_ptr = expert_offsets.ptr orelse return error.InvalidParam;
     const sort_ptr = sorted_instances.ptr orelse return error.InvalidParam;
     const rev_ptr = instance_to_sorted.ptr orelse return error.InvalidParam;
+    const act_ptr = if (active_experts) |ae| ae.ptr else null;
+    const nae_ptr = if (num_active_experts) |nae| nae.ptr else null;
     const s_handle = if (stream) |s| s.handle else null;
 
     const rc = cuda.c.zeno_cuda_moe_build_expert_bins(
@@ -1501,6 +1511,8 @@ pub fn moeBuildExpertBins(
         @ptrCast(off_ptr),
         @ptrCast(sort_ptr),
         @ptrCast(rev_ptr),
+        @ptrCast(act_ptr),
+        @ptrCast(nae_ptr),
         @intCast(num_tokens),
         dev,
         s_handle,
@@ -1797,6 +1809,157 @@ pub fn moeGemvDownAccumSorted(
         @ptrCast(off_ptr),
         @ptrCast(sort_ptr),
         w_top_ptr,
+        accum_ptr,
+        @intCast(num_tokens),
+        @intCast(in_dim),
+        @intCast(out_dim),
+        dev,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
+/// Phase 13 WP2: Active-Expert Persistent MoE Gate+Up+GeGLU on GPU:
+/// Launches 84 persistent worker CTAs (matching 28 SMs x 3 CTAs/SM) pulling active expert row tiles dynamically
+/// from work_counter via atomicAdd. Eliminates ~60,000 empty Gate+Up CTA launches per canvas step.
+pub fn moeGemvGateUpGegluPersistent(
+    all_expert_weights: DeviceSlice(u8),
+    tokens_in: DeviceSlice(f32),
+    expert_counts: DeviceSlice(i32),
+    expert_offsets: DeviceSlice(i32),
+    sorted_instances: DeviceSlice(i32),
+    active_experts: DeviceSlice(i32),
+    num_active_experts: DeviceSlice(i32),
+    work_counter: DeviceSlice(i32),
+    out_act: DeviceSlice(f32),
+    num_tokens: usize,
+    in_dim: usize,
+    half_dim: usize,
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (num_tokens == 0 or in_dim == 0 or half_dim == 0 or in_dim % 256 != 0) return error.InvalidParam;
+    const dev = all_expert_weights.device_id;
+    if (tokens_in.device_id != dev or expert_counts.device_id != dev or
+        expert_offsets.device_id != dev or sorted_instances.device_id != dev or
+        active_experts.device_id != dev or num_active_experts.device_id != dev or
+        work_counter.device_id != dev or out_act.device_id != dev)
+    {
+        return error.DeviceMismatch;
+    }
+    if (stream) |s| {
+        if (s.device_id != dev) return error.DeviceMismatch;
+    }
+    const num_instances = std.math.mul(usize, num_tokens, 8) catch return error.InvalidParam;
+    const expected_out_len = std.math.mul(usize, num_instances, half_dim) catch return error.InvalidParam;
+    if (sorted_instances.len < num_instances or out_act.len < expected_out_len) {
+        return error.InvalidParam;
+    }
+    if (expert_counts.len < 128 or expert_offsets.len < 128 or active_experts.len < 128 or num_active_experts.len < 1 or work_counter.len < 1) {
+        return error.InvalidParam;
+    }
+
+    const w_ptr = all_expert_weights.ptr orelse return error.InvalidParam;
+    const tok_ptr = tokens_in.ptr orelse return error.InvalidParam;
+    const cnt_ptr = expert_counts.ptr orelse return error.InvalidParam;
+    const off_ptr = expert_offsets.ptr orelse return error.InvalidParam;
+    const sort_ptr = sorted_instances.ptr orelse return error.InvalidParam;
+    const act_ptr = active_experts.ptr orelse return error.InvalidParam;
+    const nae_ptr = num_active_experts.ptr orelse return error.InvalidParam;
+    const wc_ptr = work_counter.ptr orelse return error.InvalidParam;
+    const out_ptr = out_act.ptr orelse return error.InvalidParam;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_moe_gemv_gate_up_geglu_persistent(
+        w_ptr,
+        tok_ptr,
+        @ptrCast(cnt_ptr),
+        @ptrCast(off_ptr),
+        @ptrCast(sort_ptr),
+        @ptrCast(act_ptr),
+        @ptrCast(nae_ptr),
+        @ptrCast(wc_ptr),
+        out_ptr,
+        @intCast(num_tokens),
+        @intCast(in_dim),
+        @intCast(half_dim),
+        dev,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
+/// Phase 13 WP2: Active-Expert Persistent MoE Down-Projection & Accumulation on GPU:
+/// Launches 84 persistent worker CTAs (matching 28 SMs x 3 CTAs/SM) pulling active expert row tiles dynamically
+/// from work_counter via atomicAdd. Eliminates ~72,000 empty Down-Projection CTA launches per canvas step.
+pub fn moeGemvDownAccumPersistent(
+    all_expert_weights: DeviceSlice(u8),
+    expert_type: u32,
+    acts_in: DeviceSlice(f32),
+    expert_counts: DeviceSlice(i32),
+    expert_offsets: DeviceSlice(i32),
+    sorted_instances: DeviceSlice(i32),
+    top_weights: DeviceSlice(f32),
+    active_experts: DeviceSlice(i32),
+    num_active_experts: DeviceSlice(i32),
+    work_counter: DeviceSlice(i32),
+    moe_accum: DeviceSlice(f32),
+    num_tokens: usize,
+    in_dim: usize,
+    out_dim: usize,
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (num_tokens == 0 or in_dim == 0 or out_dim == 0) return error.InvalidParam;
+    const dev = all_expert_weights.device_id;
+    if (acts_in.device_id != dev or expert_counts.device_id != dev or
+        expert_offsets.device_id != dev or sorted_instances.device_id != dev or
+        top_weights.device_id != dev or active_experts.device_id != dev or
+        num_active_experts.device_id != dev or work_counter.device_id != dev or
+        moe_accum.device_id != dev)
+    {
+        return error.DeviceMismatch;
+    }
+    if (stream) |s| {
+        if (s.device_id != dev) return error.DeviceMismatch;
+    }
+    const num_instances = std.math.mul(usize, num_tokens, 8) catch return error.InvalidParam;
+    const expected_in_len = std.math.mul(usize, num_instances, in_dim) catch return error.InvalidParam;
+    const expected_accum_len = std.math.mul(usize, num_tokens, out_dim) catch return error.InvalidParam;
+    if (acts_in.len < expected_in_len or sorted_instances.len < num_instances or
+        top_weights.len < num_instances or moe_accum.len < expected_accum_len)
+    {
+        return error.InvalidParam;
+    }
+    if (expert_counts.len < 128 or expert_offsets.len < 128 or active_experts.len < 128 or
+        num_active_experts.len < 1 or work_counter.len < 1)
+    {
+        return error.InvalidParam;
+    }
+
+    const w_ptr = all_expert_weights.ptr orelse return error.InvalidParam;
+    const in_ptr = acts_in.ptr orelse return error.InvalidParam;
+    const cnt_ptr = expert_counts.ptr orelse return error.InvalidParam;
+    const off_ptr = expert_offsets.ptr orelse return error.InvalidParam;
+    const sort_ptr = sorted_instances.ptr orelse return error.InvalidParam;
+    const w_top_ptr = top_weights.ptr orelse return error.InvalidParam;
+    const act_ptr = active_experts.ptr orelse return error.InvalidParam;
+    const nae_ptr = num_active_experts.ptr orelse return error.InvalidParam;
+    const wc_ptr = work_counter.ptr orelse return error.InvalidParam;
+    const accum_ptr = moe_accum.ptr orelse return error.InvalidParam;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_moe_gemv_down_accum_persistent(
+        w_ptr,
+        @intCast(expert_type),
+        in_ptr,
+        @ptrCast(cnt_ptr),
+        @ptrCast(off_ptr),
+        @ptrCast(sort_ptr),
+        w_top_ptr,
+        @ptrCast(act_ptr),
+        @ptrCast(nae_ptr),
+        @ptrCast(wc_ptr),
         accum_ptr,
         @intCast(num_tokens),
         @intCast(in_dim),
@@ -3443,6 +3606,10 @@ test "CUDA Stage 7A token-sorted MoE binning and accumulation parity" {
     defer d_sorted_instances.deinit();
     var d_instance_to_sorted = try DeviceBuffer(i32).init(dev, num_instances);
     defer d_instance_to_sorted.deinit();
+    var d_active_experts = try DeviceBuffer(i32).init(dev, 128);
+    defer d_active_experts.deinit();
+    var d_num_active = try DeviceBuffer(i32).init(dev, 1);
+    defer d_num_active.deinit();
 
     try moeBuildExpertBins(
         d_top_indices.slice(),
@@ -3450,6 +3617,8 @@ test "CUDA Stage 7A token-sorted MoE binning and accumulation parity" {
         d_expert_offsets.slice(),
         d_sorted_instances.slice(),
         d_instance_to_sorted.slice(),
+        d_active_experts.slice(),
+        d_num_active.slice(),
         num_tokens,
         null,
     );
@@ -3470,10 +3639,24 @@ test "CUDA Stage 7A token-sorted MoE binning and accumulation parity" {
     defer allocator.free(gpu_inst_to_sort);
     try d_instance_to_sorted.copyToHost(gpu_inst_to_sort);
 
-    // 1. Verify histogram counts
+    const gpu_active_experts = try allocator.alloc(i32, 128);
+    defer allocator.free(gpu_active_experts);
+    try d_active_experts.copyToHost(gpu_active_experts);
+
+    const gpu_num_active = try allocator.alloc(i32, 1);
+    defer allocator.free(gpu_num_active);
+    try d_num_active.copyToHost(gpu_num_active);
+
+    // 1. Verify histogram counts & active-expert compaction (Phase 13 WP2)
+    var expected_active: usize = 0;
     for (0..128) |e| {
         try std.testing.expectEqual(cpu_counts[e], gpu_counts[e]);
+        if (cpu_counts[e] > 0) {
+            try std.testing.expectEqual(@as(i32, @intCast(e)), gpu_active_experts[expected_active]);
+            expected_active += 1;
+        }
     }
+    try std.testing.expectEqual(@as(i32, @intCast(expected_active)), gpu_num_active[0]);
 
     // 2. Verify bidirectional mapping consistency and expert groupings
     for (0..num_instances) |orig_i| {
@@ -4370,7 +4553,43 @@ test "CUDA Phase 13: moeGemvDownAccumSorted numerical parity with separate down 
         null,
     );
 
-    // 5. Compare outputs
+    // 5. Run persistent path: moeGemvDownAccumPersistent (Phase 13 WP2)
+    var d_active_exp = try DeviceBuffer(i32).init(dev, num_experts);
+    defer d_active_exp.deinit();
+    var host_active_exp: [num_experts]i32 = @splat(0);
+    @memcpy(host_active_exp[0..num_instances], host_sorted_inst[0..num_instances]);
+    try d_active_exp.copyFromHost(&host_active_exp);
+
+    var d_num_active = try DeviceBuffer(i32).init(dev, 1);
+    defer d_num_active.deinit();
+    const init_active = [_]i32{@intCast(num_instances)};
+    try d_num_active.copyFromHost(&init_active);
+
+    var d_work_counter = try DeviceBuffer(i32).init(dev, 1);
+    defer d_work_counter.deinit();
+
+    var d_accum_persistent = try DeviceBuffer(f32).init(dev, num_tokens * out_dim);
+    defer d_accum_persistent.deinit();
+
+    try moeGemvDownAccumPersistent(
+        d_w.slice(),
+        8, // Q8_0
+        d_acts.slice(),
+        d_counts.slice(),
+        d_offsets.slice(),
+        d_sorted_inst.slice(),
+        d_top_weights.slice(),
+        d_active_exp.slice(),
+        d_num_active.slice(),
+        d_work_counter.slice(),
+        d_accum_persistent.slice(),
+        num_tokens,
+        in_dim,
+        out_dim,
+        null,
+    );
+
+    // 6. Compare outputs
     const ref_host = try allocator.alloc(f32, num_tokens * out_dim);
     defer allocator.free(ref_host);
     try d_accum_ref.copyToHost(ref_host);
@@ -4379,12 +4598,21 @@ test "CUDA Phase 13: moeGemvDownAccumSorted numerical parity with separate down 
     defer allocator.free(fused_host);
     try d_accum_fused.copyToHost(fused_host);
 
+    const pers_host = try allocator.alloc(f32, num_tokens * out_dim);
+    defer allocator.free(pers_host);
+    try d_accum_persistent.copyToHost(pers_host);
+
     var max_diff: f32 = 0.0;
-    for (ref_host, fused_host) |r, f| {
+    var max_diff_pers: f32 = 0.0;
+    for (ref_host, fused_host, pers_host) |r, f, p| {
         const diff = @abs(r - f);
         if (diff > max_diff) max_diff = diff;
         try std.testing.expect(diff <= 1e-4 + 1e-4 * @abs(r));
+
+        const diff_p = @abs(r - p);
+        if (diff_p > max_diff_pers) max_diff_pers = diff_p;
+        try std.testing.expect(diff_p <= 1e-4 + 1e-4 * @abs(r));
     }
-    std.debug.print("[parity] moeGemvDownAccumSorted vs Separate: max_diff = {e:.4}\n", .{max_diff});
+    std.debug.print("[parity] moeGemvDownAccumSorted: max_diff = {e:.4} | moeGemvDownAccumPersistent: max_diff = {e:.4}\n", .{ max_diff, max_diff_pers });
 }
 

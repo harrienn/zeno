@@ -344,13 +344,15 @@ int zeno_cuda_moe_accumulate_scaled_batched(
     void *stream
 );
 
-// Stage 7 Token-Sorted Expert MoE Execution ABI (Phase 7A)
+// Stage 7 Token-Sorted Expert MoE Execution ABI (Phase 7A & Phase 13 WP2)
 int zeno_cuda_moe_build_expert_bins(
     const int *top_indices,
     int *expert_counts,
     int *expert_offsets,
     int *sorted_instances,
     int *instance_to_sorted,
+    int *active_experts,
+    int *num_active_experts,
     int num_tokens,
     int device_id,
     void *stream
@@ -418,6 +420,43 @@ int zeno_cuda_moe_gemv_down_accum_sorted(
     const int *expert_offsets,
     const int *sorted_instances,
     const float *top_weights,
+    float *moe_accum,
+    int num_tokens,
+    int in_dim,
+    int out_dim,
+    int device_id,
+    void *stream
+);
+
+// Phase 13 WP2: Active-Expert Persistent MoE Kernels
+int zeno_cuda_moe_gemv_gate_up_geglu_persistent(
+    const uint8_t *all_expert_weights,
+    const float *tokens_in,
+    const int *expert_counts,
+    const int *expert_offsets,
+    const int *sorted_instances,
+    const int *active_experts,
+    const int *num_active_experts,
+    int *work_counter,
+    float *out_act,
+    int num_tokens,
+    int in_dim,
+    int half_dim,
+    int device_id,
+    void *stream
+);
+
+int zeno_cuda_moe_gemv_down_accum_persistent(
+    const uint8_t *all_expert_weights,
+    int expert_type,
+    const float *acts_in,
+    const int *expert_counts,
+    const int *expert_offsets,
+    const int *sorted_instances,
+    const float *top_weights,
+    const int *active_experts,
+    const int *num_active_experts,
+    int *work_counter,
     float *moe_accum,
     int num_tokens,
     int in_dim,

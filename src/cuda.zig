@@ -373,13 +373,15 @@ pub const c = if (is_enabled) struct {
         stream: ?*anyopaque,
     ) c_int;
 
-    // Stage 7 Token-Sorted Expert MoE Execution ABI (Phase 7A)
+    // Stage 7 Token-Sorted Expert MoE Execution ABI (Phase 7A & Phase 13 WP2)
     pub extern "c" fn zeno_cuda_moe_build_expert_bins(
         top_indices: [*]const c_int,
         expert_counts: [*]c_int,
         expert_offsets: [*]c_int,
         sorted_instances: [*]c_int,
         instance_to_sorted: [*]c_int,
+        active_experts: ?[*]c_int,
+        num_active_experts: ?[*]c_int,
         num_tokens: c_int,
         device_id: c_int,
         stream: ?*anyopaque,
@@ -447,6 +449,43 @@ pub const c = if (is_enabled) struct {
         expert_offsets: [*]const c_int,
         sorted_instances: [*]const c_int,
         top_weights: [*]const f32,
+        moe_accum: [*]f32,
+        num_tokens: c_int,
+        in_dim: c_int,
+        out_dim: c_int,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
+
+    // Phase 13 WP2: Active-Expert Persistent MoE Kernels
+    pub extern "c" fn zeno_cuda_moe_gemv_gate_up_geglu_persistent(
+        all_expert_weights: [*]const u8,
+        tokens_in: [*]const f32,
+        expert_counts: [*]const c_int,
+        expert_offsets: [*]const c_int,
+        sorted_instances: [*]const c_int,
+        active_experts: [*]const c_int,
+        num_active_experts: [*]const c_int,
+        work_counter: [*]c_int,
+        out_act: [*]f32,
+        num_tokens: c_int,
+        in_dim: c_int,
+        half_dim: c_int,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
+
+    pub extern "c" fn zeno_cuda_moe_gemv_down_accum_persistent(
+        all_expert_weights: [*]const u8,
+        expert_type: c_int,
+        acts_in: [*]const f32,
+        expert_counts: [*]const c_int,
+        expert_offsets: [*]const c_int,
+        sorted_instances: [*]const c_int,
+        top_weights: [*]const f32,
+        active_experts: [*]const c_int,
+        num_active_experts: [*]const c_int,
+        work_counter: [*]c_int,
         moe_accum: [*]f32,
         num_tokens: c_int,
         in_dim: c_int,

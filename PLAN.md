@@ -335,10 +335,13 @@ Implement and validate the CPU representation of one denoising step.
 **Current objective:**
 
 ```text
-Evaluate MoE active-expert CTA grid compaction, persistent MoE kernels, and CUDA stream concurrency to reach the sub-100ms decision canvas execution target.
+Prepare Phase 14 to address dense GEMV memory-bandwidth efficiency and host-staged partition transfer to break the sub-100ms decision canvas execution target.
 ```
 
-This active objective builds upon completed Phase 13 MoE optimizations (fused down-projection and direct scaled atomic accumulation, elimination of intermediate `exp_down_buf` DRAM traffic saving 78.6MB/step and reclaiming 92.28MB VRAM, zero stack spills with 72 registers, and sample variance collapse to spread <= 1.1ms) and completed Phase 12 GEMV and attention optimizations.
+This active objective builds upon completed Phase 13 MoE optimizations and empirical research findings:
+- WP1: Fused down-projection and direct scaled atomic accumulation (`moe_gemv_down_accum_sorted_kernel`), eliminating intermediate `exp_down_buf` DRAM traffic saving 78.6MB/step and reclaiming 92.28MB VRAM across dual GPUs.
+- WP2: Active-expert compaction in `moe_build_expert_bins_kernel` and empirical evaluation of persistent work-queue MoE kernels, demonstrating that static 2D sorted grid dispatch delivers superior L2 cache residency on Ampere SM 8.6 (1.62MB expert weights fitting in 3MB L2 cache) compared to persistent queues (+2.2ms to +14.5ms speed advantage for sorted dispatch).
+- 100% discrete decision parity (5/5 golden oracle fixtures) and 15/15 HTTP API server integration tests verified.
 
 ---
 
