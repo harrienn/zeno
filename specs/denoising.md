@@ -476,15 +476,15 @@ To further compress decision canvas execution latency toward the sub-100ms miles
 
 Evaluated with `zeno benchmark` (3 samples per width post-warmup, reporting median latency on dual RTX 3060 GPUs):
 
-| Canvas C | Pre-Phase 10 Median (ms) | Phase 10 Median (ms) | Phase 11 Median (ms) | Phase 11 Spread (ms) | Net $\Delta$ vs Phase 10 | End-to-End Speedup vs C=256 |
+| Canvas C | Pre-Phase 10 Median (ms) | Phase 10 Median (ms) | Phase 11 Median (ms) | Phase 11 Range (max - min) | Net $\Delta$ vs Phase 10 | End-to-End Speedup vs C=256 |
 | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **16** | 183.37 ms | 146.27 ms | **139.88 ms** | $\pm 3.09$ ms | **-6.39 ms (-4.4%)** | **13.91x** |
-| **32** | 339.46 ms | 270.51 ms | **257.14 ms** | $\pm 3.02$ ms | **-13.37 ms (-4.9%)** | **7.57x** |
-| **64** | 680.64 ms | 514.46 ms | **489.00 ms** | $\pm 0.59$ ms | **-25.46 ms (-5.0%)** | **3.98x** |
-| **128** | 1398.24 ms | 1015.48 ms | **968.67 ms** | $\pm 21.18$ ms | **-46.81 ms (-4.6%)** | **2.01x** |
-| **256** | 2807.38 ms | 2059.53 ms | **1945.88 ms** | $\pm 5.07$ ms | **-113.65 ms (-5.5%)** | **1.00x** |
+| **16** | 183.37 ms | 146.27 ms | **139.88 ms** | 3.09 ms | **-6.39 ms (-4.4%)** | **13.91x** |
+| **32** | 339.46 ms | 270.51 ms | **257.14 ms** | 3.02 ms | **-13.37 ms (-4.9%)** | **7.57x** |
+| **64** | 680.64 ms | 514.46 ms | **489.00 ms** | 0.59 ms | **-25.46 ms (-5.0%)** | **3.98x** |
+| **128** | 1398.24 ms | 1015.48 ms | **968.67 ms** | 21.18 ms | **-46.81 ms (-4.6%)** | **2.01x** |
+| **256** | 2807.38 ms | 2059.53 ms | **1945.88 ms** | 5.07 ms | **-113.65 ms (-5.5%)** | **1.00x** |
 
-*(Note on Speedup Ratio Definition)*: End-to-End Speedup vs $C=256$ is defined as $\text{Median}(C=256) / \text{Median}(C)$, computed using the in-table Phase 11 reference latency of $1945.88\text{ ms}$ (yielding $1.00\text{x}$ for $C=256$ compared with itself). In raw CLI benchmark runner logs, speedup was reported against the separate pre-sweep baseline block ($1969.68\text{ ms} \pm 6.19\text{ ms}$), yielding $14.08\text{x}$ and $1.01\text{x}$ respectively.
+*(Note on Speedup Ratio Definition)*: End-to-End Speedup vs $C=256$ is defined as $\text{Median}(C=256) / \text{Median}(C)$, computed using the in-table Phase 11 reference latency of $1945.88\text{ ms}$ (yielding $1.00\text{x}$ for $C=256$ compared with itself). In raw CLI benchmark runner logs, speedup was reported against the separate pre-sweep baseline block ($1969.68\text{ ms}$, range $6.19\text{ ms}$), yielding $14.08\text{x}$ and $1.01\text{x}$ respectively. Range is computed as $\max - \min$ across $N=3$ samples by `calculateStats` in `src/main.zig`.
 
 ### 11.3 Parity Verification
 - **Oracle Verification**: 5/5 golden test fixtures passed with 100% exact discrete decision matches and verified local regression checks (`./tools/verify_all_oracles.sh --cuda`).
@@ -500,7 +500,7 @@ Evaluated with `zeno benchmark` (3 samples per width post-warmup, reporting medi
 1. **Work Package 1 (WP1) — Fused Attention Q+K GEMV Kernel (`gemv_q4k_fused_qk_16x_kernel`)**:
    - In both prefill and canvas execution, $Q$ and $K$ projections are executed across all 30 layers using `Q4_K` weights and identical input activation vectors (`nx_slice`).
    - Implemented `gemv_q4k_fused_qk_16x_kernel` launching a unified grid over `total_rows = q_dim + k_dim` (384 blocks for SWA layers where $Q=4096, K=2048$; 576 blocks for Global layers where $Q=8192, K=1024$).
-   - The 16 activation vectors are loaded into shared memory `s_x[16][256]` (16 KB) **once** per block, halving activation DRAM reads for $K$ projection across all 30 layers and eliminating 30 kernel dispatches per step.
+   - The fused kernel stages activations into shared memory `s_x[16][256]` (16 KB) per block across a single grid dispatch, eliminating 30 projection kernel launches per step (one per layer). Because each CTA computes 16 rows, the fused grid of 384 blocks matches the combined block count of the former separate Q (256 blocks) and K (128 blocks) grids; the optimization reduces host dispatch and driver overhead and improves CTA scheduling, while DRAM activation traffic is not claimed to be halved without hardware profiler counter evidence (R37-01).
    - For batch sizes not divisible by 16 (e.g. non-16 prompt lengths in prefill), the host launcher gracefully falls back to individual GEMV dispatches with exact numerical parity.
 
 2. **Work Package 2 (WP2) — Register Allocation & Occupancy Safety**:
@@ -511,21 +511,23 @@ Evaluated with `zeno benchmark` (3 samples per width post-warmup, reporting medi
    - In Global attention layers (layers 5, 11, 17, 23, 29), $V$ is mathematically tied to $K$ prior to head normalization and RoPE.
    - `gemv_q4k_fused_qk_16x_kernel` accepts an optional `out_v` pointer. When active on $K$ rows, the kernel simultaneously writes unnormalized outputs from registers into both `out_k` and `out_v`.
    - Bypasses intermediate `copyFromDevice` kernel dispatches while preserving distinct physical buffers for `out_k` (which undergoes per-head weighted norm and RoPE) and `out_v` (which undergoes unweighted RMSNorm and zero RoPE), ensuring 100% mathematical and numerical fidelity.
-   - Total attention projection kernel launches per canvas step drop from 84 launches to 55 launches (25 SWA $\times 2$ + 5 Global $\times 1$).
+   - Total attention projection kernel launches per canvas step drop from **85 launches to 55 launches** ($25 \times 3$ SWA + $5 \times 2$ Global = 85 before; $25 \times 2$ SWA + $5 \times 1$ Global = 55 after; R37-02). In addition, 5 separate device-to-device memory copies (`cudaMemcpyAsync`) formerly used to copy unnormalized K to V in Global layers are eliminated.
 
 ### 12.2 End-to-End Benchmark Progression Across Canvas Widths
 
 Evaluated with `zeno benchmark` (3 samples per width post-warmup, reporting median latency on dual RTX 3060 GPUs):
 
-| Canvas C | Phase 10 Median (ms) | Phase 11 Median (ms) | Phase 12 Median (ms) | Phase 12 Spread (ms) | Net $\Delta$ vs Phase 11 | End-to-End Speedup vs C=256 |
+| Canvas C | Phase 10 Median (ms) | Phase 11 Median (ms) | Phase 12 Median (ms) | Phase 12 Range (max - min) | Net $\Delta$ vs Phase 11 | End-to-End Speedup vs C=256 |
 | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **16** | 146.27 ms | 139.88 ms | **132.67 ms** | $\pm 2.49$ ms | **-7.21 ms (-5.2%)** | **14.07x** |
-| **32** | 270.51 ms | 257.14 ms | **251.52 ms** | $\pm 15.99$ ms | **-5.62 ms (-2.2%)** | **7.42x** |
-| **64** | 514.46 ms | 489.00 ms | **463.77 ms** | $\pm 45.91$ ms | **-25.23 ms (-5.2%)** | **4.02x** |
-| **128** | 1015.48 ms | 968.67 ms | **912.67 ms** | $\pm 2.53$ ms | **-56.00 ms (-5.8%)** | **2.04x** |
-| **256** | 2059.53 ms | 1945.88 ms | **1866.25 ms** | $\pm 12.63$ ms | **-79.63 ms (-4.1%)** | **1.00x** |
+| **16** | 146.27 ms | 139.88 ms | **132.67 ms** | 2.49 ms | **-7.21 ms (-5.2%)** | **14.07x** |
+| **32** | 270.51 ms | 257.14 ms | **251.52 ms** | 15.99 ms | **-5.62 ms (-2.2%)** | **7.42x** |
+| **64** | 514.46 ms | 489.00 ms | **463.77 ms** | 45.91 ms | **-25.23 ms (-5.2%)** | **4.02x** |
+| **128** | 1015.48 ms | 968.67 ms | **912.67 ms** | 2.53 ms | **-56.00 ms (-5.8%)** | **2.04x** |
+| **256** | 2059.53 ms | 1945.88 ms | **1866.25 ms** | 12.63 ms | **-79.63 ms (-4.1%)** | **1.00x** |
 
-*(Note on Speedup Ratio Definition)*: End-to-End Speedup vs $C=256$ is defined as $\text{Median}(C=256) / \text{Median}(C)$, computed using the in-table Phase 12 reference latency of $1866.25\text{ ms}$ (yielding $1.00\text{x}$ for $C=256$ compared with itself). In raw CLI benchmark runner logs, speedup was reported against the separate pre-sweep baseline block ($1889.51\text{ ms} \pm 2.54\text{ ms}$), yielding $14.24\text{x}$ and $1.01\text{x}$ respectively.
+*(Note on Speedup Ratio Definition)*: End-to-End Speedup vs $C=256$ is defined as $\text{Median}(C=256) / \text{Median}(C)$, computed using the in-table Phase 12 reference latency of $1866.25\text{ ms}$ (yielding $1.00\text{x}$ for $C=256$ compared with itself). In raw CLI benchmark runner logs, speedup was reported against the separate pre-sweep baseline block ($1889.51\text{ ms}$, range $2.54\text{ ms}$), yielding $14.24\text{x}$ and $1.01\text{x}$ respectively.
+
+*(Note on Sample Range & Measurement Variability)*: 'Range' is defined as the full sample range ($\max - \min$ across $N=3$ post-warmup samples), as computed by `calculateStats` in `src/main.zig`. At intermediate canvas widths ($C=32$ and $C=64$), the sample range ($15.99\text{ ms}$ and $45.91\text{ ms}$) exceeds the observed median difference ($\Delta = -5.62\text{ ms}$ and $-25.23\text{ ms}$); these intermediate gains are treated as preliminary indications rather than established steady-state values pending larger repeated sample sweeps (R37-03).
 
 ### 12.3 Parity Verification
 - **Oracle Verification**: 5/5 golden test fixtures passed with 100% exact discrete decision matches and verified local regression checks (`./tools/verify_all_oracles.sh --cuda`).
