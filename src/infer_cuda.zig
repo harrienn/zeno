@@ -526,9 +526,6 @@ pub const CudaDeviceWorkspace = struct {
     expert_offsets: DeviceBuffer(i32),
     sorted_instances: DeviceBuffer(i32),
     instance_to_sorted: DeviceBuffer(i32),
-    active_experts: DeviceBuffer(i32),
-    num_active_experts: DeviceBuffer(i32),
-    moe_work_counter: DeviceBuffer(i32),
     h2: DeviceBuffer(f32),
     ffn_comb: DeviceBuffer(f32),
     post_ffn: DeviceBuffer(f32),
@@ -615,12 +612,6 @@ pub const CudaDeviceWorkspace = struct {
         errdefer sorted_instances.deinit();
         var instance_to_sorted = try DeviceBuffer(i32).init(device_id, max_seq_len * 8);
         errdefer instance_to_sorted.deinit();
-        var active_experts = try DeviceBuffer(i32).init(device_id, 128);
-        errdefer active_experts.deinit();
-        var num_active_experts = try DeviceBuffer(i32).init(device_id, 1);
-        errdefer num_active_experts.deinit();
-        var moe_work_counter = try DeviceBuffer(i32).init(device_id, 1);
-        errdefer moe_work_counter.deinit();
         var h2 = try DeviceBuffer(f32).init(device_id, emb_size);
         errdefer h2.deinit();
         var ffn_comb = try DeviceBuffer(f32).init(device_id, emb_size);
@@ -673,9 +664,6 @@ pub const CudaDeviceWorkspace = struct {
             .expert_offsets = expert_offsets,
             .sorted_instances = sorted_instances,
             .instance_to_sorted = instance_to_sorted,
-            .active_experts = active_experts,
-            .num_active_experts = num_active_experts,
-            .moe_work_counter = moe_work_counter,
             .h2 = h2,
             .ffn_comb = ffn_comb,
             .post_ffn = post_ffn,
@@ -699,9 +687,6 @@ pub const CudaDeviceWorkspace = struct {
         self.post_ffn.deinit();
         self.ffn_comb.deinit();
         self.h2.deinit();
-        self.moe_work_counter.deinit();
-        self.num_active_experts.deinit();
-        self.active_experts.deinit();
         self.instance_to_sorted.deinit();
         self.sorted_instances.deinit();
         self.expert_offsets.deinit();
@@ -756,8 +741,7 @@ pub const CudaDeviceWorkspace = struct {
             (max_seq_len * 8 * @sizeOf(f32)) + // top_weights
             (max_seq_len * 8 * 1408 * @sizeOf(f32)) + // exp_gate_up_buf
             (max_seq_len * 8 * 704 * @sizeOf(f32)) + // exp_act_buf
-            (128 * @sizeOf(i32) * 3) + // expert_counts, expert_offsets, active_experts
-            (1 * @sizeOf(i32) * 2) + // num_active_experts, moe_work_counter
+            (128 * @sizeOf(i32) * 2) + // expert_counts, expert_offsets
             (max_seq_len * 8 * @sizeOf(i32) * 2) + // sorted_instances, instance_to_sorted
             (cache_total_floats * @sizeOf(f32) * 2) + // prompt_k_cache, prompt_v_cache (Phase 7B)
             (d_emb * @sizeOf(f32)) + // norm_hidden
@@ -1036,14 +1020,12 @@ pub fn runLayerCuda(
     const moe_in_slice = try ws.moe_in.slice().subslice(0, emb_elements);
     try cuda_mem.rmsNorm(x_mid, layer.pre_ffw_norm_2.slice(), moe_in_slice, num_tokens, ModelConfig.embedding_dim, 1e-6, stream);
 
-    // 9. Evaluate active MoE experts on device using persistent kernels (Phase 13 WP2)
+    // 9. Evaluate active MoE experts on device using token-sorted projections (Phase 7A & Phase 13 WP1)
     const num_instances = num_tokens * 8;
     const exp_counts_slice = try ws.expert_counts.slice().subslice(0, 128);
     const exp_offsets_slice = try ws.expert_offsets.slice().subslice(0, 128);
     const sorted_inst_slice = try ws.sorted_instances.slice().subslice(0, num_instances);
     const inst_to_sorted_slice = try ws.instance_to_sorted.slice().subslice(0, num_instances);
-    const active_exp_slice = ws.active_experts.slice();
-    const num_active_slice = ws.num_active_experts.slice();
 
     try cuda_mem.moeBuildExpertBins(
         top_idx_slice,
@@ -1051,8 +1033,8 @@ pub fn runLayerCuda(
         exp_offsets_slice,
         sorted_inst_slice,
         inst_to_sorted_slice,
-        active_exp_slice,
-        num_active_slice,
+        null,
+        null,
         num_tokens,
         stream,
     );
@@ -1265,14 +1247,12 @@ pub fn runLayerCanvasCuda(
     const moe_in_slice = try ws.moe_in.slice().subslice(0, emb_elements);
     try cuda_mem.rmsNorm(x_mid, layer.pre_ffw_norm_2.slice(), moe_in_slice, canvas_len, ModelConfig.embedding_dim, 1e-6, stream);
 
-    // 9. Evaluate active MoE experts on device using persistent kernels (Phase 13 WP2)
+    // 9. Evaluate active MoE experts on device using token-sorted projections (Phase 7A & Phase 13 WP1)
     const num_instances = canvas_len * 8;
     const exp_counts_slice = try ws.expert_counts.slice().subslice(0, 128);
     const exp_offsets_slice = try ws.expert_offsets.slice().subslice(0, 128);
     const sorted_inst_slice = try ws.sorted_instances.slice().subslice(0, num_instances);
     const inst_to_sorted_slice = try ws.instance_to_sorted.slice().subslice(0, num_instances);
-    const active_exp_slice = ws.active_experts.slice();
-    const num_active_slice = ws.num_active_experts.slice();
 
     try cuda_mem.moeBuildExpertBins(
         top_idx_slice,
@@ -1280,8 +1260,8 @@ pub fn runLayerCanvasCuda(
         exp_offsets_slice,
         sorted_inst_slice,
         inst_to_sorted_slice,
-        active_exp_slice,
-        num_active_slice,
+        null,
+        null,
         canvas_len,
         stream,
     );
@@ -2759,11 +2739,10 @@ test "executeStructuredReadCuda full 30-layer forward pass on local model if pre
 
 test "CudaDeviceWorkspace: activationWorkspaceBytes matches audited footprint (R24-01, R26-01, R26-04)" {
     const bytes_512 = CudaDeviceWorkspace.activationWorkspaceBytes(512);
-    // Audited exact byte sum for N=512: 416,525,064 bytes (~416.53 MB, 397.23 MiB)
+    // Audited exact byte sum for N=512: 416,524,544 bytes (~416.52 MB, 397.23 MiB)
     // Includes SWA-sized prompt KV prefix cache (k_dim=2048) and Phase 9 self-conditioning scratch buffers.
     // In Phase 13 WP1, intermediate exp_down_buf (46.14 MB for N=512) was eliminated via fused accumulation.
-    // In Phase 13 WP2, active_experts (512 B), num_active_experts (4 B), and moe_work_counter (4 B) were added.
-    try std.testing.expectEqual(@as(usize, 416525064), bytes_512);
+    try std.testing.expectEqual(@as(usize, 416524544), bytes_512);
 }
 
 test "CudaDeviceWorkspace: prompt KV cache stride isolates SWA layers with long prompt (R26-01)" {

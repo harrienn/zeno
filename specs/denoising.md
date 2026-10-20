@@ -555,10 +555,9 @@ Evaluated with `zeno benchmark` (3 samples per width post-warmup, reporting medi
 
 3. **Workspace Memory Compaction (WP3)**:
    - Completely eliminated `exp_down_buf` from `CudaDeviceWorkspace` in [`src/infer_cuda.zig`](file:///hdd/Projects/zeno/src/infer_cuda.zig).
-   - Added compact scratch buffers `active_experts` ($512\text{ B}$), `num_active_experts` ($4\text{ B}$), and `moe_work_counter` ($4\text{ B}$).
-   - Audited device activation workspace footprint for sequence length $N=512$ drops by **$46,136,824\text{ bytes}$ ($46.14\text{ MB}$)** per GPU workspace:
+   - Audited device activation workspace footprint for sequence length $N=512$ drops by **$46,137,344\text{ bytes}$ ($46.14\text{ MB}$)** per GPU workspace:
      - Former footprint: $462,661,888\text{ bytes}$ ($441.23\text{ MiB}$)
-     - Phase 13 footprint: **$416,525,064\text{ bytes}$ ($397.23\text{ MiB}$)**
+     - Phase 13 footprint: **$416,524,544\text{ bytes}$ ($397.23\text{ MiB}$)**
      - Total dual-GPU VRAM reclaimed: **$92.28\text{ MB}$**.
 
 4. **Occupancy & Register Budget Safety**:
@@ -605,5 +604,5 @@ In empirical evaluation across all canvas widths $C \in \{16, 32, 64, 128, 256\}
 - **Integration Test Suite**: 15/15 HTTP API server integration tests passed (`python3 tools/test_server.py --cuda`).
 - **CPU Test Isolation**: Zero CUDA dependencies in CPU reference tests (`zig build test -Dcuda=false`).
 - **Kernel Parity Unit Tests**: Both `moeGemvDownAccumSorted` ($\max |\Delta| = 3.05 \times 10^{-5}$) and `moeGemvDownAccumPersistent` ($\max |\Delta| = 6.10 \times 10^{-5}$) verified against separate down-projection and accumulation.
-- **Audited Activation Footprint**: Verified via `activationWorkspaceBytes(512) == 416,525,064` (reclaiming $92.28\text{ MB}$ across dual GPUs).
+- **Audited Activation Footprint**: Verified via `activationWorkspaceBytes(512) == 416,524,544` (reclaiming $92.28\text{ MB}$ across dual GPUs).
 
