@@ -750,9 +750,10 @@ pub const CudaDeviceWorkspace = struct {
     }
 };
 
-/// Public injection seams for testing CUDA Graph fallback paths (R24-05).
+/// Public injection seams for testing CUDA Graph fallback paths (R24-05, R40-01).
 pub var inject_graph_capture_failure: bool = false;
 pub var inject_graph_replay_failure: bool = false;
+pub var inject_graph1_replay_failure: bool = false;
 
 /// High-level multi-device execution workspace coordinating device workspaces and inter-device transfers.
 pub const CudaWorkspace = struct {
@@ -781,10 +782,18 @@ pub const CudaWorkspace = struct {
     last_canvas_ms: f32,
 
     pub fn synchronize(self: *CudaWorkspace) !void {
-        try self.dev0.stream.synchronize();
+        var err0: ?anyerror = null;
+        self.dev0.stream.synchronize() catch |err| {
+            err0 = err;
+        };
+        var err1: ?anyerror = null;
         if (self.dev1) |*d1| {
-            try d1.stream.synchronize();
+            d1.stream.synchronize() catch |err| {
+                err1 = err;
+            };
         }
+        if (err0) |e| return e;
+        if (err1) |e| return e;
     }
 
     pub fn init(allocator: std.mem.Allocator, topology: ExecutionTopology, devices: [2]i32, max_seq_len: usize) !*CudaWorkspace {
@@ -861,8 +870,15 @@ pub const CudaWorkspace = struct {
     }
 
     pub fn deinit(self: *CudaWorkspace) void {
-        // R39-01: Drain in-flight work on all referencing streams before releasing pinned staging memory
-        self.synchronize() catch {};
+        // R40-01: Independently drain each referencing device stream before releasing pinned staging memory
+        self.dev0.stream.synchronize() catch |err| {
+            std.log.err("CudaWorkspace.deinit: dev0 stream sync failed with {s}", .{@errorName(err)});
+        };
+        if (self.dev1) |*d1| {
+            d1.stream.synchronize() catch |err| {
+                std.log.err("CudaWorkspace.deinit: dev1 stream sync failed with {s}", .{@errorName(err)});
+            };
+        }
         if (self.graph1) |*g1| g1.deinit();
         if (self.graph0) |*g0| g0.deinit();
         self.allocator.free(self.host_norm_hidden);
@@ -1799,19 +1815,26 @@ pub fn executeStructuredReadCuda(
                     l0_ok = true;
                 } else |_| {}
 
+                var tr_ok = false;
                 if (l0_ok) {
-                    var tr_ok = false;
                     if (transferHiddenState(d0_out_slice, d1_in_slice, &ws.dev0.stream, &dev1.stream, ev_opt, ws.host_staging_buf, ws.peer_access_enabled)) |_| {
                         tr_ok = true;
                     } else |_| {}
 
                     if (tr_ok) {
-                        if (ws.graph1.?.launch(&dev1.stream)) |_| {
-                            replay_success = true;
-                        } else |_| {}
+                        if (!inject_graph1_replay_failure) {
+                            if (ws.graph1.?.launch(&dev1.stream)) |_| {
+                                replay_success = true;
+                            } else |_| {}
+                        }
                     }
                 }
                 if (!replay_success) {
+                    // R40-01: If boundary transfer was enqueued during graph replay,
+                    // drain both streams before eager fallback can reuse ws.host_staging_buf
+                    if (tr_ok) {
+                        ws.synchronize() catch {};
+                    }
                     if (ws.graph0) |*g0| {
                         g0.deinit();
                         ws.graph0 = null;
@@ -1824,6 +1847,8 @@ pub fn executeStructuredReadCuda(
             }
 
             if (!replay_success) {
+                // R40-01: Ensure all in-flight stream operations are drained before entering eager fallback
+                ws.synchronize() catch {};
                 if (ws.graph0) |*g0| {
                     g0.deinit();
                     ws.graph0 = null;
@@ -2091,19 +2116,26 @@ pub fn executeStructuredReadCuda(
                 l0_ok = true;
             } else |_| {}
 
+            var tr_ok = false;
             if (l0_ok) {
-                var tr_ok = false;
                 if (transferHiddenState(d0_out_slice, d1_in_slice, &ws.dev0.stream, &dev1.stream, ev_opt, ws.host_staging_buf, ws.peer_access_enabled)) |_| {
                     tr_ok = true;
                 } else |_| {}
 
                 if (tr_ok) {
-                    if (ws.graph1.?.launch(&dev1.stream)) |_| {
-                        replay_success = true;
-                    } else |_| {}
+                    if (!inject_graph1_replay_failure) {
+                        if (ws.graph1.?.launch(&dev1.stream)) |_| {
+                            replay_success = true;
+                        } else |_| {}
+                    }
                 }
             }
             if (!replay_success) {
+                // R40-01: If boundary transfer was enqueued during graph replay,
+                // drain both streams before eager fallback can reuse ws.host_staging_buf
+                if (tr_ok) {
+                    ws.synchronize() catch {};
+                }
                 if (ws.graph0) |*g0| {
                     g0.deinit();
                     ws.graph0 = null;
@@ -2116,6 +2148,8 @@ pub fn executeStructuredReadCuda(
         }
 
         if (!replay_success) {
+            // R40-01: Ensure all in-flight stream operations are drained before entering eager fallback
+            ws.synchronize() catch {};
             if (ws.graph0) |*g0| {
                 g0.deinit();
                 ws.graph0 = null;
@@ -2747,6 +2781,48 @@ test "executeStructuredReadCuda full 30-layer forward pass on local model if pre
         try std.testing.expectApproxEqAbs(cuda_raw[i], rep_fail_raw[i], 1e-4);
     }
 
+    // R40-01: Exercise injected Device 1 graph replay failure after transferHiddenState is enqueued
+    inject_graph_replay_failure = false;
+    // Re-establish valid cached graphs on both devices
+    try executeStructuredReadCuda(
+        ws,
+        cuda_model,
+        cpu_model,
+        &prompt_tokens,
+        canvas.tokens[0..canvas_len],
+        canvas.answer_pos,
+        &candidate_tokens,
+        null,
+        &cap_fail_raw,
+        &cap_fail_soft,
+    );
+    try std.testing.expect(ws.graph0 != null);
+    if (cuda_model.topology == .dual_gpu_split) {
+        try std.testing.expect(ws.graph1 != null);
+    }
+    // Inject failure on Device 1 replay specifically
+    inject_graph1_replay_failure = true;
+    defer inject_graph1_replay_failure = false;
+    var g1_rep_fail_raw: [2]f32 = undefined;
+    var g1_rep_fail_soft: [2]f32 = undefined;
+    try executeStructuredReadCuda(
+        ws,
+        cuda_model,
+        cpu_model,
+        &prompt_tokens,
+        canvas.tokens[0..canvas_len],
+        canvas.answer_pos,
+        &candidate_tokens,
+        null,
+        &g1_rep_fail_raw,
+        &g1_rep_fail_soft,
+    );
+    for (0..2) |i| {
+        try std.testing.expectApproxEqAbs(cuda_raw[i], g1_rep_fail_raw[i], 1e-4);
+        try std.testing.expectApproxEqAbs(cuda_softcapped[i], g1_rep_fail_soft[i], 1e-4);
+    }
+    inject_graph1_replay_failure = false;
+
     // Phase 7B Parity Test: Compare cached structured read against uncached full forward pass
     enable_prompt_cache = false;
     defer enable_prompt_cache = true;
@@ -2827,5 +2903,34 @@ test "CudaDeviceWorkspace: prompt KV cache stride isolates SWA layers with long 
     for (host_check_l1) |val| {
         try std.testing.expectEqual(@as(f32, 2.0), val);
     }
+}
+
+test "R40-01: CudaWorkspace independent stream synchronization and safe pinned memory deinit" {
+    if (!is_enabled) return error.SkipZigTest;
+    const allocator = std.testing.allocator;
+    const topo = cuda.getTopology() catch |err| switch (err) {
+        error.NoDevice => return error.SkipZigTest,
+        else => return err,
+    };
+    if (topo.reported_devices < 2) return error.SkipZigTest;
+
+    const devices = [2]i32{ topo.devices[0].device_id, topo.devices[1].device_id };
+    const ws = try CudaWorkspace.init(allocator, .dual_gpu_split, devices, 256);
+
+    // Verify independent synchronization on both streams succeeds
+    try ws.synchronize();
+
+    // Enqueue an async boundary transfer between Dev 0 and Dev 1 into pinned memory
+    const count: usize = 2816;
+    var buf_src0 = try DeviceBuffer(f32).init(devices[0], count);
+    defer buf_src0.deinit();
+    var buf_dst1 = try DeviceBuffer(f32).init(devices[1], count);
+    defer buf_dst1.deinit();
+
+    const ev = ws.boundary_event orelse return error.InvalidParam;
+    try transferHiddenState(buf_src0.slice(), buf_dst1.slice(), &ws.dev0.stream, &ws.dev1.?.stream, &ev, ws.host_staging_buf, ws.peer_access_enabled);
+
+    // Verify that workspace deinit successfully drains active transfers on both streams without memory corruption
+    ws.deinit();
 }
 
