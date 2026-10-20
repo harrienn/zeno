@@ -750,10 +750,46 @@ pub const CudaDeviceWorkspace = struct {
     }
 };
 
-/// Public injection seams for testing CUDA Graph fallback paths (R24-05, R40-01).
+/// Public injection seams for testing CUDA Graph fallback paths (R24-05, R40-01, R41-01).
 pub var inject_graph_capture_failure: bool = false;
 pub var inject_graph_replay_failure: bool = false;
 pub var inject_graph1_replay_failure: bool = false;
+pub var inject_stream_sync_failure: bool = false;
+pub var inject_dev0_sync_failure: bool = false;
+pub var inject_dev1_sync_failure: bool = false;
+
+/// Teardown safety policy: quarantined pinned staging allocations retained when stream
+/// synchronization fails during workspace deinitialization.
+pub const QuarantinedPinnedBuffer = struct {
+    ptr: [*]f32,
+    len: usize,
+};
+pub const MAX_QUARANTINED_BUFFERS: usize = 16;
+pub var quarantined_buffers: [MAX_QUARANTINED_BUFFERS]?QuarantinedPinnedBuffer = @splat(null);
+pub var quarantined_buffers_count: usize = 0;
+
+pub fn quarantinePinnedBuffer(buf: *cuda_mem.PinnedBuffer(f32)) void {
+    if (buf.ptr) |p| {
+        if (quarantined_buffers_count < MAX_QUARANTINED_BUFFERS) {
+            quarantined_buffers[quarantined_buffers_count] = .{
+                .ptr = p,
+                .len = buf.len,
+            };
+        }
+        quarantined_buffers_count += 1;
+        _ = buf.move();
+    }
+}
+
+pub fn drainQuarantinedPinnedBuffers() void {
+    if (!cuda.is_enabled) return;
+    for (&quarantined_buffers) |*slot| {
+        if (slot.*) |q| {
+            _ = cuda.c.zeno_cuda_host_free(q.ptr);
+            slot.* = null;
+        }
+    }
+}
 
 /// High-level multi-device execution workspace coordinating device workspaces and inter-device transfers.
 pub const CudaWorkspace = struct {
@@ -782,15 +818,24 @@ pub const CudaWorkspace = struct {
     last_canvas_ms: f32,
 
     pub fn synchronize(self: *CudaWorkspace) !void {
+        if (inject_stream_sync_failure) return error.StreamSyncFailed;
         var err0: ?anyerror = null;
-        self.dev0.stream.synchronize() catch |err| {
-            err0 = err;
-        };
+        if (inject_dev0_sync_failure) {
+            err0 = error.StreamSyncFailed;
+        } else {
+            self.dev0.stream.synchronize() catch |err| {
+                err0 = err;
+            };
+        }
         var err1: ?anyerror = null;
         if (self.dev1) |*d1| {
-            d1.stream.synchronize() catch |err| {
-                err1 = err;
-            };
+            if (inject_dev1_sync_failure) {
+                err1 = error.StreamSyncFailed;
+            } else {
+                d1.stream.synchronize() catch |err| {
+                    err1 = err;
+                };
+            }
         }
         if (err0) |e| return e;
         if (err1) |e| return e;
@@ -870,19 +915,30 @@ pub const CudaWorkspace = struct {
     }
 
     pub fn deinit(self: *CudaWorkspace) void {
-        // R40-01: Independently drain each referencing device stream before releasing pinned staging memory
-        self.dev0.stream.synchronize() catch |err| {
-            std.log.err("CudaWorkspace.deinit: dev0 stream sync failed with {s}", .{@errorName(err)});
-        };
-        if (self.dev1) |*d1| {
-            d1.stream.synchronize() catch |err| {
-                std.log.err("CudaWorkspace.deinit: dev1 stream sync failed with {s}", .{@errorName(err)});
-            };
+        // R40-01 / R41-01: Independently drain each referencing device stream before teardown
+        var sync_failed = false;
+        if (self.synchronize()) |_| {} else |err| {
+            sync_failed = true;
+            std.log.warn("CudaWorkspace.deinit: stream synchronization failed with {s}", .{@errorName(err)});
         }
         if (self.graph1) |*g1| g1.deinit();
         if (self.graph0) |*g0| g0.deinit();
         self.allocator.free(self.host_norm_hidden);
-        self.host_staging_pinned.deinit();
+
+        // R41-01: Explicit teardown policy for failed stream synchronization:
+        // Freeing pinned host memory while GPU DMA may still be in flight risks host memory corruption.
+        // If stream synchronization could not be verified on all referencing streams, quarantine
+        // the pinned allocation (retain the allocation without calling cudaFreeHost).
+        if (!sync_failed) {
+            self.host_staging_pinned.deinit();
+        } else {
+            std.log.warn("CudaWorkspace.deinit: quarantining host_staging_pinned ({*} len={d}) due to failed stream synchronization", .{
+                self.host_staging_pinned.ptr,
+                self.host_staging_pinned.len,
+            });
+            quarantinePinnedBuffer(&self.host_staging_pinned);
+        }
+
         if (self.boundary_event) |*ev| ev.deinit();
         if (self.dev1) |*d1| d1.deinit();
         self.dev0.deinit();
@@ -1737,6 +1793,10 @@ pub fn executeStructuredReadCuda(
                         g0.deinit();
                         ws.graph0 = null;
                     }
+                    ws.cached_graph_prompt_len = 0;
+                    ws.cached_graph_canvas_len = 0;
+                    ws.cached_graph_answer_pos = 0;
+                    try ws.dev0.stream.synchronize();
                 }
             }
 
@@ -1830,11 +1890,6 @@ pub fn executeStructuredReadCuda(
                     }
                 }
                 if (!replay_success) {
-                    // R40-01: If boundary transfer was enqueued during graph replay,
-                    // drain both streams before eager fallback can reuse ws.host_staging_buf
-                    if (tr_ok) {
-                        ws.synchronize() catch {};
-                    }
                     if (ws.graph0) |*g0| {
                         g0.deinit();
                         ws.graph0 = null;
@@ -1843,21 +1898,18 @@ pub fn executeStructuredReadCuda(
                         g1.deinit();
                         ws.graph1 = null;
                     }
+                    ws.cached_graph_prompt_len = 0;
+                    ws.cached_graph_canvas_len = 0;
+                    ws.cached_graph_answer_pos = 0;
+
+                    // R40-01 / R41-01: Drain all referencing device streams before entering eager fallback.
+                    // If stream synchronization fails, stop immediately to prevent unsafe reuse
+                    // of host_staging_buf while asynchronous transfers may still be pending.
+                    try ws.synchronize();
                 }
             }
 
             if (!replay_success) {
-                // R40-01: Ensure all in-flight stream operations are drained before entering eager fallback
-                ws.synchronize() catch {};
-                if (ws.graph0) |*g0| {
-                    g0.deinit();
-                    ws.graph0 = null;
-                }
-                if (ws.graph1) |*g1| {
-                    g1.deinit();
-                    ws.graph1 = null;
-                }
-
                 // --- Partition 0 (Device 0, Layers 0..14) ---
                 var g0_instantiated = false;
                 var capture0_ok = false;
@@ -2046,6 +2098,10 @@ pub fn executeStructuredReadCuda(
                     g0.deinit();
                     ws.graph0 = null;
                 }
+                ws.cached_graph_prompt_len = 0;
+                ws.cached_graph_canvas_len = 0;
+                ws.cached_graph_answer_pos = 0;
+                try ws.dev0.stream.synchronize();
             }
         }
 
@@ -2131,11 +2187,6 @@ pub fn executeStructuredReadCuda(
                 }
             }
             if (!replay_success) {
-                // R40-01: If boundary transfer was enqueued during graph replay,
-                // drain both streams before eager fallback can reuse ws.host_staging_buf
-                if (tr_ok) {
-                    ws.synchronize() catch {};
-                }
                 if (ws.graph0) |*g0| {
                     g0.deinit();
                     ws.graph0 = null;
@@ -2144,21 +2195,18 @@ pub fn executeStructuredReadCuda(
                     g1.deinit();
                     ws.graph1 = null;
                 }
+                ws.cached_graph_prompt_len = 0;
+                ws.cached_graph_canvas_len = 0;
+                ws.cached_graph_answer_pos = 0;
+
+                // R40-01 / R41-01: Drain all referencing device streams before entering eager fallback.
+                // If stream synchronization fails, stop immediately to prevent unsafe reuse
+                // of host_staging_buf while asynchronous transfers may still be pending.
+                try ws.synchronize();
             }
         }
 
         if (!replay_success) {
-            // R40-01: Ensure all in-flight stream operations are drained before entering eager fallback
-            ws.synchronize() catch {};
-            if (ws.graph0) |*g0| {
-                g0.deinit();
-                ws.graph0 = null;
-            }
-            if (ws.graph1) |*g1| {
-                g1.deinit();
-                ws.graph1 = null;
-            }
-
             // --- Partition 0 (Device 0, Layers 0..14) ---
             var capture0_ok = false;
             if (cuda_mem.CudaGraph.beginCapture(&ws.dev0.stream)) |_| {
@@ -2823,6 +2871,48 @@ test "executeStructuredReadCuda full 30-layer forward pass on local model if pre
     }
     inject_graph1_replay_failure = false;
 
+    // R41-01: Exercise injected Device 1 graph replay failure combined with stream synchronization failure
+    // Re-establish valid cached graphs on both devices
+    try executeStructuredReadCuda(
+        ws,
+        cuda_model,
+        cpu_model,
+        &prompt_tokens,
+        canvas.tokens[0..canvas_len],
+        canvas.answer_pos,
+        &candidate_tokens,
+        null,
+        &cap_fail_raw,
+        &cap_fail_soft,
+    );
+    try std.testing.expect(ws.graph0 != null);
+    if (cuda_model.topology == .dual_gpu_split) {
+        try std.testing.expect(ws.graph1 != null);
+        inject_graph1_replay_failure = true;
+        inject_stream_sync_failure = true;
+        defer {
+            inject_graph1_replay_failure = false;
+            inject_stream_sync_failure = false;
+        }
+        var sync_fail_raw: [2]f32 = undefined;
+        var sync_fail_soft: [2]f32 = undefined;
+        const res = executeStructuredReadCuda(
+            ws,
+            cuda_model,
+            cpu_model,
+            &prompt_tokens,
+            canvas.tokens[0..canvas_len],
+            canvas.answer_pos,
+            &candidate_tokens,
+            null,
+            &sync_fail_raw,
+            &sync_fail_soft,
+        );
+        try std.testing.expectError(error.StreamSyncFailed, res);
+        inject_graph1_replay_failure = false;
+        inject_stream_sync_failure = false;
+    }
+
     // Phase 7B Parity Test: Compare cached structured read against uncached full forward pass
     enable_prompt_cache = false;
     defer enable_prompt_cache = true;
@@ -2932,5 +3022,41 @@ test "R40-01: CudaWorkspace independent stream synchronization and safe pinned m
 
     // Verify that workspace deinit successfully drains active transfers on both streams without memory corruption
     ws.deinit();
+}
+
+test "R41-01: CudaWorkspace quarantine policy and failed stream synchronization" {
+    if (!is_enabled) return error.SkipZigTest;
+    const allocator = std.testing.allocator;
+    const topo = cuda.getTopology() catch |err| switch (err) {
+        error.NoDevice => return error.SkipZigTest,
+        else => return err,
+    };
+    if (topo.reported_devices < 2) return error.SkipZigTest;
+
+    const devices = [2]i32{ topo.devices[0].device_id, topo.devices[1].device_id };
+
+    // Test 1: Injected Device 0 sync failure causes synchronize() to fail
+    {
+        const ws = try CudaWorkspace.init(allocator, .dual_gpu_split, devices, 256);
+        inject_dev0_sync_failure = true;
+        defer inject_dev0_sync_failure = false;
+        try std.testing.expectError(error.StreamSyncFailed, ws.synchronize());
+        inject_dev0_sync_failure = false;
+        ws.deinit();
+    }
+
+    // Test 2: Injected Device 1 sync failure during deinit triggers quarantine policy
+    {
+        const ws = try CudaWorkspace.init(allocator, .dual_gpu_split, devices, 256);
+        const prev_quarantine_count = quarantined_buffers_count;
+
+        inject_dev1_sync_failure = true;
+        defer inject_dev1_sync_failure = false;
+        ws.deinit();
+        inject_dev1_sync_failure = false;
+
+        try std.testing.expectEqual(prev_quarantine_count + 1, quarantined_buffers_count);
+        drainQuarantinedPinnedBuffers();
+    }
 }
 
