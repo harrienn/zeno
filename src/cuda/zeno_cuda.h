@@ -410,6 +410,22 @@ int zeno_cuda_moe_accumulate_scaled_sorted(
     void *stream
 );
 
+int zeno_cuda_moe_gemv_down_accum_sorted(
+    const uint8_t *all_expert_weights,
+    int expert_type,
+    const float *acts_in,
+    const int *expert_counts,
+    const int *expert_offsets,
+    const int *sorted_instances,
+    const float *top_weights,
+    float *moe_accum,
+    int num_tokens,
+    int in_dim,
+    int out_dim,
+    int device_id,
+    void *stream
+);
+
 #ifdef __cplusplus
 }
 #endif

@@ -1739,6 +1739,74 @@ pub fn moeAccumulateScaledSorted(
     if (rc != 0) return cuda.mapCudaErrorCode(rc);
 }
 
+/// Phase 13: Fused MoE down-projection and scaled accumulation directly into moe_accum.
+/// Eliminates intermediate exp_down_buf (saving ~78.6 MB DRAM writes/reads per canvas step)
+/// and saves 30 kernel launch dispatches per step.
+pub fn moeGemvDownAccumSorted(
+    all_expert_weights: DeviceSlice(u8),
+    expert_type: u32,
+    acts_in: DeviceSlice(f32),
+    expert_counts: DeviceSlice(i32),
+    expert_offsets: DeviceSlice(i32),
+    sorted_instances: DeviceSlice(i32),
+    top_weights: DeviceSlice(f32),
+    moe_accum: DeviceSlice(f32),
+    num_tokens: usize,
+    in_dim: usize,
+    out_dim: usize,
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (num_tokens == 0 or in_dim == 0 or out_dim == 0) return error.InvalidParam;
+    const dev = all_expert_weights.device_id;
+    if (acts_in.device_id != dev or expert_counts.device_id != dev or
+        expert_offsets.device_id != dev or sorted_instances.device_id != dev or
+        top_weights.device_id != dev or moe_accum.device_id != dev)
+    {
+        return error.DeviceMismatch;
+    }
+    if (stream) |s| {
+        if (s.device_id != dev) return error.DeviceMismatch;
+    }
+    const num_instances = std.math.mul(usize, num_tokens, 8) catch return error.InvalidParam;
+    const expected_in_len = std.math.mul(usize, num_instances, in_dim) catch return error.InvalidParam;
+    const expected_accum_len = std.math.mul(usize, num_tokens, out_dim) catch return error.InvalidParam;
+    if (acts_in.len < expected_in_len or sorted_instances.len < num_instances or
+        top_weights.len < num_instances or moe_accum.len < expected_accum_len)
+    {
+        return error.InvalidParam;
+    }
+    if (expert_counts.len < 128 or expert_offsets.len < 128) {
+        return error.InvalidParam;
+    }
+
+    const w_ptr = all_expert_weights.ptr orelse return error.InvalidParam;
+    const in_ptr = acts_in.ptr orelse return error.InvalidParam;
+    const cnt_ptr = expert_counts.ptr orelse return error.InvalidParam;
+    const off_ptr = expert_offsets.ptr orelse return error.InvalidParam;
+    const sort_ptr = sorted_instances.ptr orelse return error.InvalidParam;
+    const w_top_ptr = top_weights.ptr orelse return error.InvalidParam;
+    const accum_ptr = moe_accum.ptr orelse return error.InvalidParam;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_moe_gemv_down_accum_sorted(
+        w_ptr,
+        @intCast(expert_type),
+        in_ptr,
+        @ptrCast(cnt_ptr),
+        @ptrCast(off_ptr),
+        @ptrCast(sort_ptr),
+        w_top_ptr,
+        accum_ptr,
+        @intCast(num_tokens),
+        @intCast(in_dim),
+        @intCast(out_dim),
+        dev,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
 // ---------------------------------------------------------------------------
 // Unit Tests & Numerical Parity Verification
 // ---------------------------------------------------------------------------
@@ -4159,5 +4227,164 @@ test "CUDA gemvQ4_K_FusedQK numerical parity with CPU reference" {
         }
         std.debug.print("[parity] gemvQ4_K_FusedQK (batch={d}): max_diff_q = {e:.4}, max_diff_k = {e:.4}\n", .{ batch_size, max_diff_q, max_diff_k });
     }
+}
+
+test "CUDA Phase 13: moeGemvDownAccumSorted numerical parity with separate down + accumulate" {
+    if (!cuda.is_enabled) return;
+    const dev = requireHardwareDevice() catch |err| switch (err) {
+        error.SkipZigTest => return,
+        else => return err,
+    };
+
+    const allocator = std.testing.allocator;
+    var prng = std.Random.DefaultPrng.init(0x131313);
+    const rand = prng.random();
+
+    const num_tokens: usize = 2;
+    const in_dim: usize = 704;
+    const out_dim: usize = 64;
+    const blocks_per_row = in_dim / 32; // 22
+    const num_instances = num_tokens * 8; // 16
+    const num_experts: usize = 128;
+
+    // 1. Allocate Q8_0 weights for 128 experts (out_dim rows x 22 blocks)
+    const blocks_per_expert = out_dim * blocks_per_row;
+    const total_blocks = num_experts * blocks_per_expert;
+    const host_w = try allocator.alloc(quant.BlockQ8_0, total_blocks);
+    defer allocator.free(host_w);
+    for (host_w) |*blk| {
+        blk.d = @floatCast((rand.float(f32) * 0.1) + 0.01);
+        for (&blk.qs) |*q| q.* = rand.intRangeAtMost(i8, -127, 127);
+    }
+
+    var d_w = try DeviceBuffer(u8).init(dev, std.mem.sliceAsBytes(host_w).len);
+    defer d_w.deinit();
+    try d_w.copyFromHost(std.mem.sliceAsBytes(host_w));
+
+    // 2. Setup expert assignments and routing
+    // Assign instances 0..15 to experts 0..15
+    const host_counts = try allocator.alloc(i32, num_experts);
+    defer allocator.free(host_counts);
+    @memset(host_counts, 0);
+
+    const host_offsets = try allocator.alloc(i32, num_experts);
+    defer allocator.free(host_offsets);
+
+    const host_sorted_inst = try allocator.alloc(i32, num_instances);
+    defer allocator.free(host_sorted_inst);
+
+    const host_inst_to_sorted = try allocator.alloc(i32, num_instances);
+    defer allocator.free(host_inst_to_sorted);
+
+    for (0..num_instances) |i| {
+        host_counts[i] = 1;
+        host_offsets[i] = @intCast(i);
+        host_sorted_inst[i] = @intCast(i);
+        host_inst_to_sorted[i] = @intCast(i);
+    }
+    for (num_instances..num_experts) |i| {
+        host_offsets[i] = @intCast(num_instances);
+    }
+
+    const host_top_weights = try allocator.alloc(f32, num_instances);
+    defer allocator.free(host_top_weights);
+    for (host_top_weights, 0..) |*w, i| {
+        w.* = @as(f32, @floatFromInt((i % 8) + 1)) * 0.125;
+    }
+
+    const host_acts = try allocator.alloc(f32, num_instances * in_dim);
+    defer allocator.free(host_acts);
+    for (host_acts) |*x| x.* = (rand.float(f32) * 2.0) - 1.0;
+
+    var d_counts = try DeviceBuffer(i32).init(dev, num_experts);
+    defer d_counts.deinit();
+    try d_counts.copyFromHost(host_counts);
+
+    var d_offsets = try DeviceBuffer(i32).init(dev, num_experts);
+    defer d_offsets.deinit();
+    try d_offsets.copyFromHost(host_offsets);
+
+    var d_sorted_inst = try DeviceBuffer(i32).init(dev, num_instances);
+    defer d_sorted_inst.deinit();
+    try d_sorted_inst.copyFromHost(host_sorted_inst);
+
+    var d_inst_to_sorted = try DeviceBuffer(i32).init(dev, num_instances);
+    defer d_inst_to_sorted.deinit();
+    try d_inst_to_sorted.copyFromHost(host_inst_to_sorted);
+
+    var d_top_weights = try DeviceBuffer(f32).init(dev, num_instances);
+    defer d_top_weights.deinit();
+    try d_top_weights.copyFromHost(host_top_weights);
+
+    var d_acts = try DeviceBuffer(f32).init(dev, host_acts.len);
+    defer d_acts.deinit();
+    try d_acts.copyFromHost(host_acts);
+
+    // 3. Run reference path: moeGemvDownSorted + moeAccumulateScaledSorted
+    var d_down_buf = try DeviceBuffer(f32).init(dev, num_instances * out_dim);
+    defer d_down_buf.deinit();
+
+    try moeGemvDownSorted(
+        d_w.slice(),
+        8, // Q8_0
+        d_acts.slice(),
+        d_counts.slice(),
+        d_offsets.slice(),
+        d_sorted_inst.slice(),
+        d_down_buf.slice(),
+        num_tokens,
+        in_dim,
+        out_dim,
+        null,
+    );
+
+    var d_accum_ref = try DeviceBuffer(f32).init(dev, num_tokens * out_dim);
+    defer d_accum_ref.deinit();
+
+    try moeAccumulateScaledSorted(
+        d_accum_ref.slice(),
+        d_down_buf.slice(),
+        d_inst_to_sorted.slice(),
+        d_top_weights.slice(),
+        num_tokens,
+        out_dim,
+        null,
+    );
+
+    // 4. Run fused path: moeGemvDownAccumSorted
+    var d_accum_fused = try DeviceBuffer(f32).init(dev, num_tokens * out_dim);
+    defer d_accum_fused.deinit();
+
+    try moeGemvDownAccumSorted(
+        d_w.slice(),
+        8, // Q8_0
+        d_acts.slice(),
+        d_counts.slice(),
+        d_offsets.slice(),
+        d_sorted_inst.slice(),
+        d_top_weights.slice(),
+        d_accum_fused.slice(),
+        num_tokens,
+        in_dim,
+        out_dim,
+        null,
+    );
+
+    // 5. Compare outputs
+    const ref_host = try allocator.alloc(f32, num_tokens * out_dim);
+    defer allocator.free(ref_host);
+    try d_accum_ref.copyToHost(ref_host);
+
+    const fused_host = try allocator.alloc(f32, num_tokens * out_dim);
+    defer allocator.free(fused_host);
+    try d_accum_fused.copyToHost(fused_host);
+
+    var max_diff: f32 = 0.0;
+    for (ref_host, fused_host) |r, f| {
+        const diff = @abs(r - f);
+        if (diff > max_diff) max_diff = diff;
+        try std.testing.expect(diff <= 1e-4 + 1e-4 * @abs(r));
+    }
+    std.debug.print("[parity] moeGemvDownAccumSorted vs Separate: max_diff = {e:.4}\n", .{max_diff});
 }
 

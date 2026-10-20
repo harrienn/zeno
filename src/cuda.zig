@@ -438,6 +438,22 @@ pub const c = if (is_enabled) struct {
         device_id: c_int,
         stream: ?*anyopaque,
     ) c_int;
+
+    pub extern "c" fn zeno_cuda_moe_gemv_down_accum_sorted(
+        all_expert_weights: [*]const u8,
+        expert_type: c_int,
+        acts_in: [*]const f32,
+        expert_counts: [*]const c_int,
+        expert_offsets: [*]const c_int,
+        sorted_instances: [*]const c_int,
+        top_weights: [*]const f32,
+        moe_accum: [*]f32,
+        num_tokens: c_int,
+        in_dim: c_int,
+        out_dim: c_int,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
 } else struct {};
 
 pub fn mapCudaErrorCode(rc: c_int) CudaError {

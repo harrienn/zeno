@@ -521,7 +521,6 @@ pub const CudaDeviceWorkspace = struct {
     moe_in: DeviceBuffer(f32),
     exp_gate_up_buf: DeviceBuffer(f32),
     exp_act_buf: DeviceBuffer(f32),
-    exp_down_buf: DeviceBuffer(f32),
     moe_accum: DeviceBuffer(f32),
     expert_counts: DeviceBuffer(i32),
     expert_offsets: DeviceBuffer(i32),
@@ -603,8 +602,6 @@ pub const CudaDeviceWorkspace = struct {
         errdefer exp_gate_up_buf.deinit();
         var exp_act_buf = try DeviceBuffer(f32).init(device_id, max_seq_len * 8 * 704);
         errdefer exp_act_buf.deinit();
-        var exp_down_buf = try DeviceBuffer(f32).init(device_id, max_seq_len * 8 * ModelConfig.embedding_dim);
-        errdefer exp_down_buf.deinit();
         var moe_accum = try DeviceBuffer(f32).init(device_id, emb_size);
         errdefer moe_accum.deinit();
         var expert_counts = try DeviceBuffer(i32).init(device_id, 128);
@@ -662,7 +659,6 @@ pub const CudaDeviceWorkspace = struct {
             .moe_in = moe_in,
             .exp_gate_up_buf = exp_gate_up_buf,
             .exp_act_buf = exp_act_buf,
-            .exp_down_buf = exp_down_buf,
             .moe_accum = moe_accum,
             .expert_counts = expert_counts,
             .expert_offsets = expert_offsets,
@@ -696,7 +692,6 @@ pub const CudaDeviceWorkspace = struct {
         self.expert_offsets.deinit();
         self.expert_counts.deinit();
         self.moe_accum.deinit();
-        self.exp_down_buf.deinit();
         self.exp_act_buf.deinit();
         self.exp_gate_up_buf.deinit();
         self.moe_in.deinit();
@@ -746,7 +741,6 @@ pub const CudaDeviceWorkspace = struct {
             (max_seq_len * 8 * @sizeOf(f32)) + // top_weights
             (max_seq_len * 8 * 1408 * @sizeOf(f32)) + // exp_gate_up_buf
             (max_seq_len * 8 * 704 * @sizeOf(f32)) + // exp_act_buf
-            (max_seq_len * 8 * d_emb * @sizeOf(f32)) + // exp_down_buf
             (128 * @sizeOf(i32) * 2) + // expert_counts, expert_offsets
             (max_seq_len * 8 * @sizeOf(i32) * 2) + // sorted_instances, instance_to_sorted
             (cache_total_floats * @sizeOf(f32) * 2) + // prompt_k_cache, prompt_v_cache (Phase 7B)
@@ -1057,28 +1051,19 @@ pub fn runLayerCuda(
         stream,
     );
 
-    const exp_down_slice = try ws.exp_down_buf.slice().subslice(0, num_instances * ModelConfig.embedding_dim);
-    try cuda_mem.moeGemvDownSorted(
+    // 9. MoE Fused Down GEMV & Scaled Accumulation (Phase 13 WP1)
+    const moe_accum_slice = try ws.moe_accum.slice().subslice(0, emb_elements);
+    try cuda_mem.moeGemvDownAccumSorted(
         layer.expert_down.slice(),
         layer.expert_down_type,
         exp_act_slice,
         exp_counts_slice,
         exp_offsets_slice,
         sorted_inst_slice,
-        exp_down_slice,
+        top_w_slice,
+        moe_accum_slice,
         num_tokens,
         704,
-        ModelConfig.embedding_dim,
-        stream,
-    );
-
-    const moe_accum_slice = try ws.moe_accum.slice().subslice(0, emb_elements);
-    try cuda_mem.moeAccumulateScaledSorted(
-        moe_accum_slice,
-        exp_down_slice,
-        inst_to_sorted_slice,
-        top_w_slice,
-        num_tokens,
         ModelConfig.embedding_dim,
         stream,
     );
@@ -1291,28 +1276,19 @@ pub fn runLayerCanvasCuda(
         stream,
     );
 
-    const exp_down_slice = try ws.exp_down_buf.slice().subslice(0, num_instances * ModelConfig.embedding_dim);
-    try cuda_mem.moeGemvDownSorted(
+    // 9. MoE Fused Down GEMV & Scaled Accumulation (Phase 13 WP1)
+    const moe_accum_slice = try ws.moe_accum.slice().subslice(0, emb_elements);
+    try cuda_mem.moeGemvDownAccumSorted(
         layer.expert_down.slice(),
         layer.expert_down_type,
         exp_act_slice,
         exp_counts_slice,
         exp_offsets_slice,
         sorted_inst_slice,
-        exp_down_slice,
+        top_w_slice,
+        moe_accum_slice,
         canvas_len,
         704,
-        ModelConfig.embedding_dim,
-        stream,
-    );
-
-    const moe_accum_slice = try ws.moe_accum.slice().subslice(0, emb_elements);
-    try cuda_mem.moeAccumulateScaledSorted(
-        moe_accum_slice,
-        exp_down_slice,
-        inst_to_sorted_slice,
-        top_w_slice,
-        canvas_len,
         ModelConfig.embedding_dim,
         stream,
     );
@@ -2759,9 +2735,10 @@ test "executeStructuredReadCuda full 30-layer forward pass on local model if pre
 
 test "CudaDeviceWorkspace: activationWorkspaceBytes matches audited footprint (R24-01, R26-01, R26-04)" {
     const bytes_512 = CudaDeviceWorkspace.activationWorkspaceBytes(512);
-    // Audited exact byte sum for N=512: 462,661,888 bytes (~462.66 MB, 441.23 MiB)
-    // Includes SWA-sized prompt KV prefix cache (k_dim=2048) and Phase 9 self-conditioning scratch buffers
-    try std.testing.expectEqual(@as(usize, 462661888), bytes_512);
+    // Audited exact byte sum for N=512: 416,524,544 bytes (~416.52 MB, 397.23 MiB)
+    // Includes SWA-sized prompt KV prefix cache (k_dim=2048) and Phase 9 self-conditioning scratch buffers.
+    // In Phase 13 WP1, intermediate exp_down_buf (46.14 MB for N=512) was eliminated via fused accumulation.
+    try std.testing.expectEqual(@as(usize, 416524544), bytes_512);
 }
 
 test "CudaDeviceWorkspace: prompt KV cache stride isolates SWA layers with long prompt (R26-01)" {

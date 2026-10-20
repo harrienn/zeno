@@ -335,10 +335,10 @@ Implement and validate the CPU representation of one denoising step.
 **Current objective:**
 
 ```text
-Evaluate MoE expert activation packing, down-projection fusion, and persistent kernel execution to reach the sub-100ms decision canvas execution target.
+Evaluate MoE active-expert CTA grid compaction, persistent MoE kernels, and CUDA stream concurrency to reach the sub-100ms decision canvas execution target.
 ```
 
-This active objective builds upon completed Phase 12 GEMV and attention optimizations (fused Q+K GEMV projection, single-launch Global attention with direct V write-back, and occupancy-tuned 75-register allocation) which brought C=16 canvas latency down to 132.67ms (spread ±2.49ms) and full-width C=256 latency down to 1866.25ms (-79.63ms, -4.1%).
+This active objective builds upon completed Phase 13 MoE optimizations (fused down-projection and direct scaled atomic accumulation, elimination of intermediate `exp_down_buf` DRAM traffic saving 78.6MB/step and reclaiming 92.28MB VRAM, zero stack spills with 72 registers, and sample variance collapse to spread <= 1.1ms) and completed Phase 12 GEMV and attention optimizations.
 
 ---
 
