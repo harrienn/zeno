@@ -218,6 +218,258 @@ __global__ void layer_output_kernel(
 }
 
 // ---------------------------------------------------------------------------
+// Phase 15: Intra-Layer Kernel Fusion
+// ---------------------------------------------------------------------------
+
+__global__ void fused_pre_ffn_norm_kernel(
+    const float *__restrict__ x_mid,
+    const float *__restrict__ ffn_norm,
+    const float *__restrict__ pre_ffw_norm_2,
+    const float *__restrict__ router_scale,
+    float *__restrict__ dense_in,
+    float *__restrict__ moe_in,
+    float *__restrict__ r_in,
+    float root_size,
+    int num_tokens,
+    int dim,
+    float eps
+) {
+    int t = blockIdx.x;
+    if (t >= num_tokens) return;
+
+    int tid = threadIdx.x;
+    int lane_id = tid & 31;
+    int warp_id = tid >> 5;
+    int num_warps = blockDim.x >> 5;
+
+    const float *row_x = x_mid + (size_t)t * (size_t)dim;
+    float *row_dense = dense_in + (size_t)t * (size_t)dim;
+    float *row_moe = moe_in + (size_t)t * (size_t)dim;
+    float *row_r = r_in + (size_t)t * (size_t)dim;
+
+    float sum_sq = 0.0f;
+    for (int i = tid; i < dim; i += blockDim.x) {
+        float v = row_x[i];
+        sum_sq += v * v;
+    }
+
+    #pragma unroll
+    for (int offset = 16; offset > 0; offset >>= 1) {
+        sum_sq += __shfl_down_sync(0xffffffff, sum_sq, offset);
+    }
+
+    __shared__ float s_warp_sums[32];
+    __shared__ float s_inv_rms;
+
+    if (lane_id == 0) {
+        s_warp_sums[warp_id] = sum_sq;
+    }
+    __syncthreads();
+
+    if (warp_id == 0) {
+        float block_sum = (lane_id < num_warps) ? s_warp_sums[lane_id] : 0.0f;
+        #pragma unroll
+        for (int offset = 16; offset > 0; offset >>= 1) {
+            block_sum += __shfl_down_sync(0xffffffff, block_sum, offset);
+        }
+        if (lane_id == 0) {
+            s_inv_rms = rsqrtf(block_sum / (float)dim + eps);
+        }
+    }
+    __syncthreads();
+
+    float inv_rms = s_inv_rms;
+    for (int i = tid; i < dim; i += blockDim.x) {
+        float unnorm = row_x[i] * inv_rms;
+        row_dense[i] = unnorm * ffn_norm[i];
+        row_moe[i]   = unnorm * pre_ffw_norm_2[i];
+        row_r[i]     = unnorm * (router_scale[i] * root_size);
+    }
+}
+
+__global__ void fused_post_ffn_combine_kernel(
+    const float *__restrict__ moe_accum,
+    const float *__restrict__ post_ffw_norm_2,
+    const float *__restrict__ h1,
+    const float *__restrict__ post_ffw_norm,
+    const float *__restrict__ x_mid,
+    float *__restrict__ out,
+    int prompt_len,
+    int num_tokens,
+    int dim,
+    float enc_scale,
+    float layer_scale,
+    float eps
+) {
+    int t = blockIdx.x;
+    if (t >= num_tokens) return;
+
+    int tid = threadIdx.x;
+    int lane_id = tid & 31;
+    int warp_id = tid >> 5;
+    int num_warps = blockDim.x >> 5;
+
+    const float *row_moe = moe_accum + (size_t)t * (size_t)dim;
+    const float *row_h1 = h1 + (size_t)t * (size_t)dim;
+    const float *row_x_mid = x_mid + (size_t)t * (size_t)dim;
+    float *row_out = out + (size_t)t * (size_t)dim;
+
+    // Phase 1: sum_sq of moe_accum
+    float sum_sq_moe = 0.0f;
+    for (int i = tid; i < dim; i += blockDim.x) {
+        float v = row_moe[i];
+        sum_sq_moe += v * v;
+    }
+
+    #pragma unroll
+    for (int offset = 16; offset > 0; offset >>= 1) {
+        sum_sq_moe += __shfl_down_sync(0xffffffff, sum_sq_moe, offset);
+    }
+
+    __shared__ float s_warp_sums[32];
+    __shared__ float s_inv_rms;
+
+    if (lane_id == 0) {
+        s_warp_sums[warp_id] = sum_sq_moe;
+    }
+    __syncthreads();
+
+    if (warp_id == 0) {
+        float block_sum = (lane_id < num_warps) ? s_warp_sums[lane_id] : 0.0f;
+        #pragma unroll
+        for (int offset = 16; offset > 0; offset >>= 1) {
+            block_sum += __shfl_down_sync(0xffffffff, block_sum, offset);
+        }
+        if (lane_id == 0) {
+            s_inv_rms = rsqrtf(block_sum / (float)dim + eps);
+        }
+    }
+    __syncthreads();
+
+    float inv_rms_moe = s_inv_rms;
+
+    // Phase 2: Compute ffn_comb = h1 + moe_norm and accumulate sum_sq of ffn_comb
+    float ffn_val[16];
+    float sum_sq_comb = 0.0f;
+    int elem_idx = 0;
+    for (int i = tid; i < dim; i += blockDim.x) {
+        float h2 = (row_moe[i] * inv_rms_moe) * post_ffw_norm_2[i];
+        float comb = row_h1[i] + h2;
+        ffn_val[elem_idx++] = comb;
+        sum_sq_comb += comb * comb;
+    }
+
+    #pragma unroll
+    for (int offset = 16; offset > 0; offset >>= 1) {
+        sum_sq_comb += __shfl_down_sync(0xffffffff, sum_sq_comb, offset);
+    }
+
+    if (lane_id == 0) {
+        s_warp_sums[warp_id] = sum_sq_comb;
+    }
+    __syncthreads();
+
+    if (warp_id == 0) {
+        float block_sum = (lane_id < num_warps) ? s_warp_sums[lane_id] : 0.0f;
+        #pragma unroll
+        for (int offset = 16; offset > 0; offset >>= 1) {
+            block_sum += __shfl_down_sync(0xffffffff, block_sum, offset);
+        }
+        if (lane_id == 0) {
+            s_inv_rms = rsqrtf(block_sum / (float)dim + eps);
+        }
+    }
+    __syncthreads();
+
+    float inv_rms_comb = s_inv_rms;
+    float s = (t < prompt_len) ? enc_scale : layer_scale;
+
+    // Phase 3: post_ffn = RMSNorm(ffn_comb, post_ffw_norm) and residual addition with scale
+    elem_idx = 0;
+    for (int i = tid; i < dim; i += blockDim.x) {
+        float post_ffn = (ffn_val[elem_idx++] * inv_rms_comb) * post_ffw_norm[i];
+        row_out[i] = (row_x_mid[i] + post_ffn) * s;
+    }
+}
+
+__global__ void fused_head_norm_rope_kernel(
+    float *__restrict__ vec,
+    const float *__restrict__ weight,
+    int num_tokens,
+    int num_heads,
+    int head_dim,
+    int pos_offset,
+    float theta,
+    const float *__restrict__ freq_factors,
+    float eps
+) {
+    int h = blockIdx.x;
+    int t = blockIdx.y;
+    if (h >= num_heads || t >= num_tokens) return;
+
+    int i = threadIdx.x;
+    int half = head_dim / 2;
+    if (i >= half) return;
+
+    float *head_vec = vec + ((size_t)t * (size_t)num_heads + (size_t)h) * (size_t)head_dim;
+
+    float v0 = head_vec[i];
+    float v1 = head_vec[half + i];
+
+    float sum_sq = v0 * v0 + v1 * v1;
+
+    #pragma unroll
+    for (int offset = 16; offset > 0; offset >>= 1) {
+        sum_sq += __shfl_down_sync(0xffffffff, sum_sq, offset);
+    }
+
+    __shared__ float s_warp_sums[8];
+    __shared__ float s_inv_rms;
+
+    int lane_id = i & 31;
+    int warp_id = i >> 5;
+    int num_warps = blockDim.x >> 5;
+
+    if (lane_id == 0) {
+        s_warp_sums[warp_id] = sum_sq;
+    }
+    __syncthreads();
+
+    if (warp_id == 0) {
+        float block_sum = (lane_id < num_warps) ? s_warp_sums[lane_id] : 0.0f;
+        #pragma unroll
+        for (int offset = 16; offset > 0; offset >>= 1) {
+            block_sum += __shfl_down_sync(0xffffffff, block_sum, offset);
+        }
+        if (lane_id == 0) {
+            s_inv_rms = rsqrtf(block_sum / (float)head_dim + eps);
+        }
+    }
+    __syncthreads();
+
+    float inv_rms = s_inv_rms;
+
+    if (weight) {
+        v0 = (v0 * inv_rms) * weight[i];
+        v1 = (v1 * inv_rms) * weight[half + i];
+    } else {
+        v0 = v0 * inv_rms;
+        v1 = v1 * inv_rms;
+    }
+
+    float pos_f = (float)(pos_offset + t);
+    float exp_val = 2.0f * (float)i / (float)head_dim;
+    float ff = freq_factors ? freq_factors[i] : 1.0f;
+    float freq = (1.0f / powf(theta, exp_val)) / ff;
+    float angle = pos_f * freq;
+    float cos_val = cosf(angle);
+    float sin_val = sinf(angle);
+
+    head_vec[i]        = v0 * cos_val - v1 * sin_val;
+    head_vec[half + i] = v0 * sin_val + v1 * cos_val;
+}
+
+// ---------------------------------------------------------------------------
 // C ABI Implementations
 // ---------------------------------------------------------------------------
 
@@ -787,6 +1039,156 @@ int zeno_cuda_stream_wait_event(void *stream, void *event, int device_id) {
 
     cudaError_t err = cudaStreamWaitEvent((cudaStream_t)stream, (cudaEvent_t)event, 0);
     int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_DRIVER_ERROR : ZENO_CUDA_SUCCESS;
+    return restore_cuda_device(orig, op_rc);
+}
+
+int zeno_cuda_fused_pre_ffn_norm(
+    const float *x_mid,
+    const float *ffn_norm,
+    const float *pre_ffw_norm_2,
+    const float *router_scale,
+    float *dense_in,
+    float *moe_in,
+    float *r_in,
+    float root_size,
+    int num_tokens,
+    int dim,
+    float eps,
+    int device_id,
+    void *stream
+) {
+    if (!x_mid || !ffn_norm || !pre_ffw_norm_2 || !router_scale || !dense_in || !moe_in || !r_in) {
+        return ZENO_CUDA_ERR_INVALID_PARAM;
+    }
+    if (num_tokens <= 0 || dim <= 0 || eps <= 0.0f) {
+        return ZENO_CUDA_ERR_INVALID_PARAM;
+    }
+    size_t total_bytes = (size_t)num_tokens * (size_t)dim * sizeof(float);
+    if (partial_overlap(x_mid, total_bytes, dense_in, total_bytes) ||
+        partial_overlap(x_mid, total_bytes, moe_in, total_bytes) ||
+        partial_overlap(x_mid, total_bytes, r_in, total_bytes) ||
+        partial_overlap(dense_in, total_bytes, moe_in, total_bytes) ||
+        partial_overlap(dense_in, total_bytes, r_in, total_bytes) ||
+        partial_overlap(moe_in, total_bytes, r_in, total_bytes)) {
+        return ZENO_CUDA_ERR_INVALID_PARAM;
+    }
+
+    int orig = 0;
+    int rc = set_cuda_device(device_id, &orig);
+    if (rc != ZENO_CUDA_SUCCESS) return rc;
+
+    int block_size = calc_rms_norm_block_size(dim);
+    fused_pre_ffn_norm_kernel<<<num_tokens, block_size, 0, (cudaStream_t)stream>>>(
+        x_mid,
+        ffn_norm,
+        pre_ffw_norm_2,
+        router_scale,
+        dense_in,
+        moe_in,
+        r_in,
+        root_size,
+        num_tokens,
+        dim,
+        eps
+    );
+
+    cudaError_t err = cudaGetLastError();
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED : ZENO_CUDA_SUCCESS;
+    return restore_cuda_device(orig, op_rc);
+}
+
+int zeno_cuda_fused_post_ffn_combine(
+    const float *moe_accum,
+    const float *post_ffw_norm_2,
+    const float *h1,
+    const float *post_ffw_norm,
+    const float *x_mid,
+    float *out,
+    int prompt_len,
+    int num_tokens,
+    int dim,
+    float enc_scale,
+    float layer_scale,
+    float eps,
+    int device_id,
+    void *stream
+) {
+    if (!moe_accum || !post_ffw_norm_2 || !h1 || !post_ffw_norm || !x_mid || !out) {
+        return ZENO_CUDA_ERR_INVALID_PARAM;
+    }
+    if (num_tokens <= 0 || dim <= 0 || eps <= 0.0f) {
+        return ZENO_CUDA_ERR_INVALID_PARAM;
+    }
+    size_t total_bytes = (size_t)num_tokens * (size_t)dim * sizeof(float);
+    if (partial_overlap(moe_accum, total_bytes, out, total_bytes) ||
+        partial_overlap(h1, total_bytes, out, total_bytes) ||
+        partial_overlap(x_mid, total_bytes, out, total_bytes)) {
+        return ZENO_CUDA_ERR_INVALID_PARAM;
+    }
+
+    int orig = 0;
+    int rc = set_cuda_device(device_id, &orig);
+    if (rc != ZENO_CUDA_SUCCESS) return rc;
+
+    int block_size = calc_rms_norm_block_size(dim);
+    fused_post_ffn_combine_kernel<<<num_tokens, block_size, 0, (cudaStream_t)stream>>>(
+        moe_accum,
+        post_ffw_norm_2,
+        h1,
+        post_ffw_norm,
+        x_mid,
+        out,
+        prompt_len,
+        num_tokens,
+        dim,
+        enc_scale,
+        layer_scale,
+        eps
+    );
+
+    cudaError_t err = cudaGetLastError();
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED : ZENO_CUDA_SUCCESS;
+    return restore_cuda_device(orig, op_rc);
+}
+
+int zeno_cuda_fused_head_norm_rope(
+    float *vec,
+    const float *weight,
+    int num_tokens,
+    int num_heads,
+    int head_dim,
+    int pos_offset,
+    float theta,
+    const float *freq_factors,
+    float eps,
+    int device_id,
+    void *stream
+) {
+    if (!vec) return ZENO_CUDA_ERR_INVALID_PARAM;
+    if (num_tokens <= 0 || num_heads <= 0 || head_dim <= 0 || (head_dim % 2) != 0 || eps <= 0.0f || theta <= 0.0f) {
+        return ZENO_CUDA_ERR_INVALID_PARAM;
+    }
+
+    int orig = 0;
+    int rc = set_cuda_device(device_id, &orig);
+    if (rc != ZENO_CUDA_SUCCESS) return rc;
+
+    int half = head_dim / 2;
+    dim3 grid(num_heads, num_tokens);
+    fused_head_norm_rope_kernel<<<grid, half, 0, (cudaStream_t)stream>>>(
+        vec,
+        weight,
+        num_tokens,
+        num_heads,
+        head_dim,
+        pos_offset,
+        theta,
+        freq_factors,
+        eps
+    );
+
+    cudaError_t err = cudaGetLastError();
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED : ZENO_CUDA_SUCCESS;
     return restore_cuda_device(orig, op_rc);
 }
 

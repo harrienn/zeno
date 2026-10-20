@@ -469,6 +469,54 @@ int zeno_cuda_moe_gemv_down_accum_persistent(
     void *stream
 );
 
+// Phase 15: Intra-Layer Kernel Fusion
+int zeno_cuda_fused_pre_ffn_norm(
+    const float *x_mid,
+    const float *ffn_norm,
+    const float *pre_ffw_norm_2,
+    const float *router_scale,
+    float *dense_in,
+    float *moe_in,
+    float *r_in,
+    float root_size,
+    int num_tokens,
+    int dim,
+    float eps,
+    int device_id,
+    void *stream
+);
+
+int zeno_cuda_fused_post_ffn_combine(
+    const float *moe_accum,
+    const float *post_ffw_norm_2,
+    const float *h1,
+    const float *post_ffw_norm,
+    const float *x_mid,
+    float *out,
+    int prompt_len,
+    int num_tokens,
+    int dim,
+    float enc_scale,
+    float layer_scale,
+    float eps,
+    int device_id,
+    void *stream
+);
+
+int zeno_cuda_fused_head_norm_rope(
+    float *vec,
+    const float *weight,
+    int num_tokens,
+    int num_heads,
+    int head_dim,
+    int pos_offset,
+    float theta,
+    const float *freq_factors,
+    float eps,
+    int device_id,
+    void *stream
+);
+
 #ifdef __cplusplus
 }
 #endif

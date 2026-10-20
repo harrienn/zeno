@@ -1003,15 +1003,11 @@ pub fn runLayerCuda(
         }
     }
 
-    // 3. Per-head RMSNorms
-    try cuda_mem.rmsNorm(q_slice, layer.q_norm.slice(), q_slice, num_tokens * num_q_heads, head_dim, 1e-6, stream);
-    try cuda_mem.rmsNorm(k_slice, layer.k_norm.slice(), k_slice, num_tokens * num_kv_heads, head_dim, 1e-6, stream);
-    try cuda_mem.rmsNorm(v_slice, null, v_slice, num_tokens * num_kv_heads, head_dim, 1e-6, stream);
-
-    // 4. RoPE
+    // 3. Per-head RMSNorms & RoPE (Phase 15 WP3)
     const factors = if (is_global) rope_freqs else null;
-    try cuda_mem.rope(q_slice, num_tokens, num_q_heads, head_dim, 0, theta, factors, stream);
-    try cuda_mem.rope(k_slice, num_tokens, num_kv_heads, head_dim, 0, theta, factors, stream);
+    try cuda_mem.fusedHeadNormRope(q_slice, layer.q_norm.slice(), num_tokens, num_q_heads, head_dim, 0, theta, factors, 1e-6, stream);
+    try cuda_mem.fusedHeadNormRope(k_slice, layer.k_norm.slice(), num_tokens, num_kv_heads, head_dim, 0, theta, factors, 1e-6, stream);
+    try cuda_mem.rmsNorm(v_slice, null, v_slice, num_tokens * num_kv_heads, head_dim, 1e-6, stream);
 
     // Save prompt KV prefix cache if requested (Phase 7B)
     if (save_prompt_kv_layer_idx) |dev_layer_idx| {
@@ -1050,9 +1046,25 @@ pub fn runLayerCuda(
     // x_mid is a_out_slice
     const x_mid = a_out_slice;
 
-    // 7. Dense FFN
+    // 7. Dense FFN & MoE Pre-Norms (Phase 15 WP1)
     const dense_in_slice = try ws.dense_in.slice().subslice(0, emb_elements);
-    try cuda_mem.rmsNorm(x_mid, layer.ffn_norm.slice(), dense_in_slice, num_tokens, ModelConfig.embedding_dim, 1e-6, stream);
+    const moe_in_slice = try ws.moe_in.slice().subslice(0, emb_elements);
+    const r_in_slice = try ws.r_in.slice().subslice(0, emb_elements);
+    const root_size: f32 = 1.0 / @sqrt(@as(f32, @floatFromInt(ModelConfig.embedding_dim)));
+    try cuda_mem.fusedPreFfnNorm(
+        x_mid,
+        layer.ffn_norm.slice(),
+        layer.pre_ffw_norm_2.slice(),
+        layer.router_scale.slice(),
+        dense_in_slice,
+        moe_in_slice,
+        r_in_slice,
+        root_size,
+        num_tokens,
+        ModelConfig.embedding_dim,
+        1e-6,
+        stream,
+    );
 
     const geglu_slice = try ws.geglu_buf.slice().subslice(0, num_tokens * 2112);
 
@@ -1081,20 +1093,12 @@ pub fn runLayerCuda(
     try cuda_mem.rmsNorm(dense_out_slice, layer.post_ffw_norm_1.slice(), h1_slice, num_tokens, ModelConfig.embedding_dim, 1e-6, stream);
 
     // 8. MoE router
-    const r_in_slice = try ws.r_in.slice().subslice(0, emb_elements);
-    try cuda_mem.rmsNorm(x_mid, null, r_in_slice, num_tokens, ModelConfig.embedding_dim, 1e-6, stream);
-    const root_size: f32 = 1.0 / @sqrt(@as(f32, @floatFromInt(ModelConfig.embedding_dim)));
-    try cuda_mem.moeRouterPrep(r_in_slice, layer.router_scale.slice(), root_size, num_tokens, ModelConfig.embedding_dim, stream);
-
     const router_logits_slice = try ws.router_logits.slice().subslice(0, num_tokens * 128);
     try gemvTensorCuda(layer.router_gate_type, layer.router_gate.slice(), r_in_slice, router_logits_slice, 128, ModelConfig.embedding_dim, num_tokens, stream);
 
     const top_idx_slice = try ws.top_indices.slice().subslice(0, num_tokens * 8);
     const top_w_slice = try ws.top_weights.slice().subslice(0, num_tokens * 8);
     try cuda_mem.moeRouterTop8(router_logits_slice, layer.expert_down_scale.slice(), top_idx_slice, top_w_slice, num_tokens, stream);
-
-    const moe_in_slice = try ws.moe_in.slice().subslice(0, emb_elements);
-    try cuda_mem.rmsNorm(x_mid, layer.pre_ffw_norm_2.slice(), moe_in_slice, num_tokens, ModelConfig.embedding_dim, 1e-6, stream);
 
     // 9. Evaluate active MoE experts on device using token-sorted projections (Phase 7A & Phase 13 WP1)
     const num_instances = num_tokens * 8;
@@ -1146,29 +1150,21 @@ pub fn runLayerCuda(
         stream,
     );
 
-    // 10. MoE post norm
-    const h2_slice = try ws.h2.slice().subslice(0, emb_elements);
-    try cuda_mem.rmsNorm(moe_accum_slice, layer.post_ffw_norm_2.slice(), h2_slice, num_tokens, ModelConfig.embedding_dim, 1e-6, stream);
-
-    // 11. Combine FFN branches & post FFN norm
-    const ffn_comb_slice = try ws.ffn_comb.slice().subslice(0, emb_elements);
-    try ffn_comb_slice.copyFromDevice(h1_slice, stream);
-    try cuda_mem.addResidual(ffn_comb_slice, h2_slice, stream);
-
-    const post_ffn_slice = try ws.post_ffn.slice().subslice(0, emb_elements);
-    try cuda_mem.rmsNorm(ffn_comb_slice, layer.post_ffw_norm.slice(), post_ffn_slice, num_tokens, ModelConfig.embedding_dim, 1e-6, stream);
-
-    // 12. Block output dual-region scaling
+    // 10. Fused Post-FFN Combine (Phase 15 WP2)
     const next_slice = try ws.next_emb.slice().subslice(0, emb_elements);
-    try cuda_mem.layerOutput(
-        next_slice,
+    try cuda_mem.fusedPostFfnCombine(
+        moe_accum_slice,
+        layer.post_ffw_norm_2.slice(),
+        h1_slice,
+        layer.post_ffw_norm.slice(),
         x_mid,
-        post_ffn_slice,
+        next_slice,
         prompt_len,
         num_tokens,
         ModelConfig.embedding_dim,
         layer.enc_layer_output_scale,
         layer.layer_output_scale,
+        1e-6,
         stream,
     );
 
@@ -1234,15 +1230,11 @@ pub fn runLayerCanvasCuda(
         }
     }
 
-    // 3. Per-head RMSNorms
-    try cuda_mem.rmsNorm(q_slice, layer.q_norm.slice(), q_slice, canvas_len * num_q_heads, head_dim, 1e-6, stream);
-    try cuda_mem.rmsNorm(k_slice, layer.k_norm.slice(), k_slice, canvas_len * num_kv_heads, head_dim, 1e-6, stream);
-    try cuda_mem.rmsNorm(v_slice, null, v_slice, canvas_len * num_kv_heads, head_dim, 1e-6, stream);
-
-    // 4. RoPE with position offset = prompt_len
+    // 3. Per-head RMSNorms & RoPE (Phase 15 WP3)
     const factors = if (is_global) rope_freqs else null;
-    try cuda_mem.rope(q_slice, canvas_len, num_q_heads, head_dim, prompt_len, theta, factors, stream);
-    try cuda_mem.rope(k_slice, canvas_len, num_kv_heads, head_dim, prompt_len, theta, factors, stream);
+    try cuda_mem.fusedHeadNormRope(q_slice, layer.q_norm.slice(), canvas_len, num_q_heads, head_dim, prompt_len, theta, factors, 1e-6, stream);
+    try cuda_mem.fusedHeadNormRope(k_slice, layer.k_norm.slice(), canvas_len, num_kv_heads, head_dim, prompt_len, theta, factors, 1e-6, stream);
+    try cuda_mem.rmsNorm(v_slice, null, v_slice, canvas_len * num_kv_heads, head_dim, 1e-6, stream);
 
     // 5. GQA Attention with cached prompt KV
     const cache_offset = dev_layer_idx * CudaDeviceWorkspace.cache_floats_per_layer;
@@ -1277,9 +1269,25 @@ pub fn runLayerCanvasCuda(
 
     const x_mid = a_out_slice;
 
-    // 7. Dense FFN
+    // 7. Dense FFN & MoE Pre-Norms (Phase 15 WP1)
     const dense_in_slice = try ws.dense_in.slice().subslice(0, emb_elements);
-    try cuda_mem.rmsNorm(x_mid, layer.ffn_norm.slice(), dense_in_slice, canvas_len, ModelConfig.embedding_dim, 1e-6, stream);
+    const moe_in_slice = try ws.moe_in.slice().subslice(0, emb_elements);
+    const r_in_slice = try ws.r_in.slice().subslice(0, emb_elements);
+    const root_size: f32 = 1.0 / @sqrt(@as(f32, @floatFromInt(ModelConfig.embedding_dim)));
+    try cuda_mem.fusedPreFfnNorm(
+        x_mid,
+        layer.ffn_norm.slice(),
+        layer.pre_ffw_norm_2.slice(),
+        layer.router_scale.slice(),
+        dense_in_slice,
+        moe_in_slice,
+        r_in_slice,
+        root_size,
+        canvas_len,
+        ModelConfig.embedding_dim,
+        1e-6,
+        stream,
+    );
 
     const geglu_slice = try ws.geglu_buf.slice().subslice(0, canvas_len * 2112);
 
@@ -1308,20 +1316,12 @@ pub fn runLayerCanvasCuda(
     try cuda_mem.rmsNorm(dense_out_slice, layer.post_ffw_norm_1.slice(), h1_slice, canvas_len, ModelConfig.embedding_dim, 1e-6, stream);
 
     // 8. MoE router
-    const r_in_slice = try ws.r_in.slice().subslice(0, emb_elements);
-    try cuda_mem.rmsNorm(x_mid, null, r_in_slice, canvas_len, ModelConfig.embedding_dim, 1e-6, stream);
-    const root_size: f32 = 1.0 / @sqrt(@as(f32, @floatFromInt(ModelConfig.embedding_dim)));
-    try cuda_mem.moeRouterPrep(r_in_slice, layer.router_scale.slice(), root_size, canvas_len, ModelConfig.embedding_dim, stream);
-
     const router_logits_slice = try ws.router_logits.slice().subslice(0, canvas_len * 128);
     try gemvTensorCuda(layer.router_gate_type, layer.router_gate.slice(), r_in_slice, router_logits_slice, 128, ModelConfig.embedding_dim, canvas_len, stream);
 
     const top_idx_slice = try ws.top_indices.slice().subslice(0, canvas_len * 8);
     const top_w_slice = try ws.top_weights.slice().subslice(0, canvas_len * 8);
     try cuda_mem.moeRouterTop8(router_logits_slice, layer.expert_down_scale.slice(), top_idx_slice, top_w_slice, canvas_len, stream);
-
-    const moe_in_slice = try ws.moe_in.slice().subslice(0, emb_elements);
-    try cuda_mem.rmsNorm(x_mid, layer.pre_ffw_norm_2.slice(), moe_in_slice, canvas_len, ModelConfig.embedding_dim, 1e-6, stream);
 
     // 9. Evaluate active MoE experts on device using token-sorted projections (Phase 7A & Phase 13 WP1)
     const num_instances = canvas_len * 8;
@@ -1373,29 +1373,21 @@ pub fn runLayerCanvasCuda(
         stream,
     );
 
-    // 10. MoE post norm
-    const h2_slice = try ws.h2.slice().subslice(0, emb_elements);
-    try cuda_mem.rmsNorm(moe_accum_slice, layer.post_ffw_norm_2.slice(), h2_slice, canvas_len, ModelConfig.embedding_dim, 1e-6, stream);
-
-    // 11. Combine FFN branches & post FFN norm
-    const ffn_comb_slice = try ws.ffn_comb.slice().subslice(0, emb_elements);
-    try ffn_comb_slice.copyFromDevice(h1_slice, stream);
-    try cuda_mem.addResidual(ffn_comb_slice, h2_slice, stream);
-
-    const post_ffn_slice = try ws.post_ffn.slice().subslice(0, emb_elements);
-    try cuda_mem.rmsNorm(ffn_comb_slice, layer.post_ffw_norm.slice(), post_ffn_slice, canvas_len, ModelConfig.embedding_dim, 1e-6, stream);
-
-    // 12. Block output dual-region scaling (all tokens are canvas tokens, so prompt_len=0)
+    // 10. Fused Post-FFN Combine (Phase 15 WP2)
     const next_slice = try ws.next_emb.slice().subslice(0, emb_elements);
-    try cuda_mem.layerOutput(
-        next_slice,
+    try cuda_mem.fusedPostFfnCombine(
+        moe_accum_slice,
+        layer.post_ffw_norm_2.slice(),
+        h1_slice,
+        layer.post_ffw_norm.slice(),
         x_mid,
-        post_ffn_slice,
+        next_slice,
         0,
         canvas_len,
         ModelConfig.embedding_dim,
         layer.enc_layer_output_scale,
         layer.layer_output_scale,
+        1e-6,
         stream,
     );
 

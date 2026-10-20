@@ -497,6 +497,54 @@ pub const c = if (is_enabled) struct {
         device_id: c_int,
         stream: ?*anyopaque,
     ) c_int;
+
+    // Phase 15 Intra-Layer Kernel Fusion ABI
+    pub extern "c" fn zeno_cuda_fused_pre_ffn_norm(
+        x_mid: [*]const f32,
+        ffn_norm: [*]const f32,
+        pre_ffw_norm_2: [*]const f32,
+        router_scale: [*]const f32,
+        dense_in: [*]f32,
+        moe_in: [*]f32,
+        r_in: [*]f32,
+        root_size: f32,
+        num_tokens: c_int,
+        dim: c_int,
+        eps: f32,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
+
+    pub extern "c" fn zeno_cuda_fused_post_ffn_combine(
+        moe_accum: [*]const f32,
+        post_ffw_norm_2: [*]const f32,
+        h1: [*]const f32,
+        post_ffw_norm: [*]const f32,
+        x_mid: [*]const f32,
+        out: [*]f32,
+        prompt_len: c_int,
+        num_tokens: c_int,
+        dim: c_int,
+        enc_scale: f32,
+        layer_scale: f32,
+        eps: f32,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
+
+    pub extern "c" fn zeno_cuda_fused_head_norm_rope(
+        vec: [*]f32,
+        weight: ?[*]const f32,
+        num_tokens: c_int,
+        num_heads: c_int,
+        head_dim: c_int,
+        pos_offset: c_int,
+        theta: f32,
+        freq_factors: ?[*]const f32,
+        eps: f32,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
 } else struct {};
 
 pub fn mapCudaErrorCode(rc: c_int) CudaError {

@@ -1376,6 +1376,180 @@ pub fn layerOutput(
     if (rc != 0) return cuda.mapCudaErrorCode(rc);
 }
 
+// ---------------------------------------------------------------------------
+// Phase 15: Intra-Layer Kernel Fusion Wrappers
+// ---------------------------------------------------------------------------
+
+pub fn fusedPreFfnNorm(
+    x_mid: DeviceSlice(f32),
+    ffn_norm: DeviceSlice(f32),
+    pre_ffw_norm_2: DeviceSlice(f32),
+    router_scale: DeviceSlice(f32),
+    dense_in: DeviceSlice(f32),
+    moe_in: DeviceSlice(f32),
+    r_in: DeviceSlice(f32),
+    root_size: f32,
+    num_tokens: usize,
+    dim: usize,
+    eps: f32,
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (num_tokens > 65535 or dim < 1 or dim > 8192 or eps <= 0.0) return error.InvalidParam;
+    const total = std.math.mul(usize, num_tokens, dim) catch return error.InvalidParam;
+    if (x_mid.len != total or dense_in.len != total or moe_in.len != total or r_in.len != total) return error.InvalidParam;
+    if (ffn_norm.len != dim or pre_ffw_norm_2.len != dim or router_scale.len != dim) return error.InvalidParam;
+    const dev = x_mid.device_id;
+    if (dense_in.device_id != dev or moe_in.device_id != dev or r_in.device_id != dev or
+        ffn_norm.device_id != dev or pre_ffw_norm_2.device_id != dev or router_scale.device_id != dev)
+    {
+        return error.DeviceMismatch;
+    }
+    if (stream) |s| {
+        if (s.device_id != dev) return error.DeviceMismatch;
+    }
+    if (num_tokens == 0) return;
+
+    const x_ptr = x_mid.ptr orelse return error.InvalidParam;
+    const fn_ptr = ffn_norm.ptr orelse return error.InvalidParam;
+    const p2_ptr = pre_ffw_norm_2.ptr orelse return error.InvalidParam;
+    const rs_ptr = router_scale.ptr orelse return error.InvalidParam;
+    const di_ptr = dense_in.ptr orelse return error.InvalidParam;
+    const mi_ptr = moe_in.ptr orelse return error.InvalidParam;
+    const ri_ptr = r_in.ptr orelse return error.InvalidParam;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_fused_pre_ffn_norm(
+        x_ptr,
+        fn_ptr,
+        p2_ptr,
+        rs_ptr,
+        di_ptr,
+        mi_ptr,
+        ri_ptr,
+        root_size,
+        @intCast(num_tokens),
+        @intCast(dim),
+        eps,
+        dev,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
+pub fn fusedPostFfnCombine(
+    moe_accum: DeviceSlice(f32),
+    post_ffw_norm_2: DeviceSlice(f32),
+    h1: DeviceSlice(f32),
+    post_ffw_norm: DeviceSlice(f32),
+    x_mid: DeviceSlice(f32),
+    out: DeviceSlice(f32),
+    prompt_len: usize,
+    num_tokens: usize,
+    dim: usize,
+    enc_scale: f32,
+    layer_scale: f32,
+    eps: f32,
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (num_tokens > 65535 or dim < 1 or dim > 8192 or eps <= 0.0 or prompt_len > num_tokens) return error.InvalidParam;
+    const total = std.math.mul(usize, num_tokens, dim) catch return error.InvalidParam;
+    if (moe_accum.len != total or h1.len != total or x_mid.len != total or out.len != total) return error.InvalidParam;
+    if (post_ffw_norm_2.len != dim or post_ffw_norm.len != dim) return error.InvalidParam;
+    const dev = moe_accum.device_id;
+    if (h1.device_id != dev or x_mid.device_id != dev or out.device_id != dev or
+        post_ffw_norm_2.device_id != dev or post_ffw_norm.device_id != dev)
+    {
+        return error.DeviceMismatch;
+    }
+    if (stream) |s| {
+        if (s.device_id != dev) return error.DeviceMismatch;
+    }
+    if (num_tokens == 0) return;
+
+    const ma_ptr = moe_accum.ptr orelse return error.InvalidParam;
+    const p2_ptr = post_ffw_norm_2.ptr orelse return error.InvalidParam;
+    const h1_ptr = h1.ptr orelse return error.InvalidParam;
+    const pn_ptr = post_ffw_norm.ptr orelse return error.InvalidParam;
+    const xm_ptr = x_mid.ptr orelse return error.InvalidParam;
+    const out_ptr = out.ptr orelse return error.InvalidParam;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_fused_post_ffn_combine(
+        ma_ptr,
+        p2_ptr,
+        h1_ptr,
+        pn_ptr,
+        xm_ptr,
+        out_ptr,
+        @intCast(prompt_len),
+        @intCast(num_tokens),
+        @intCast(dim),
+        enc_scale,
+        layer_scale,
+        eps,
+        dev,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
+pub fn fusedHeadNormRope(
+    vec: DeviceSlice(f32),
+    weight: ?DeviceSlice(f32),
+    num_tokens: usize,
+    num_heads: usize,
+    head_dim: usize,
+    pos_offset: usize,
+    theta: f32,
+    freq_factors: ?DeviceSlice(f32),
+    eps: f32,
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (num_tokens > 65535 or num_heads < 1 or num_heads > 64) return error.InvalidParam;
+    if (head_dim < 1 or head_dim > 1024 or (head_dim % 2) != 0) return error.InvalidParam;
+    if (pos_offset > std.math.maxInt(c_int) or theta <= 0.0 or eps <= 0.0) return error.InvalidParam;
+
+    const total_heads = std.math.mul(usize, num_tokens, num_heads) catch return error.InvalidParam;
+    const total_elems = std.math.mul(usize, total_heads, head_dim) catch return error.InvalidParam;
+    if (vec.len != total_elems) return error.InvalidParam;
+    const dev = vec.device_id;
+    if (weight) |w| {
+        if (w.len != head_dim) return error.InvalidParam;
+        if (w.device_id != dev) return error.DeviceMismatch;
+    }
+    if (freq_factors) |ff| {
+        if (ff.len < head_dim / 2) return error.InvalidParam;
+        if (ff.device_id != dev) return error.DeviceMismatch;
+    }
+    if (stream) |s| {
+        if (s.device_id != dev) return error.DeviceMismatch;
+    }
+    if (total_elems == 0) return;
+
+    const vec_ptr = vec.ptr orelse return error.InvalidParam;
+    const w_ptr = if (weight) |w| (w.ptr orelse return error.InvalidParam) else null;
+    const ff_ptr = if (freq_factors) |ff| (ff.ptr orelse return error.InvalidParam) else null;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_fused_head_norm_rope(
+        vec_ptr,
+        w_ptr,
+        @intCast(num_tokens),
+        @intCast(num_heads),
+        @intCast(head_dim),
+        @intCast(pos_offset),
+        theta,
+        ff_ptr,
+        eps,
+        dev,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
 /// Batched MoE expert gate/up projection on GPU: out_gate_up = all_experts[top_indices[k]] * tokens_in[k/8]
 pub fn moeGemvGateUpBatched(
     all_expert_weights: DeviceSlice(u8),
@@ -4709,5 +4883,291 @@ test "CUDA Phase 13: moeGemvDownAccumSorted numerical parity with separate down 
         try std.testing.expect(diff_p <= 1e-4 + 1e-4 * @abs(r));
     }
     std.debug.print("[parity] moeGemvDownAccumSorted: max_diff = {e:.4} | moeGemvDownAccumPersistent: max_diff = {e:.4}\n", .{ max_diff, max_diff_pers });
+}
+
+test "CUDA Phase 15: fused intra-layer kernels numerical parity with CPU reference" {
+    if (!cuda.is_enabled) return;
+    const dev = requireHardwareDevice() catch |err| switch (err) {
+        error.NoDevice => return error.SkipZigTest,
+        else => return err,
+    };
+    const allocator = std.testing.allocator;
+
+    var prng = std.Random.DefaultPrng.init(0x1515);
+    const rand = prng.random();
+
+    const num_tokens: usize = 4;
+    const dim: usize = 2816;
+    const eps: f32 = 1e-6;
+
+    // 1. Test fusedPreFfnNorm parity
+    {
+        var x_mid_buf = try DeviceBuffer(f32).init(dev, num_tokens * dim);
+        defer x_mid_buf.deinit();
+        var ffn_norm_buf = try DeviceBuffer(f32).init(dev, dim);
+        defer ffn_norm_buf.deinit();
+        var pre_ffw_norm_2_buf = try DeviceBuffer(f32).init(dev, dim);
+        defer pre_ffw_norm_2_buf.deinit();
+        var router_scale_buf = try DeviceBuffer(f32).init(dev, dim);
+        defer router_scale_buf.deinit();
+
+        var dense_in_buf = try DeviceBuffer(f32).init(dev, num_tokens * dim);
+        defer dense_in_buf.deinit();
+        var moe_in_buf = try DeviceBuffer(f32).init(dev, num_tokens * dim);
+        defer moe_in_buf.deinit();
+        var r_in_buf = try DeviceBuffer(f32).init(dev, num_tokens * dim);
+        defer r_in_buf.deinit();
+
+        const host_x_mid = try allocator.alloc(f32, num_tokens * dim);
+        defer allocator.free(host_x_mid);
+        for (host_x_mid) |*x| x.* = (rand.float(f32) * 2.0) - 1.0;
+        try x_mid_buf.copyFromHost(host_x_mid);
+
+        const host_ffn_norm = try allocator.alloc(f32, dim);
+        defer allocator.free(host_ffn_norm);
+        for (host_ffn_norm) |*x| x.* = 1.0 + (rand.float(f32) * 0.1);
+        try ffn_norm_buf.copyFromHost(host_ffn_norm);
+
+        const host_pre_ffw_norm_2 = try allocator.alloc(f32, dim);
+        defer allocator.free(host_pre_ffw_norm_2);
+        for (host_pre_ffw_norm_2) |*x| x.* = 1.0 + (rand.float(f32) * 0.1);
+        try pre_ffw_norm_2_buf.copyFromHost(host_pre_ffw_norm_2);
+
+        const host_router_scale = try allocator.alloc(f32, dim);
+        defer allocator.free(host_router_scale);
+        for (host_router_scale) |*x| x.* = 1.0 + (rand.float(f32) * 0.1);
+        try router_scale_buf.copyFromHost(host_router_scale);
+
+        const root_size: f32 = 1.0 / @sqrt(@as(f32, @floatFromInt(dim)));
+
+        try fusedPreFfnNorm(
+            x_mid_buf.slice(),
+            ffn_norm_buf.slice(),
+            pre_ffw_norm_2_buf.slice(),
+            router_scale_buf.slice(),
+            dense_in_buf.slice(),
+            moe_in_buf.slice(),
+            r_in_buf.slice(),
+            root_size,
+            num_tokens,
+            dim,
+            eps,
+            null,
+        );
+
+        const host_dense_in = try allocator.alloc(f32, num_tokens * dim);
+        defer allocator.free(host_dense_in);
+        try dense_in_buf.copyToHost(host_dense_in);
+
+        const host_moe_in = try allocator.alloc(f32, num_tokens * dim);
+        defer allocator.free(host_moe_in);
+        try moe_in_buf.copyToHost(host_moe_in);
+
+        const host_r_in = try allocator.alloc(f32, num_tokens * dim);
+        defer allocator.free(host_r_in);
+        try r_in_buf.copyToHost(host_r_in);
+
+        // CPU reference computation
+        var max_diff_dense: f32 = 0.0;
+        var max_diff_moe: f32 = 0.0;
+        var max_diff_r: f32 = 0.0;
+
+        for (0..num_tokens) |t| {
+            const row = host_x_mid[t * dim .. (t + 1) * dim];
+            var sum_sq: f32 = 0.0;
+            for (row) |v| sum_sq += v * v;
+            const inv_rms = 1.0 / @sqrt(sum_sq / @as(f32, @floatFromInt(dim)) + eps);
+
+            for (0..dim) |i| {
+                const unnorm = row[i] * inv_rms;
+                const expected_dense = unnorm * host_ffn_norm[i];
+                const expected_moe = unnorm * host_pre_ffw_norm_2[i];
+                const expected_r = unnorm * (host_router_scale[i] * root_size);
+
+                const diff_d = @abs(expected_dense - host_dense_in[t * dim + i]);
+                if (diff_d > max_diff_dense) max_diff_dense = diff_d;
+                try std.testing.expect(diff_d <= 1e-5);
+
+                const diff_m = @abs(expected_moe - host_moe_in[t * dim + i]);
+                if (diff_m > max_diff_moe) max_diff_moe = diff_m;
+                try std.testing.expect(diff_m <= 1e-5);
+
+                const diff_r = @abs(expected_r - host_r_in[t * dim + i]);
+                if (diff_r > max_diff_r) max_diff_r = diff_r;
+                try std.testing.expect(diff_r <= 1e-5);
+            }
+        }
+        std.debug.print("\n[parity] Fused Pre-FFN Norm: max_diff_dense = {e:.4}, max_diff_moe = {e:.4}, max_diff_r = {e:.4}\n", .{
+            max_diff_dense, max_diff_moe, max_diff_r,
+        });
+    }
+
+    // 2. Test fusedPostFfnCombine parity
+    {
+        var moe_accum_buf = try DeviceBuffer(f32).init(dev, num_tokens * dim);
+        defer moe_accum_buf.deinit();
+        var post_ffw_norm_2_buf = try DeviceBuffer(f32).init(dev, dim);
+        defer post_ffw_norm_2_buf.deinit();
+        var h1_buf = try DeviceBuffer(f32).init(dev, num_tokens * dim);
+        defer h1_buf.deinit();
+        var post_ffw_norm_buf = try DeviceBuffer(f32).init(dev, dim);
+        defer post_ffw_norm_buf.deinit();
+        var x_mid_buf = try DeviceBuffer(f32).init(dev, num_tokens * dim);
+        defer x_mid_buf.deinit();
+        var out_buf = try DeviceBuffer(f32).init(dev, num_tokens * dim);
+        defer out_buf.deinit();
+
+        const host_moe_accum = try allocator.alloc(f32, num_tokens * dim);
+        defer allocator.free(host_moe_accum);
+        for (host_moe_accum) |*x| x.* = (rand.float(f32) * 2.0) - 1.0;
+        try moe_accum_buf.copyFromHost(host_moe_accum);
+
+        const host_p2 = try allocator.alloc(f32, dim);
+        defer allocator.free(host_p2);
+        for (host_p2) |*x| x.* = 1.0 + (rand.float(f32) * 0.1);
+        try post_ffw_norm_2_buf.copyFromHost(host_p2);
+
+        const host_h1 = try allocator.alloc(f32, num_tokens * dim);
+        defer allocator.free(host_h1);
+        for (host_h1) |*x| x.* = (rand.float(f32) * 2.0) - 1.0;
+        try h1_buf.copyFromHost(host_h1);
+
+        const host_pn = try allocator.alloc(f32, dim);
+        defer allocator.free(host_pn);
+        for (host_pn) |*x| x.* = 1.0 + (rand.float(f32) * 0.1);
+        try post_ffw_norm_buf.copyFromHost(host_pn);
+
+        const host_x_mid = try allocator.alloc(f32, num_tokens * dim);
+        defer allocator.free(host_x_mid);
+        for (host_x_mid) |*x| x.* = (rand.float(f32) * 2.0) - 1.0;
+        try x_mid_buf.copyFromHost(host_x_mid);
+
+        try fusedPostFfnCombine(
+            moe_accum_buf.slice(),
+            post_ffw_norm_2_buf.slice(),
+            h1_buf.slice(),
+            post_ffw_norm_buf.slice(),
+            x_mid_buf.slice(),
+            out_buf.slice(),
+            0,
+            num_tokens,
+            dim,
+            1.0,
+            1.0,
+            eps,
+            null,
+        );
+
+        const host_out = try allocator.alloc(f32, num_tokens * dim);
+        defer allocator.free(host_out);
+        try out_buf.copyToHost(host_out);
+
+        var max_diff_post: f32 = 0.0;
+        for (0..num_tokens) |t| {
+            const row_moe = host_moe_accum[t * dim .. (t + 1) * dim];
+            var sum_sq_m: f32 = 0.0;
+            for (row_moe) |v| sum_sq_m += v * v;
+            const inv_rms_m = 1.0 / @sqrt(sum_sq_m / @as(f32, @floatFromInt(dim)) + eps);
+
+            const row_h1 = host_h1[t * dim .. (t + 1) * dim];
+            var comb = try allocator.alloc(f32, dim);
+            defer allocator.free(comb);
+            var sum_sq_c: f32 = 0.0;
+            for (0..dim) |i| {
+                const h2 = row_moe[i] * inv_rms_m * host_p2[i];
+                comb[i] = row_h1[i] + h2;
+                sum_sq_c += comb[i] * comb[i];
+            }
+            const inv_rms_c = 1.0 / @sqrt(sum_sq_c / @as(f32, @floatFromInt(dim)) + eps);
+
+            const row_xm = host_x_mid[t * dim .. (t + 1) * dim];
+            for (0..dim) |i| {
+                const post_ffn = comb[i] * inv_rms_c * host_pn[i];
+                const expected = row_xm[i] + post_ffn;
+                const diff = @abs(expected - host_out[t * dim + i]);
+                if (diff > max_diff_post) max_diff_post = diff;
+                try std.testing.expect(diff <= 1e-5);
+            }
+        }
+        std.debug.print("[parity] Fused Post-FFN Combine: max_diff = {e:.4}\n", .{max_diff_post});
+    }
+
+    // 3. Test fusedHeadNormRope parity
+    {
+        const num_heads: usize = 16;
+        const head_dim: usize = 256;
+        const total_elems = num_tokens * num_heads * head_dim;
+
+        var vec_buf = try DeviceBuffer(f32).init(dev, total_elems);
+        defer vec_buf.deinit();
+        var weight_buf = try DeviceBuffer(f32).init(dev, head_dim);
+        defer weight_buf.deinit();
+
+        const host_vec = try allocator.alloc(f32, total_elems);
+        defer allocator.free(host_vec);
+        for (host_vec) |*x| x.* = (rand.float(f32) * 2.0) - 1.0;
+        try vec_buf.copyFromHost(host_vec);
+
+        const host_weight = try allocator.alloc(f32, head_dim);
+        defer allocator.free(host_weight);
+        for (host_weight) |*x| x.* = 1.0 + (rand.float(f32) * 0.1);
+        try weight_buf.copyFromHost(host_weight);
+
+        const theta: f32 = 10000.0;
+
+        try fusedHeadNormRope(
+            vec_buf.slice(),
+            weight_buf.slice(),
+            num_tokens,
+            num_heads,
+            head_dim,
+            0,
+            theta,
+            null,
+            eps,
+            null,
+        );
+
+        const host_out = try allocator.alloc(f32, total_elems);
+        defer allocator.free(host_out);
+        try vec_buf.copyToHost(host_out);
+
+        var max_diff_rope: f32 = 0.0;
+        const half = head_dim / 2;
+
+        for (0..num_tokens) |t| {
+            for (0..num_heads) |h| {
+                const head_idx = (t * num_heads + h) * head_dim;
+                const head_slice = host_vec[head_idx .. head_idx + head_dim];
+
+                var sum_sq: f32 = 0.0;
+                for (head_slice) |v| sum_sq += v * v;
+                const inv_rms = 1.0 / @sqrt(sum_sq / @as(f32, @floatFromInt(head_dim)) + eps);
+
+                for (0..half) |i| {
+                    const v0 = (head_slice[i] * inv_rms) * host_weight[i];
+                    const v1 = (head_slice[half + i] * inv_rms) * host_weight[half + i];
+
+                    const exp_val = 2.0 * @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(head_dim));
+                    const freq = 1.0 / std.math.pow(f32, theta, exp_val);
+                    const angle = @as(f32, @floatFromInt(t)) * freq;
+                    const cos_val = @cos(angle);
+                    const sin_val = @sin(angle);
+
+                    const exp_v0 = v0 * cos_val - v1 * sin_val;
+                    const exp_v1 = v0 * sin_val + v1 * cos_val;
+
+                    const diff0 = @abs(exp_v0 - host_out[head_idx + i]);
+                    if (diff0 > max_diff_rope) max_diff_rope = diff0;
+                    try std.testing.expect(diff0 <= 1e-5);
+
+                    const diff1 = @abs(exp_v1 - host_out[head_idx + half + i]);
+                    if (diff1 > max_diff_rope) max_diff_rope = diff1;
+                    try std.testing.expect(diff1 <= 1e-5);
+                }
+            }
+        }
+        std.debug.print("[parity] Fused Head Norm RoPE: max_diff = {e:.4}\n", .{max_diff_rope});
+    }
 }
 
