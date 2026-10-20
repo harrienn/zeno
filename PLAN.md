@@ -339,8 +339,8 @@ Prepare Phase 14 to address dense GEMV memory-bandwidth efficiency and host-stag
 ```
 
 This active objective builds upon completed Phase 13 MoE optimizations and empirical research findings:
-- WP1: Fused down-projection and direct scaled atomic accumulation (`moe_gemv_down_accum_sorted_kernel`), eliminating intermediate `exp_down_buf` DRAM traffic saving 78.6MB/step and reclaiming 92.28MB VRAM across dual GPUs.
-- WP2: Active-expert compaction in `moe_build_expert_bins_kernel` and empirical evaluation of persistent work-queue MoE kernels, demonstrating that static 2D sorted grid dispatch delivers superior L2 cache residency on Ampere SM 8.6 (1.62MB expert weights fitting in 3MB L2 cache) compared to persistent queues (+2.2ms to +14.5ms speed advantage for sorted dispatch).
+- WP1: Fused down-projection and direct scaled atomic accumulation (`moe_gemv_down_accum_sorted_kernel`), eliminating intermediate `exp_down_buf` round-trips (saving 86.5MB logical traffic/step at C=16) and reclaiming 92.28MB VRAM across dual GPUs.
+- WP2: Active-expert compaction in `moe_build_expert_bins_kernel` and empirical evaluation of persistent work-queue MoE kernels, demonstrating that static 2D sorted grid dispatch delivers superior performance compared to persistent queues (+2.2ms to +14.5ms speed advantage for sorted dispatch, attributed to a single expert's 2.23MB weights fitting within the 3MB L2 cache).
 - 100% discrete decision parity (5/5 golden oracle fixtures) and 15/15 HTTP API server integration tests verified.
 
 ---
