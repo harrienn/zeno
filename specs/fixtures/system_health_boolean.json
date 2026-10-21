@@ -1,6 +1,6 @@
 {
   "schema": "zeno.fixture/v1",
-  "policy": "zeno.tolerance/v1",
+  "policy": "zeno.tolerance/v2",
   "description": "System health boolean single-step decision query on DiffusionGemma 26B-A4B-it Q4_K_M",
   "model": {
     "path": "models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf",

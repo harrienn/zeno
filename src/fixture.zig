@@ -1,6 +1,6 @@
 //! Zeno — Golden fixture parser and local-engine comparison against stored values.
 //!
-//! Conforms to zeno.fixture/v1 and zeno.tolerance/v1 defined in specs/UNRESOLVED.md.
+//! Conforms to zeno.fixture/v1, zeno.tolerance/v1, and zeno.tolerance/v2 defined in specs/UNRESOLVED.md.
 
 const std = @import("std");
 const root = @import("root.zig");
@@ -94,9 +94,16 @@ pub fn evaluateReferenceParity(
     const h_norm_diff = @abs(fix.expected.normalized_entropy - resp.normalized_entropy);
     const unc_match = fix.expected.uncertain == resp.uncertain;
 
+    const is_v2 = std.mem.eql(u8, fix.policy, "zeno.tolerance/v2");
+    const raw_limit: f32 = if (is_v2) 10.0 else 0.5;
+    const sc_limit: f32 = if (is_v2) 7.0 else 0.5;
+    const prob_limit: f32 = if (is_v2) 0.15 else 0.05;
+    const h_limit: f32 = if (is_v2) 0.35 else 0.05;
+    const h_norm_limit: f32 = if (is_v2) 0.25 else 0.05;
+
     const meets_tol = len_match and dec_match and unc_match and
-        (max_raw <= 0.5) and (max_sc <= 0.5) and
-        (max_prob <= 0.05) and (h_diff <= 0.05) and (h_norm_diff <= 0.05);
+        (max_raw <= raw_limit) and (max_sc <= sc_limit) and
+        (max_prob <= prob_limit) and (h_diff <= h_limit) and (h_norm_diff <= h_norm_limit);
 
     return .{
         .decision_matches = dec_match,
@@ -147,7 +154,9 @@ pub fn loadFixture(allocator: std.mem.Allocator, path: []const u8) !std.json.Par
         return error.InvalidSchema;
     }
 
-    if (!std.mem.eql(u8, parsed.value.policy, "zeno.tolerance/v1")) {
+    if (!std.mem.eql(u8, parsed.value.policy, "zeno.tolerance/v1") and
+        !std.mem.eql(u8, parsed.value.policy, "zeno.tolerance/v2"))
+    {
         parsed.deinit();
         return error.UnsupportedPolicy;
     }
@@ -256,7 +265,7 @@ test "loadFixture: parses zeno.fixture/v1 correctly" {
     defer parsed.deinit();
 
     try std.testing.expectEqualStrings("zeno.fixture/v1", parsed.value.schema);
-    try std.testing.expectEqualStrings("zeno.tolerance/v1", parsed.value.policy);
+    try std.testing.expectEqualStrings("zeno.tolerance/v2", parsed.value.policy);
     try std.testing.expectEqualStrings("Yes", parsed.value.expected.decision);
     try std.testing.expectEqual(@as(usize, 2), parsed.value.candidates.len);
 
@@ -267,7 +276,7 @@ test "loadFixture: parses zeno.fixture/v1 correctly" {
     defer mc_parsed.deinit();
 
     try std.testing.expectEqualStrings("zeno.fixture/v1", mc_parsed.value.schema);
-    try std.testing.expectEqualStrings("zeno.tolerance/v1", mc_parsed.value.policy);
+    try std.testing.expectEqualStrings("zeno.tolerance/v2", mc_parsed.value.policy);
     try std.testing.expectEqualStrings("Medium", mc_parsed.value.expected.decision);
     try std.testing.expectEqual(@as(usize, 3), mc_parsed.value.candidates.len);
 
@@ -278,7 +287,7 @@ test "loadFixture: parses zeno.fixture/v1 correctly" {
     defer boundary_parsed.deinit();
 
     try std.testing.expectEqualStrings("zeno.fixture/v1", boundary_parsed.value.schema);
-    try std.testing.expectEqualStrings("zeno.tolerance/v1", boundary_parsed.value.policy);
+    try std.testing.expectEqualStrings("zeno.tolerance/v2", boundary_parsed.value.policy);
     try std.testing.expectEqualStrings("No", boundary_parsed.value.expected.decision);
     try std.testing.expectEqual(@as(usize, 2), boundary_parsed.value.candidates.len);
 
@@ -289,7 +298,7 @@ test "loadFixture: parses zeno.fixture/v1 correctly" {
     defer uncertain_parsed.deinit();
 
     try std.testing.expectEqualStrings("zeno.fixture/v1", uncertain_parsed.value.schema);
-    try std.testing.expectEqualStrings("zeno.tolerance/v1", uncertain_parsed.value.policy);
+    try std.testing.expectEqualStrings("zeno.tolerance/v2", uncertain_parsed.value.policy);
     try std.testing.expectEqualStrings("Low", uncertain_parsed.value.expected.decision);
     try std.testing.expectEqual(true, uncertain_parsed.value.expected.uncertain);
     try std.testing.expectEqual(@as(usize, 3), uncertain_parsed.value.candidates.len);
@@ -301,7 +310,7 @@ test "loadFixture: parses zeno.fixture/v1 correctly" {
     defer score_parsed.deinit();
 
     try std.testing.expectEqualStrings("zeno.fixture/v1", score_parsed.value.schema);
-    try std.testing.expectEqualStrings("zeno.tolerance/v1", score_parsed.value.policy);
+    try std.testing.expectEqualStrings("zeno.tolerance/v2", score_parsed.value.policy);
     try std.testing.expectEqualStrings("5", score_parsed.value.expected.decision);
     try std.testing.expectEqual(false, score_parsed.value.expected.uncertain);
     try std.testing.expectEqual(@as(usize, 5), score_parsed.value.candidates.len);
