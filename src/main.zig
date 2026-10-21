@@ -231,6 +231,15 @@ pub fn main(init: std.process.Init) !void {
                 c.raw_logit,
             });
         }
+        if (resp.timings) |t| {
+            try stdout_writer.print("Timings:\n", .{});
+            try stdout_writer.print("  - Prompt prefill:    {d:.2} ms (cache hit: {})\n", .{ t.prompt_prefill_ms, t.prompt_cache_hit });
+            try stdout_writer.print("  - Canvas Step 1:     {d:.2} ms\n", .{ t.canvas_step1_ms });
+            if (t.canvas_step2_ms > 0) {
+                try stdout_writer.print("  - Canvas Step 2:     {d:.2} ms\n", .{ t.canvas_step2_ms });
+            }
+            try stdout_writer.print("  - Total Engine:      {d:.2} ms\n", .{ t.total_engine_ms });
+        }
     } else if (args.len > 1 and (std.mem.eql(u8, args[1], "metadata") or std.mem.eql(u8, args[1], "meta"))) {
         if (args.len < 3) {
             try stdout_writer.print("Usage: zeno metadata <path/to/model.gguf>\n", .{});

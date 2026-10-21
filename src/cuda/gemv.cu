@@ -143,7 +143,7 @@ __global__ void gemv_q8_0_batched_4x_kernel(
     }
 }
 
-__global__ void gemv_q8_0_batched_16x_kernel(
+__global__ void __launch_bounds__(256, 4) gemv_q8_0_batched_16x_kernel(
     const BlockQ8_0 *W,
     const float *x,
     float *out,
@@ -152,61 +152,124 @@ __global__ void gemv_q8_0_batched_16x_kernel(
     int blocks_per_row,
     int batch_size
 ) {
-    __shared__ alignas(16) float s_x[16][32];
+    __shared__ alignas(16) float s_x[16][64];
 
     int tid = threadIdx.x;
     int warp_id = tid >> 5;
     int lane_id = tid & 31;
-    int row = blockIdx.x * 8 + warp_id;
+    int row0 = blockIdx.x * 16 + warp_id * 2;
+    int row1 = row0 + 1;
     int t_base = blockIdx.y * 16;
-    bool active_row = (row < out_dim);
+    bool active_row0 = (row0 < out_dim);
+    bool active_row1 = (row1 < out_dim);
 
-    const float *tok_x[16];
-    #pragma unroll
-    for (int t = 0; t < 16; ++t) {
-        int tidx = t_base + t;
-        tok_x[t] = (tidx < batch_size) ? (x + (size_t)tidx * in_dim) : NULL;
-    }
+    const BlockQ8_0 *row_w0 = active_row0 ? (W + (size_t)row0 * blocks_per_row) : NULL;
+    const BlockQ8_0 *row_w1 = active_row1 ? (W + (size_t)row1 * blocks_per_row) : NULL;
 
-    const BlockQ8_0 *row_w = active_row ? (W + (size_t)row * blocks_per_row) : NULL;
+    float sum0[16] = {0.0f};
+    float sum1[16] = {0.0f};
 
-    float sum[16] = {0.0f};
-    for (int b = 0; b < blocks_per_row; b++) {
+    int b = 0;
+    for (; b + 1 < blocks_per_row; b += 2) {
         size_t base_x = (size_t)b * 32;
 
+        int t = tid >> 4;           // 0..15 tokens
+        int f_idx = (tid & 15) * 4; // 0..60 floats (step 4)
+        int tidx = t_base + t;
+        if (tidx < batch_size) {
+            *(float4*)&s_x[t][f_idx] = *(const float4*)&x[(size_t)tidx * in_dim + base_x + f_idx];
+        } else {
+            *(float4*)&s_x[t][f_idx] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+        }
+        __syncthreads();
+
+        if (active_row0) {
+            const BlockQ8_0 *blk0 = row_w0 + b;
+            const BlockQ8_0 *blk1 = row_w0 + b + 1;
+            float d0 = __half2float(blk0->d);
+            float d1 = __half2float(blk1->d);
+            float w0 = d0 * (float)blk0->qs[lane_id];
+            float w1 = d1 * (float)blk1->qs[lane_id];
+
+            #pragma unroll
+            for (int t = 0; t < 16; ++t) {
+                if (t_base + t < batch_size) {
+                    sum0[t] += w0 * s_x[t][lane_id] + w1 * s_x[t][32 + lane_id];
+                }
+            }
+        }
+
+        if (active_row1) {
+            const BlockQ8_0 *blk0 = row_w1 + b;
+            const BlockQ8_0 *blk1 = row_w1 + b + 1;
+            float d0 = __half2float(blk0->d);
+            float d1 = __half2float(blk1->d);
+            float w0 = d0 * (float)blk0->qs[lane_id];
+            float w1 = d1 * (float)blk1->qs[lane_id];
+
+            #pragma unroll
+            for (int t = 0; t < 16; ++t) {
+                if (t_base + t < batch_size) {
+                    sum1[t] += w0 * s_x[t][lane_id] + w1 * s_x[t][32 + lane_id];
+                }
+            }
+        }
+
+        if (b + 2 < blocks_per_row) {
+            __syncthreads();
+        }
+    }
+
+    if (b < blocks_per_row) {
+        size_t base_x = (size_t)b * 32;
         if (tid < 128) {
             int t = tid >> 3;
             int f_idx = (tid & 7) * 4;
-            if (tok_x[t]) {
-                *(float4*)&s_x[t][f_idx] = *(const float4*)&tok_x[t][base_x + f_idx];
+            int tidx = t_base + t;
+            if (tidx < batch_size) {
+                *(float4*)&s_x[t][f_idx] = *(const float4*)&x[(size_t)tidx * in_dim + base_x + f_idx];
             } else {
                 *(float4*)&s_x[t][f_idx] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
             }
         }
         __syncthreads();
 
-        if (active_row) {
-            const BlockQ8_0 *blk = row_w + b;
+        if (active_row0) {
+            const BlockQ8_0 *blk = row_w0 + b;
             float d = __half2float(blk->d);
             float w = d * (float)blk->qs[lane_id];
-
             #pragma unroll
             for (int t = 0; t < 16; ++t) {
-                if (tok_x[t]) sum[t] += w * s_x[t][lane_id];
+                if (t_base + t < batch_size) sum0[t] += w * s_x[t][lane_id];
             }
         }
-
-        if (b + 1 < blocks_per_row) {
-            __syncthreads();
+        if (active_row1) {
+            const BlockQ8_0 *blk = row_w1 + b;
+            float d = __half2float(blk->d);
+            float w = d * (float)blk->qs[lane_id];
+            #pragma unroll
+            for (int t = 0; t < 16; ++t) {
+                if (t_base + t < batch_size) sum1[t] += w * s_x[t][lane_id];
+            }
         }
     }
 
-    if (active_row) {
+    if (active_row0) {
         #pragma unroll
         for (int t = 0; t < 16; ++t) {
-            if (tok_x[t]) {
-                float r = warp_reduce_sum(sum[t]);
-                if (lane_id == 0) out[(size_t)(t_base + t) * out_dim + row] = r;
+            if (t_base + t < batch_size) {
+                float r = warp_reduce_sum(sum0[t]);
+                if (lane_id == 0) out[(size_t)(t_base + t) * out_dim + row0] = r;
+            }
+        }
+    }
+
+    if (active_row1) {
+        #pragma unroll
+        for (int t = 0; t < 16; ++t) {
+            if (t_base + t < batch_size) {
+                float r = warp_reduce_sum(sum1[t]);
+                if (lane_id == 0) out[(size_t)(t_base + t) * out_dim + row1] = r;
             }
         }
     }
@@ -349,7 +412,7 @@ __global__ void gemv_q4k_batched_4x_kernel(
     }
 }
 
-__global__ void gemv_q4k_batched_16x_kernel(
+__global__ void __launch_bounds__(256, 4) gemv_q4k_batched_16x_kernel(
     const BlockQ4_K *W,
     const float *x,
     float *out,
@@ -369,13 +432,6 @@ __global__ void gemv_q4k_batched_16x_kernel(
     bool active_row0 = (row0 < out_dim);
     bool active_row1 = (row1 < out_dim);
 
-    const float *tok_x[16];
-    #pragma unroll
-    for (int t = 0; t < 16; ++t) {
-        int tidx = t_base + t;
-        tok_x[t] = (tidx < batch_size) ? (x + (size_t)tidx * in_dim) : NULL;
-    }
-
     const BlockQ4_K *row_w0 = active_row0 ? (W + (size_t)row0 * blocks_per_row) : NULL;
     const BlockQ4_K *row_w1 = active_row1 ? (W + (size_t)row1 * blocks_per_row) : NULL;
     float sum0[16] = {0.0f};
@@ -391,8 +447,9 @@ __global__ void gemv_q4k_batched_16x_kernel(
             int idx4 = tid + i * 256;
             int t = idx4 >> 6;
             int f_idx = (idx4 & 63) * 4;
-            if (tok_x[t]) {
-                s_x4[idx4] = *(const float4*)&tok_x[t][base_x + f_idx];
+            int tidx = t_base + t;
+            if (tidx < batch_size) {
+                s_x4[idx4] = *(const float4*)&x[(size_t)tidx * in_dim + base_x + f_idx];
             } else {
                 s_x4[idx4] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
             }
@@ -437,7 +494,7 @@ __global__ void gemv_q4k_batched_16x_kernel(
 
             #pragma unroll
             for (int t = 0; t < 16; ++t) {
-                if (tok_x[t]) {
+                if (t_base + t < batch_size) {
                     float x1 = s_x[t][off1];
                     float x2 = s_x[t][off2];
                     if (active_row0) sum0[t] += w1_0 * x1 + w2_0 * x2;
@@ -454,7 +511,7 @@ __global__ void gemv_q4k_batched_16x_kernel(
     if (active_row0) {
         #pragma unroll
         for (int t = 0; t < 16; ++t) {
-            if (tok_x[t]) {
+            if (t_base + t < batch_size) {
                 float r = warp_reduce_sum(sum0[t]);
                 if (lane_id == 0) out[(size_t)(t_base + t) * out_dim + row0] = r;
             }
@@ -464,7 +521,7 @@ __global__ void gemv_q4k_batched_16x_kernel(
     if (active_row1) {
         #pragma unroll
         for (int t = 0; t < 16; ++t) {
-            if (tok_x[t]) {
+            if (t_base + t < batch_size) {
                 float r = warp_reduce_sum(sum1[t]);
                 if (lane_id == 0) out[(size_t)(t_base + t) * out_dim + row1] = r;
             }
@@ -472,7 +529,7 @@ __global__ void gemv_q4k_batched_16x_kernel(
     }
 }
 
-__global__ void __launch_bounds__(256, 3) gemv_q4k_fused_qk_16x_kernel(
+__global__ void __launch_bounds__(256, 4) gemv_q4k_fused_qk_16x_kernel(
     const BlockQ4_K *W_q,
     const BlockQ4_K *W_k,
     const float *x,
@@ -496,13 +553,6 @@ __global__ void __launch_bounds__(256, 3) gemv_q4k_fused_qk_16x_kernel(
     int total_rows = q_dim + k_dim;
     bool active_row0 = (row0 < total_rows);
     bool active_row1 = (row1 < total_rows);
-
-    const float *tok_x[16];
-    #pragma unroll
-    for (int t = 0; t < 16; ++t) {
-        int tidx = t_base + t;
-        tok_x[t] = (tidx < batch_size) ? (x + (size_t)tidx * in_dim) : NULL;
-    }
 
     const BlockQ4_K *row_w0 = NULL;
     if (active_row0) {
@@ -535,8 +585,9 @@ __global__ void __launch_bounds__(256, 3) gemv_q4k_fused_qk_16x_kernel(
             int idx4 = tid + i * 256;
             int t = idx4 >> 6;
             int f_idx = (idx4 & 63) * 4;
-            if (tok_x[t]) {
-                s_x4[idx4] = *(const float4*)&tok_x[t][base_x + f_idx];
+            int tidx = t_base + t;
+            if (tidx < batch_size) {
+                s_x4[idx4] = *(const float4*)&x[(size_t)tidx * in_dim + base_x + f_idx];
             } else {
                 s_x4[idx4] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
             }
@@ -581,7 +632,7 @@ __global__ void __launch_bounds__(256, 3) gemv_q4k_fused_qk_16x_kernel(
 
             #pragma unroll
             for (int t = 0; t < 16; ++t) {
-                if (tok_x[t]) {
+                if (t_base + t < batch_size) {
                     float x1 = s_x[t][off1];
                     float x2 = s_x[t][off2];
                     if (active_row0) sum0[t] += w1_0 * x1 + w2_0 * x2;
@@ -602,7 +653,7 @@ __global__ void __launch_bounds__(256, 3) gemv_q4k_fused_qk_16x_kernel(
         bool write_v0 = (row0 >= q_dim && out_v != NULL);
 
         for (int t = 0; t < 16; ++t) {
-            if (tok_x[t]) {
+            if (t_base + t < batch_size) {
                 float r = warp_reduce_sum(sum0[t]);
                 if (lane_id == 0) {
                     dst0[(size_t)(t_base + t) * d_dim0 + d_row0] = r;
@@ -621,7 +672,7 @@ __global__ void __launch_bounds__(256, 3) gemv_q4k_fused_qk_16x_kernel(
         bool write_v1 = (row1 >= q_dim && out_v != NULL);
 
         for (int t = 0; t < 16; ++t) {
-            if (tok_x[t]) {
+            if (t_base + t < batch_size) {
                 float r = warp_reduce_sum(sum1[t]);
                 if (lane_id == 0) {
                     dst1[(size_t)(t_base + t) * d_dim1 + d_row1] = r;
@@ -634,7 +685,7 @@ __global__ void __launch_bounds__(256, 3) gemv_q4k_fused_qk_16x_kernel(
     }
 }
 
-__global__ void dense_gemv_gate_up_geglu_q4k_kernel(
+__global__ void __launch_bounds__(256, 4) dense_gemv_gate_up_geglu_q4k_kernel(
     const BlockQ4_K *__restrict__ W_gate,
     const BlockQ4_K *__restrict__ W_up,
     const float *__restrict__ x,
@@ -653,16 +704,6 @@ __global__ void dense_gemv_gate_up_geglu_q4k_kernel(
     int t_base = blockIdx.y * 16;
     bool active_row = (row < out_dim);
 
-    const float *tok_x[16];
-    #pragma unroll
-    for (int t = 0; t < 16; ++t) {
-        int tidx = t_base + t;
-        tok_x[t] = (tidx < batch_size) ? (x + (size_t)tidx * in_dim) : NULL;
-    }
-
-    const BlockQ4_K *gate_row_w = active_row ? (W_gate + (size_t)row * blocks_per_row) : NULL;
-    const BlockQ4_K *up_row_w   = active_row ? (W_up   + (size_t)row * blocks_per_row) : NULL;
-
     float gate_sum[16] = {0.0f};
     float up_sum[16]   = {0.0f};
 
@@ -676,8 +717,9 @@ __global__ void dense_gemv_gate_up_geglu_q4k_kernel(
             int idx4 = tid + i * 256;
             int t = idx4 >> 6;
             int f_idx = (idx4 & 63) * 4;
-            if (tok_x[t]) {
-                s_x4[idx4] = *(const float4*)&tok_x[t][base_x + f_idx];
+            int tidx = t_base + t;
+            if (tidx < batch_size) {
+                s_x4[idx4] = *(const float4*)&x[(size_t)tidx * in_dim + base_x + f_idx];
             } else {
                 s_x4[idx4] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
             }
@@ -685,8 +727,8 @@ __global__ void dense_gemv_gate_up_geglu_q4k_kernel(
         __syncthreads();
 
         if (active_row) {
-            const BlockQ4_K *gate_blk = gate_row_w + b;
-            const BlockQ4_K *up_blk   = up_row_w   + b;
+            const BlockQ4_K *gate_blk = W_gate + (size_t)row * blocks_per_row + b;
+            const BlockQ4_K *up_blk   = W_up   + (size_t)row * blocks_per_row + b;
 
             float gate_my_d, gate_my_m;
             precompute_q4k_scales(gate_blk, lane_id, &gate_my_d, &gate_my_m);
@@ -721,7 +763,7 @@ __global__ void dense_gemv_gate_up_geglu_q4k_kernel(
 
                 #pragma unroll
                 for (int t = 0; t < 16; ++t) {
-                    if (tok_x[t]) {
+                    if (t_base + t < batch_size) {
                         float x1 = s_x[t][off1];
                         float x2 = s_x[t][off2];
                         gate_sum[t] += g_w1 * x1 + g_w2 * x2;
@@ -739,7 +781,7 @@ __global__ void dense_gemv_gate_up_geglu_q4k_kernel(
     if (active_row) {
         #pragma unroll
         for (int t = 0; t < 16; ++t) {
-            if (tok_x[t]) {
+            if (t_base + t < batch_size) {
                 float g = warp_reduce_sum(gate_sum[t]);
                 float u = warp_reduce_sum(up_sum[t]);
                 if (lane_id == 0) {
@@ -896,7 +938,7 @@ __global__ void gemv_q6k_batched_4x_kernel(
     }
 }
 
-__global__ void gemv_q6k_batched_16x_kernel(
+__global__ void __launch_bounds__(256, 4) gemv_q6k_batched_16x_kernel(
     const BlockQ6_K *W,
     const float *x,
     float *out,
@@ -914,13 +956,6 @@ __global__ void gemv_q6k_batched_16x_kernel(
     int t_base = blockIdx.y * 16;
     bool active_row = (row < out_dim);
 
-    const float *tok_x[16];
-    #pragma unroll
-    for (int t = 0; t < 16; ++t) {
-        int tidx = t_base + t;
-        tok_x[t] = (tidx < batch_size) ? (x + (size_t)tidx * in_dim) : NULL;
-    }
-
     const BlockQ6_K *row_w = active_row ? (W + (size_t)row * blocks_per_row) : NULL;
 
     float sum[16] = {0.0f};
@@ -934,8 +969,9 @@ __global__ void gemv_q6k_batched_16x_kernel(
             int idx4 = tid + i * 256;
             int t = idx4 >> 6;
             int f_idx = (idx4 & 63) * 4;
-            if (tok_x[t]) {
-                s_x4[idx4] = *(const float4*)&tok_x[t][base_x + f_idx];
+            int tidx = t_base + t;
+            if (tidx < batch_size) {
+                s_x4[idx4] = *(const float4*)&x[(size_t)tidx * in_dim + base_x + f_idx];
             } else {
                 s_x4[idx4] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
             }
@@ -975,7 +1011,7 @@ __global__ void gemv_q6k_batched_16x_kernel(
 
                 #pragma unroll
                 for (int t = 0; t < 16; ++t) {
-                    if (tok_x[t]) {
+                    if (t_base + t < batch_size) {
                         sum[t] += w1 * s_x[t][off1] + w2 * s_x[t][off2] + w3 * s_x[t][off3] + w4 * s_x[t][off4];
                     }
                 }
@@ -990,7 +1026,7 @@ __global__ void gemv_q6k_batched_16x_kernel(
     if (active_row) {
         #pragma unroll
         for (int t = 0; t < 16; ++t) {
-            if (tok_x[t]) {
+            if (t_base + t < batch_size) {
                 float r = warp_reduce_sum(sum[t]);
                 if (lane_id == 0) out[(size_t)(t_base + t) * out_dim + row] = r;
             }
@@ -1150,7 +1186,7 @@ __global__ void gemv_q5_0_batched_4x_kernel(
     }
 }
 
-__global__ void gemv_q5_0_batched_16x_kernel(
+__global__ void __launch_bounds__(256, 4) gemv_q5_0_batched_16x_kernel(
     const BlockQ5_0 *W,
     const float *x,
     float *out,
@@ -1168,13 +1204,6 @@ __global__ void gemv_q5_0_batched_16x_kernel(
     int t_base = blockIdx.y * 16;
     bool active_row = (row < out_dim);
 
-    const float *tok_x[16];
-    #pragma unroll
-    for (int t = 0; t < 16; ++t) {
-        int tidx = t_base + t;
-        tok_x[t] = (tidx < batch_size) ? (x + (size_t)tidx * in_dim) : NULL;
-    }
-
     const BlockQ5_0 *row_w = active_row ? (W + (size_t)row * blocks_per_row) : NULL;
     float sum[16] = {0.0f};
 
@@ -1184,8 +1213,9 @@ __global__ void gemv_q5_0_batched_16x_kernel(
         if (tid < 128) {
             int t = tid >> 3;
             int f_idx = (tid & 7) * 4;
-            if (tok_x[t]) {
-                *(float4*)&s_x[t][f_idx] = *(const float4*)&tok_x[t][base_x + f_idx];
+            int tidx = t_base + t;
+            if (tidx < batch_size) {
+                *(float4*)&s_x[t][f_idx] = *(const float4*)&x[(size_t)tidx * in_dim + base_x + f_idx];
             } else {
                 *(float4*)&s_x[t][f_idx] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
             }
@@ -1226,7 +1256,7 @@ __global__ void gemv_q5_0_batched_16x_kernel(
 
             #pragma unroll
             for (int t = 0; t < 16; ++t) {
-                if (tok_x[t]) {
+                if (t_base + t < batch_size) {
                     float xv = s_x[t][lane_id];
                     sum[t] += w * xv;
                 }
@@ -1241,9 +1271,97 @@ __global__ void gemv_q5_0_batched_16x_kernel(
     if (active_row) {
         #pragma unroll
         for (int t = 0; t < 16; ++t) {
-            if (tok_x[t]) {
+            if (t_base + t < batch_size) {
                 float r = warp_reduce_sum(sum[t]);
                 if (lane_id == 0) out[(size_t)(t_base + t) * out_dim + row] = r;
+            }
+        }
+    }
+}
+
+__global__ void __launch_bounds__(256, 4) gemv_f32_batched_16x_kernel(
+    const float *__restrict__ W,
+    const float *__restrict__ x,
+    float *__restrict__ out,
+    int out_dim,
+    int in_dim,
+    int batch_size
+) {
+    __shared__ alignas(16) float s_x[16][64];
+
+    int tid = threadIdx.x;
+    int warp_id = tid >> 5;
+    int lane_id = tid & 31;
+    int row0 = blockIdx.x * 16 + warp_id * 2;
+    int row1 = row0 + 1;
+    int t_base = blockIdx.y * 16;
+    bool active_row0 = (row0 < out_dim);
+    bool active_row1 = (row1 < out_dim);
+
+    const float *row_w0 = active_row0 ? (W + (size_t)row0 * in_dim) : NULL;
+    const float *row_w1 = active_row1 ? (W + (size_t)row1 * in_dim) : NULL;
+
+    float sum0[16] = {0.0f};
+    float sum1[16] = {0.0f};
+
+    for (int col = 0; col < in_dim; col += 64) {
+        int t = tid >> 4;           // 0..15 tokens
+        int f_idx = (tid & 15) * 4; // 0..60 floats (step 4)
+        int tidx = t_base + t;
+        if (tidx < batch_size) {
+            *(float4*)&s_x[t][f_idx] = *(const float4*)&x[(size_t)tidx * in_dim + col + f_idx];
+        } else {
+            *(float4*)&s_x[t][f_idx] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+        }
+        __syncthreads();
+
+        if (active_row0) {
+            float w0 = row_w0[col + lane_id];
+            float w1 = row_w0[col + 32 + lane_id];
+            #pragma unroll
+            for (int t = 0; t < 16; ++t) {
+                if (t_base + t < batch_size) {
+                    sum0[t] += w0 * s_x[t][lane_id] + w1 * s_x[t][32 + lane_id];
+                }
+            }
+        }
+
+        if (active_row1) {
+            float w0 = row_w1[col + lane_id];
+            float w1 = row_w1[col + 32 + lane_id];
+            #pragma unroll
+            for (int t = 0; t < 16; ++t) {
+                if (t_base + t < batch_size) {
+                    sum1[t] += w0 * s_x[t][lane_id] + w1 * s_x[t][32 + lane_id];
+                }
+            }
+        }
+
+        if (col + 64 < in_dim) {
+            __syncthreads();
+        }
+    }
+
+    if (active_row0) {
+        #pragma unroll
+        for (int t = 0; t < 16; ++t) {
+            if (t_base + t < batch_size) {
+                float r = warp_reduce_sum(sum0[t]);
+                if (lane_id == 0) {
+                    out[(size_t)(t_base + t) * out_dim + row0] = r;
+                }
+            }
+        }
+    }
+
+    if (active_row1) {
+        #pragma unroll
+        for (int t = 0; t < 16; ++t) {
+            if (t_base + t < batch_size) {
+                float r = warp_reduce_sum(sum1[t]);
+                if (lane_id == 0) {
+                    out[(size_t)(t_base + t) * out_dim + row1] = r;
+                }
             }
         }
     }
@@ -1335,9 +1453,10 @@ int zeno_cuda_gemv_q8_0(
             in_dim,
             blocks_per_row
         );
-    } else if (batch_size >= 16 && (batch_size % 16 == 0)) {
-        unsigned int grid_y = (unsigned int)(batch_size / 16);
-        dim3 grid(grid_x, grid_y);
+    } else if (batch_size >= 16) {
+        unsigned int grid_x_16x = (unsigned int)((out_dim + 15) / 16);
+        unsigned int grid_y = (unsigned int)((batch_size + 15) / 16);
+        dim3 grid(grid_x_16x, grid_y);
         gemv_q8_0_batched_16x_kernel<<<grid, block_size, 0, custream>>>(
             (const BlockQ8_0*)W,
             x,
@@ -1406,9 +1525,9 @@ int zeno_cuda_gemv_q4k(
             in_dim,
             blocks_per_row
         );
-    } else if (batch_size >= 16 && (batch_size % 16 == 0)) {
+    } else if (batch_size >= 16) {
         unsigned int grid_x_16x = (unsigned int)((out_dim + 15) / 16);
-        unsigned int grid_y = (unsigned int)(batch_size / 16);
+        unsigned int grid_y = (unsigned int)((batch_size + 15) / 16);
         dim3 grid(grid_x_16x, grid_y);
         gemv_q4k_batched_16x_kernel<<<grid, block_size, 0, custream>>>(
             (const BlockQ4_K*)W,
@@ -1483,11 +1602,11 @@ int zeno_cuda_gemv_q4k_fused_qk(
 
     cudaStream_t custream = (cudaStream_t)stream;
 
-    if (batch_size >= 16 && (batch_size % 16 == 0)) {
+    if (batch_size >= 16) {
         const int block_size = 256;
         int total_rows = q_dim + k_dim;
         unsigned int grid_x = (unsigned int)((total_rows + 15) / 16);
-        unsigned int grid_y = (unsigned int)(batch_size / 16);
+        unsigned int grid_y = (unsigned int)((batch_size + 15) / 16);
         dim3 grid(grid_x, grid_y);
         gemv_q4k_fused_qk_16x_kernel<<<grid, block_size, 0, custream>>>(
             (const BlockQ4_K*)W_q,
@@ -1609,8 +1728,8 @@ int zeno_cuda_gemv_q6k(
             in_dim,
             blocks_per_row
         );
-    } else if (batch_size >= 16 && (batch_size % 16 == 0)) {
-        unsigned int grid_y = (unsigned int)(batch_size / 16);
+    } else if (batch_size >= 16) {
+        unsigned int grid_y = (unsigned int)((batch_size + 15) / 16);
         dim3 grid(grid_x, grid_y);
         gemv_q6k_batched_16x_kernel<<<grid, block_size, 0, custream>>>(
             (const BlockQ6_K*)W,
@@ -1680,8 +1799,8 @@ int zeno_cuda_gemv_q5_0(
             in_dim,
             blocks_per_row
         );
-    } else if (batch_size >= 16 && (batch_size % 16 == 0)) {
-        unsigned int grid_y = (unsigned int)(batch_size / 16);
+    } else if (batch_size >= 16) {
+        unsigned int grid_y = (unsigned int)((batch_size + 15) / 16);
         dim3 grid(grid_x, grid_y);
         gemv_q5_0_batched_16x_kernel<<<grid, block_size, 0, custream>>>(
             (const BlockQ5_0*)W,
@@ -1736,17 +1855,31 @@ int zeno_cuda_gemv_f32(
     if (rc != ZENO_CUDA_SUCCESS) return rc;
 
     const int block_size = 256;
-    unsigned int grid_x = (unsigned int)((out_dim + 7) / 8);
-    dim3 grid(grid_x, (unsigned int)batch_size);
     cudaStream_t custream = (cudaStream_t)stream;
 
-    gemv_f32_kernel<<<grid, block_size, 0, custream>>>(
-        W,
-        x,
-        out,
-        out_dim,
-        in_dim
-    );
+    if (batch_size >= 16 && (batch_size % 16 == 0) && (in_dim % 64 == 0)) {
+        unsigned int grid_x_16x = (unsigned int)((out_dim + 15) / 16);
+        unsigned int grid_y = (unsigned int)(batch_size / 16);
+        dim3 grid(grid_x_16x, grid_y);
+        gemv_f32_batched_16x_kernel<<<grid, block_size, 0, custream>>>(
+            W,
+            x,
+            out,
+            out_dim,
+            in_dim,
+            batch_size
+        );
+    } else {
+        unsigned int grid_x = (unsigned int)((out_dim + 7) / 8);
+        dim3 grid(grid_x, (unsigned int)batch_size);
+        gemv_f32_kernel<<<grid, block_size, 0, custream>>>(
+            W,
+            x,
+            out,
+            out_dim,
+            in_dim
+        );
+    }
 
     cudaError_t err = cudaGetLastError();
     int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED : ZENO_CUDA_SUCCESS;
