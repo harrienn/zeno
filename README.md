@@ -83,6 +83,8 @@ The repository includes a complete CPU reference implementation for DiffusionGem
 
 Five golden fixtures are tracked with independently captured reference records (`zeno.fixture/v1`) from llama.cpp PR #24423 (`llama-diffusion-gemma-eval`), verifying 100% discrete decision parity and identical top-5 vocabulary predictions across all test cases. The artifact's chat template is recorded verbatim in `chat_template.jinja` (U-05 resolved).
 
+High-performance dual-GPU CUDA execution (`sm_86`, dual RTX 3060 12GB) has achieved the **sub-100ms structured decision milestone** ($C=16$: **99.87 ms** canvas step latency, **100.55 ms** HTTP round-trip) via intra-layer kernel fusion, stackless streaming GEMVs, MoE warp restructuring, and full SM occupancy saturation.
+
 Full Phase 3 reference parity exit remains open under U-13 and U-22 because candidate raw logit divergence between FP32 dequantized execution and GGML SIMD execution (1.19 to 11.07 across fixtures) exceeds the $\le 0.5$ tolerance threshold in `zeno.tolerance/v1`. Performance optimization and probability calibration remain open research areas. See [`PLAN.md`](PLAN.md) and [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) for current gates.
 
 ### Prerequisites

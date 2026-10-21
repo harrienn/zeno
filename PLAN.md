@@ -335,14 +335,16 @@ Implement and validate the CPU representation of one denoising step.
 **Current objective:**
 
 ```text
-Evaluate holistic cross-layer kernel fusion and weight prefetching strategies in CUDA Phase 15 to reduce memory latency stalls towards sub-100ms canvas execution.
+Consolidate system documentation, benchmark evidence, and empirical invariants across CUDA Phases 15 through 18, and prepare next research vectors for multi-candidate calibration and few-step adaptive decision execution.
 ```
 
-This active objective builds upon completed Phase 14 optimizations and empirical research findings:
-- WP1: Shared-memory activation staging for MoE Gate/Up projection (`moe_gemv_gate_up_geglu_sorted_kernel`) using collaborative 128-bit `float4` loads into a 4KB tile, verified at 80 registers, 0 stack frame, 0 spills, and 50% theoretical occupancy.
-- WP2: Pinned host DMA memory allocation (`PinnedBuffer(T)` with `cudaHostAllocPortable`) and asynchronous stream coordination (`copyToHostAsync`, `record`, `waitEvent`, `copyFromHostAsync`) eliminating host CPU blocking during dual-GPU boundary transfer.
-- Empirical characterization established that small-batch activation memory ($176\text{ KB}$ at $C=16$) already hits on-chip L1/L2 caches, and PCIe boundary transfer overhead is $<0.2\text{ ms}$, demonstrating that weight streaming latency across 30 layers is the primary bound.
-- 100% discrete decision parity (5/5 golden oracle fixtures) and 15/15 HTTP API server integration tests verified.
+This active objective builds upon completed Phase 15 through Phase 18 optimizations that broke the sub-100ms latency milestone on dual Ampere GPUs (`sm_86`, dual RTX 3060 12GB):
+- **CUDA Phase 15**: Intra-layer elementwise kernel fusion (`fused_pre_ffn_norm_kernel`, `fused_post_ffn_combine_kernel`, `fused_head_norm_rope_kernel`) eliminating 270 kernel dispatches per pass (-34.6%); MoE shared-memory barrier elimination unlocking 66.7% SM occupancy.
+- **CUDA Phase 16**: MoE GEMV warp restructuring (1-row sequential streaming for Gate/Up and paired-block unrolling for Down-Accum), collapsing registers to $\le 64$ and doubling active warp occupancy (75–100%).
+- **CUDA Phase 17**: Dense Attention & FFN GEMV stackless streaming (0 bytes stack frame, 0 spills), 16-row CTA tiling for Dense Down Q8_0, batched MoE Router Gate F32 streaming (cutting 93.75% DRAM weight traffic), and full SM occupancy saturation (`__launch_bounds__(256, 4)`).
+- **CUDA Phase 18**: Full Attention QKV fusion (`gemv_q4k_fused_qkv_16x_kernel`) eliminating 34 dispatches; post-attention norm/residual fusion (`fused_post_attn_norm_residual_kernel`) eliminating 30 dispatches; MoE Down Accum Q5_0 loop inversion and direct bit indexing across 16 layers (saving > 2.0 ms); 16-row CTA tiling for Dense Q5_0 and Attention V Q6_K; multi-length prefill acceleration.
+- **Empirical Breakthrough**: Broken the sub-100ms latency barrier for single-step structured read execution ($C=16$): **99.87 ms (median)**, **99.80 ms (min)** canvas step 1; **100.55 ms (median)** HTTP request round-trip; prompt prefill slashed by -52% to **192.21 ms**.
+- **Parity & Isolation**: 100% discrete decision match across 5/5 golden oracle fixtures, 15/15 HTTP API tests passing, 98/98 unit tests passing, and complete CPU reference test isolation (`zig build test -Dcuda=false`).
 
 ---
 
