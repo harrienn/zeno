@@ -71,6 +71,7 @@ int zeno_cuda_memset(void *dst, int value, size_t bytes, int device_id);
 int zeno_cuda_stream_create(void **out_stream, int device_id);
 int zeno_cuda_stream_destroy(void *stream, int device_id);
 int zeno_cuda_stream_sync(void *stream, int device_id);
+int zeno_cuda_device_synchronize(int device_id);
 int zeno_cuda_graph_begin_capture(void *stream, int device_id);
 int zeno_cuda_graph_end_capture(void *stream, void **out_graph_exec, int device_id);
 int zeno_cuda_graph_launch(void *graph_exec, void *stream, int device_id);

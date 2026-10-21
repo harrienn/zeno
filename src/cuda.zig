@@ -64,6 +64,7 @@ pub const Topology = struct {
 
 // C ABI extern declarations (compiled only when CUDA is enabled)
 pub const c = if (is_enabled) struct {
+    pub const ZENO_CUDA_SUCCESS: c_int = 0;
     pub const ZENO_CUDA_MAX_DEVICES = 8;
 
     pub const ZenoCudaDeviceInfo = extern struct {
@@ -102,6 +103,7 @@ pub const c = if (is_enabled) struct {
     pub extern "c" fn zeno_cuda_stream_create(out_stream: *?*anyopaque, device_id: c_int) c_int;
     pub extern "c" fn zeno_cuda_stream_destroy(stream: ?*anyopaque, device_id: c_int) c_int;
     pub extern "c" fn zeno_cuda_stream_sync(stream: ?*anyopaque, device_id: c_int) c_int;
+    pub extern "c" fn zeno_cuda_device_synchronize(device_id: c_int) c_int;
     pub extern "c" fn zeno_cuda_graph_begin_capture(stream: ?*anyopaque, device_id: c_int) c_int;
     pub extern "c" fn zeno_cuda_graph_end_capture(stream: ?*anyopaque, out_graph_exec: *?*anyopaque, device_id: c_int) c_int;
     pub extern "c" fn zeno_cuda_graph_launch(graph_exec: ?*anyopaque, stream: ?*anyopaque, device_id: c_int) c_int;

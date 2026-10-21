@@ -5167,7 +5167,85 @@ test "CUDA Phase 15: fused intra-layer kernels numerical parity with CPU referen
                 }
             }
         }
-        std.debug.print("[parity] Fused Head Norm RoPE: max_diff = {e:.4}\n", .{max_diff_rope});
+        std.debug.print("[parity] Fused Head Norm RoPE (head_dim=256): max_diff = {e:.4}\n", .{max_diff_rope});
+    }
+
+    // R42-03: Exercise wide head_dim = 1024 (16 warps) to verify shared reduction array bounds (s_warp_sums[32])
+    {
+        const num_heads: usize = 4;
+        const head_dim: usize = 1024;
+        const total_elems = num_tokens * num_heads * head_dim;
+
+        var vec_buf = try DeviceBuffer(f32).init(dev, total_elems);
+        defer vec_buf.deinit();
+        var weight_buf = try DeviceBuffer(f32).init(dev, head_dim);
+        defer weight_buf.deinit();
+
+        const host_vec = try allocator.alloc(f32, total_elems);
+        defer allocator.free(host_vec);
+        for (host_vec) |*x| x.* = (rand.float(f32) * 2.0) - 1.0;
+        try vec_buf.copyFromHost(host_vec);
+
+        const host_weight = try allocator.alloc(f32, head_dim);
+        defer allocator.free(host_weight);
+        for (host_weight) |*x| x.* = 1.0 + (rand.float(f32) * 0.1);
+        try weight_buf.copyFromHost(host_weight);
+
+        const theta: f32 = 10000.0;
+
+        try fusedHeadNormRope(
+            vec_buf.slice(),
+            weight_buf.slice(),
+            num_tokens,
+            num_heads,
+            head_dim,
+            0,
+            theta,
+            null,
+            eps,
+            null,
+        );
+
+        const host_out = try allocator.alloc(f32, total_elems);
+        defer allocator.free(host_out);
+        try vec_buf.copyToHost(host_out);
+
+        var max_diff_rope: f32 = 0.0;
+        const half = head_dim / 2;
+
+        for (0..num_tokens) |t| {
+            for (0..num_heads) |h| {
+                const head_idx = (t * num_heads + h) * head_dim;
+                const head_slice = host_vec[head_idx .. head_idx + head_dim];
+
+                var sum_sq: f32 = 0.0;
+                for (head_slice) |v| sum_sq += v * v;
+                const inv_rms = 1.0 / @sqrt(sum_sq / @as(f32, @floatFromInt(head_dim)) + eps);
+
+                for (0..half) |i| {
+                    const v0 = (head_slice[i] * inv_rms) * host_weight[i];
+                    const v1 = (head_slice[half + i] * inv_rms) * host_weight[half + i];
+
+                    const exp_val = 2.0 * @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(head_dim));
+                    const freq = 1.0 / std.math.pow(f32, theta, exp_val);
+                    const angle = @as(f32, @floatFromInt(t)) * freq;
+                    const cos_val = @cos(angle);
+                    const sin_val = @sin(angle);
+
+                    const exp_v0 = v0 * cos_val - v1 * sin_val;
+                    const exp_v1 = v0 * sin_val + v1 * cos_val;
+
+                    const diff0 = @abs(exp_v0 - host_out[head_idx + i]);
+                    if (diff0 > max_diff_rope) max_diff_rope = diff0;
+                    try std.testing.expect(diff0 <= 1e-5);
+
+                    const diff1 = @abs(exp_v1 - host_out[head_idx + half + i]);
+                    if (diff1 > max_diff_rope) max_diff_rope = diff1;
+                    try std.testing.expect(diff1 <= 1e-5);
+                }
+            }
+        }
+        std.debug.print("[parity] Fused Head Norm RoPE (head_dim=1024): max_diff = {e:.4}\n", .{max_diff_rope});
     }
 }
 

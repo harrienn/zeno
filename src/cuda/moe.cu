@@ -1760,7 +1760,7 @@ int zeno_cuda_moe_gemv_gate_up_sorted(
     size_t expert_bytes = (size_t)out_dim * (size_t)blocks_per_row * sizeof(BlockQ4_K);
 
     const int block_size = 256;
-    unsigned int grid_x = (unsigned int)((out_dim + 31) / 32);
+    unsigned int grid_x = (unsigned int)((out_dim + 63) / 64);
     unsigned int grid_y = 128;
     dim3 grid(grid_x, grid_y);
     cudaStream_t custream = (cudaStream_t)stream;

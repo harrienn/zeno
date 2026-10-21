@@ -750,13 +750,14 @@ pub const CudaDeviceWorkspace = struct {
     }
 };
 
-/// Public injection seams for testing CUDA Graph fallback paths (R24-05, R40-01, R41-01).
+/// Public injection seams for testing CUDA Graph fallback paths (R24-05, R40-01, R41-01, R42-01).
 pub var inject_graph_capture_failure: bool = false;
 pub var inject_graph_replay_failure: bool = false;
 pub var inject_graph1_replay_failure: bool = false;
 pub var inject_stream_sync_failure: bool = false;
 pub var inject_dev0_sync_failure: bool = false;
 pub var inject_dev1_sync_failure: bool = false;
+pub var inject_device_sync_failure: bool = false;
 
 /// Teardown safety policy: quarantined pinned staging allocations retained when stream
 /// synchronization fails during workspace deinitialization.
@@ -770,23 +771,66 @@ pub var quarantined_buffers_count: usize = 0;
 
 pub fn quarantinePinnedBuffer(buf: *cuda_mem.PinnedBuffer(f32)) void {
     if (buf.ptr) |p| {
-        if (quarantined_buffers_count < MAX_QUARANTINED_BUFFERS) {
-            quarantined_buffers[quarantined_buffers_count] = .{
-                .ptr = p,
-                .len = buf.len,
-            };
+        var placed = false;
+        for (&quarantined_buffers) |*slot| {
+            if (slot.* == null) {
+                slot.* = .{
+                    .ptr = p,
+                    .len = buf.len,
+                };
+                quarantined_buffers_count += 1;
+                placed = true;
+                break;
+            }
         }
-        quarantined_buffers_count += 1;
+        if (!placed) {
+            // R42-02: Explicit fallback when all 16 slots are concurrently occupied.
+            // Log an error so the allocation failure is visible and never silently dropped.
+            std.log.err("quarantinePinnedBuffer: quarantine capacity ({d}) exhausted; unable to record buffer {*} (len={d})", .{
+                MAX_QUARANTINED_BUFFERS,
+                p,
+                buf.len,
+            });
+        }
         _ = buf.move();
     }
 }
 
-pub fn drainQuarantinedPinnedBuffers() void {
+pub fn drainQuarantinedPinnedBuffers() !void {
     if (!cuda.is_enabled) return;
+
+    if (inject_device_sync_failure) {
+        std.log.warn("drainQuarantinedPinnedBuffers: injected device synchronization failure; retaining quarantine", .{});
+        return error.DeviceNotQuiescent;
+    }
+
+    // R42-01: Confirm whole-device quiescence across all available CUDA devices before releasing any quarantined host memory.
+    // If device synchronization fails on any device, in-flight DMA may still be referencing the pinned allocation.
+    // In that event, abort drainage and retain the quarantined slots.
+    var dev_count: c_int = 0;
+    if (cuda.c.zeno_cuda_get_device_count(&dev_count) != cuda.c.ZENO_CUDA_SUCCESS or dev_count <= 0) {
+        dev_count = 1;
+    }
+    var d: c_int = 0;
+    while (d < dev_count) : (d += 1) {
+        const rc = cuda.c.zeno_cuda_device_synchronize(d);
+        if (rc != cuda.c.ZENO_CUDA_SUCCESS) {
+            std.log.warn("drainQuarantinedPinnedBuffers: device {d} failed to synchronize (rc={d}); retaining quarantine", .{ d, rc });
+            return error.DeviceNotQuiescent;
+        }
+    }
+
+    // Devices are confirmed quiescent; release quarantined pinned buffers.
+    // R42-01 & R42-02: Only clear the slot and decrement count if host free succeeds; retain slot if free fails so pointer is not lost.
     for (&quarantined_buffers) |*slot| {
         if (slot.*) |q| {
-            _ = cuda.c.zeno_cuda_host_free(q.ptr);
-            slot.* = null;
+            const rc = cuda.c.zeno_cuda_host_free(q.ptr);
+            if (rc == cuda.c.ZENO_CUDA_SUCCESS) {
+                slot.* = null;
+                if (quarantined_buffers_count > 0) quarantined_buffers_count -= 1;
+            } else {
+                std.log.warn("drainQuarantinedPinnedBuffers: failed to free quarantined host buffer {*} (rc={d}); retaining slot", .{ q.ptr, rc });
+            }
         }
     }
 }
@@ -3037,18 +3081,51 @@ test "R41-01: CudaWorkspace quarantine policy and failed stream synchronization"
         ws.deinit();
     }
 
-    // Test 2: Injected Device 1 sync failure during deinit triggers quarantine policy
+    // Test 2: R41-01 / R42-01 / R42-02: Active transfer before sync failure, quarantine retention on quiescence failure, and slot reuse
     {
         const ws = try CudaWorkspace.init(allocator, .dual_gpu_split, devices, 256);
         const prev_quarantine_count = quarantined_buffers_count;
 
+        // Enqueue an active async transfer using ws.host_staging_pinned so it is actively referenced by DMA
+        const count: usize = 2816;
+        var buf_src0 = try DeviceBuffer(f32).init(devices[0], count);
+        defer buf_src0.deinit();
+        var buf_dst1 = try DeviceBuffer(f32).init(devices[1], count);
+        defer buf_dst1.deinit();
+        const ev = ws.boundary_event orelse return error.InvalidParam;
+        try transferHiddenState(buf_src0.slice(), buf_dst1.slice(), &ws.dev0.stream, &ws.dev1.?.stream, &ev, ws.host_staging_buf, ws.peer_access_enabled);
+
+        // Inject Device 1 synchronization failure during deinit: triggers quarantine policy
         inject_dev1_sync_failure = true;
         defer inject_dev1_sync_failure = false;
         ws.deinit();
         inject_dev1_sync_failure = false;
 
         try std.testing.expectEqual(prev_quarantine_count + 1, quarantined_buffers_count);
-        drainQuarantinedPinnedBuffers();
+        try std.testing.expect(quarantined_buffers[0] != null);
+
+        // R42-01: When device quiescence cannot be established, drainQuarantinedPinnedBuffers must abort and retain slots
+        inject_device_sync_failure = true;
+        try std.testing.expectError(error.DeviceNotQuiescent, drainQuarantinedPinnedBuffers());
+        try std.testing.expectEqual(prev_quarantine_count + 1, quarantined_buffers_count);
+        try std.testing.expect(quarantined_buffers[0] != null);
+        inject_device_sync_failure = false;
+
+        // When device quiescence is confirmed, drainQuarantinedPinnedBuffers releases memory and clears slot
+        try drainQuarantinedPinnedBuffers();
+        try std.testing.expectEqual(prev_quarantine_count, quarantined_buffers_count);
+        try std.testing.expect(quarantined_buffers[0] == null);
+
+        // R42-02: Verify that slot 0 is reused on subsequent quarantine
+        const ws2 = try CudaWorkspace.init(allocator, .dual_gpu_split, devices, 256);
+        inject_dev1_sync_failure = true;
+        ws2.deinit();
+        inject_dev1_sync_failure = false;
+
+        try std.testing.expectEqual(prev_quarantine_count + 1, quarantined_buffers_count);
+        try std.testing.expect(quarantined_buffers[0] != null); // Reused slot 0!
+        try drainQuarantinedPinnedBuffers();
+        try std.testing.expectEqual(prev_quarantine_count, quarantined_buffers_count);
     }
 }
 

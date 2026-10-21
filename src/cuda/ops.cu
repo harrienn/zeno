@@ -423,7 +423,7 @@ __global__ void fused_head_norm_rope_kernel(
         sum_sq += __shfl_down_sync(0xffffffff, sum_sq, offset);
     }
 
-    __shared__ float s_warp_sums[8];
+    __shared__ float s_warp_sums[32];
     __shared__ float s_inv_rms;
 
     int lane_id = i & 31;
@@ -650,6 +650,17 @@ int zeno_cuda_stream_sync(void *stream, int device_id) {
 
     cudaError_t err = stream ? cudaStreamSynchronize((cudaStream_t)stream) : cudaStreamSynchronize(0);
     int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_STREAM_FAILED : ZENO_CUDA_SUCCESS;
+
+    return restore_cuda_device(orig, op_rc);
+}
+
+int zeno_cuda_device_synchronize(int device_id) {
+    int orig = 0;
+    int rc = set_cuda_device(device_id, &orig);
+    if (rc != ZENO_CUDA_SUCCESS) return rc;
+
+    cudaError_t err = cudaDeviceSynchronize();
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_DRIVER_ERROR : ZENO_CUDA_SUCCESS;
 
     return restore_cuda_device(orig, op_rc);
 }
