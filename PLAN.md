@@ -338,15 +338,16 @@ Implement and validate the CPU representation of one denoising step.
 **Current objective:**
 
 ```text
-Completed canvas geometry and positional attention dynamics research study (specs/canvas-geometry.md), answering the research vector on answer-position placement, RoPE positional attenuation, and canvas length scaling.
+Completed CUDA Phase 19 cold prefill acceleration and multi-step CUDA graph chaining (specs/cuda-phase19-prefill-rfc.md), slashing adaptive two-step denoising latency by -55.5% (458.9ms -> 203.99ms).
 ```
 
-This active objective builds upon completed Phase 15 through Phase 18 optimizations that broke the sub-100ms latency milestone on dual Ampere GPUs (`sm_86`, dual RTX 3060 12GB):
+This active objective builds upon completed Phase 15 through Phase 19 optimizations that broke the sub-100ms latency milestone and halved multi-step denoising latency on dual Ampere GPUs (`sm_86`, dual RTX 3060 12GB):
 - **CUDA Phase 15**: Intra-layer elementwise kernel fusion (`fused_pre_ffn_norm_kernel`, `fused_post_ffn_combine_kernel`, `fused_head_norm_rope_kernel`) eliminating 270 kernel dispatches per pass (-34.6%); MoE shared-memory barrier elimination unlocking 66.7% SM occupancy.
 - **CUDA Phase 16**: MoE GEMV warp restructuring (1-row sequential streaming for Gate/Up and paired-block unrolling for Down-Accum), collapsing registers to $\le 64$ and doubling active warp occupancy (75–100%).
 - **CUDA Phase 17**: Dense Attention & FFN GEMV stackless streaming (0 bytes stack frame, 0 spills), 16-row CTA tiling for Dense Down Q8_0, batched MoE Router Gate F32 streaming (cutting 93.75% DRAM weight traffic), and hardware SM occupancy saturation (`__launch_bounds__(256, 4)`, 66.7% warp occupancy / 100% register file saturation at 64 registers/thread).
 - **CUDA Phase 18**: Full Attention QKV fusion (`gemv_q4k_fused_qkv_16x_kernel`) eliminating 34 dispatches; post-attention norm/residual fusion (`fused_post_attn_norm_residual_kernel`) eliminating 30 dispatches; MoE Down Accum Q5_0 loop inversion and direct bit indexing across 16 layers (saving > 2.0 ms); 16-row CTA tiling for Dense Q5_0 and Attention V Q6_K; multi-length prefill acceleration.
-- **Empirical Breakthrough**: Broken the sub-100ms latency barrier for single-step structured read execution ($C=16$): **99.87 ms (median)**, **99.80 ms (min)** canvas step 1; **100.55 ms (median)** HTTP request round-trip; prompt prefill slashed by -52% to **192.21 ms**.
+- **CUDA Phase 19**: Batched F32 GEMV generalization removing artificial `(batch_size % 16 == 0)` gating (cutting up to 15.6x DRAM weight passes for router gates on arbitrary prompt lengths); arbitrary-batch fused QKV projections ($B \ge 1$); device-resident canvas initialization buffers (`canvas_init_emb`, `canvas_raw_ans`); and multi-step CUDA graph chaining (`graph0_step2`) capturing D2D canvas restore, self-conditioning MLP, and Partition 0 layers with async soft-embedding DMA.
+- **Empirical Breakthrough**: Broken the sub-100ms latency barrier for single-step structured read execution ($C=16$): **99.87 ms (median)**, **99.80 ms (min)** canvas step 1; **100.55 ms (median)** HTTP request round-trip. Two-step adaptive denoising ($T=2$) slashed from 458.86 ms to **203.99 ms (-55.5%)** on warm cache; total HTTP wire-to-wire round-trip for 2-step decision reduced to **205.26 ms**.
 - **Parity & Isolation**: 100% discrete decision match across 5/5 golden oracle fixtures, 15/15 HTTP API tests passing, 98/98 unit tests passing, and complete CPU reference test isolation (`zig build test -Dcuda=false`).
 
 ---

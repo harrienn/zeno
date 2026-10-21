@@ -1776,7 +1776,7 @@ int zeno_cuda_gemv_q4k_fused_qkv(
 
     cudaStream_t custream = (cudaStream_t)stream;
 
-    if (batch_size >= 16) {
+    if (batch_size >= 1) {
         const int block_size = 256;
         int total_rows = q_dim + k_dim + (W_v != NULL ? v_dim : 0);
         unsigned int grid_x = (unsigned int)((total_rows + 15) / 16);
@@ -2070,9 +2070,9 @@ int zeno_cuda_gemv_f32(
     const int block_size = 256;
     cudaStream_t custream = (cudaStream_t)stream;
 
-    if (batch_size >= 16 && (batch_size % 16 == 0) && (in_dim % 64 == 0)) {
+    if ((in_dim % 64 == 0)) {
         unsigned int grid_x_16x = (unsigned int)((out_dim + 15) / 16);
-        unsigned int grid_y = (unsigned int)(batch_size / 16);
+        unsigned int grid_y = (unsigned int)((batch_size + 15) / 16);
         dim3 grid(grid_x_16x, grid_y);
         gemv_f32_batched_16x_kernel<<<grid, block_size, 0, custream>>>(
             W,

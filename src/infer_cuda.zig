@@ -535,6 +535,10 @@ pub const CudaDeviceWorkspace = struct {
     sc_geglu_buf: DeviceBuffer(f32),
     sc_sig_buf: DeviceBuffer(f32),
 
+    // Phase 19: Canvas initialization and self-conditioning backup buffers
+    canvas_init_emb: DeviceBuffer(f32),
+    canvas_raw_ans: DeviceBuffer(f32),
+
     // Final answer norm hidden output
     norm_hidden: DeviceBuffer(f32),
     allocator: std.mem.Allocator,
@@ -620,6 +624,11 @@ pub const CudaDeviceWorkspace = struct {
         var sc_sig_buf = try DeviceBuffer(f32).init(device_id, ModelConfig.embedding_dim);
         errdefer sc_sig_buf.deinit();
 
+        var canvas_init_emb = try DeviceBuffer(f32).init(device_id, emb_size);
+        errdefer canvas_init_emb.deinit();
+        var canvas_raw_ans = try DeviceBuffer(f32).init(device_id, ModelConfig.embedding_dim);
+        errdefer canvas_raw_ans.deinit();
+
         return CudaDeviceWorkspace{
             .device_id = device_id,
             .stream = stream,
@@ -657,11 +666,15 @@ pub const CudaDeviceWorkspace = struct {
             .sc_soft_emb = sc_soft_emb,
             .sc_geglu_buf = sc_geglu_buf,
             .sc_sig_buf = sc_sig_buf,
+            .canvas_init_emb = canvas_init_emb,
+            .canvas_raw_ans = canvas_raw_ans,
             .allocator = allocator,
         };
     }
 
     pub fn deinit(self: *CudaDeviceWorkspace) void {
+        self.canvas_raw_ans.deinit();
+        self.canvas_init_emb.deinit();
         self.sc_sig_buf.deinit();
         self.sc_geglu_buf.deinit();
         self.sc_soft_emb.deinit();
@@ -712,7 +725,7 @@ pub const CudaDeviceWorkspace = struct {
         const d_emb = ModelConfig.embedding_dim;
         const q_dim = infer.max_q_dim;
         const k_dim = infer.max_k_dim;
-        return (max_seq_len * d_emb * @sizeOf(f32) * 10) + // emb_buf_0, emb_buf_1, norm_x, attn_out, dense_in, dense_out, h1, r_in, moe_in, moe_accum (h2, ffn_comb, post_ffn eliminated in Phase 15 WP2)
+        return (max_seq_len * d_emb * @sizeOf(f32) * 11) + // emb_buf_0, emb_buf_1, norm_x, attn_out, dense_in, dense_out, h1, r_in, moe_in, moe_accum, canvas_init_emb (Phase 19)
             (max_seq_len * q_dim * @sizeOf(f32) * 2) + // q_buf, head_out
             (max_seq_len * k_dim * @sizeOf(f32) * 2) + // k_buf, v_buf
             (max_seq_len * 2112 * @sizeOf(f32) * 3) + // gate_buf, up_buf, geglu_buf
@@ -723,7 +736,7 @@ pub const CudaDeviceWorkspace = struct {
             (128 * @sizeOf(i32) * 2) + // expert_counts, expert_offsets
             (max_seq_len * 8 * @sizeOf(i32) * 2) + // sorted_instances, instance_to_sorted
             (cache_total_floats * @sizeOf(f32) * 2) + // prompt_k_cache, prompt_v_cache (Phase 7B)
-            (d_emb * @sizeOf(f32)) + // norm_hidden
+            (d_emb * @sizeOf(f32) * 2) + // norm_hidden, canvas_raw_ans (Phase 19)
             (d_emb * @sizeOf(f32) * 2) + // sc_soft_emb, sc_sig_buf (Phase 9)
             (ModelConfig.self_cond_intermediate_dim * @sizeOf(f32)); // sc_geglu_buf (Phase 9)
     }
@@ -862,9 +875,13 @@ pub const CudaWorkspace = struct {
     peer_access_enabled: bool,
     graph0: ?cuda_mem.CudaGraph,
     graph1: ?cuda_mem.CudaGraph,
+    graph0_step2: ?cuda_mem.CudaGraph,
     cached_graph_prompt_len: usize,
     cached_graph_canvas_len: usize,
     cached_graph_answer_pos: usize,
+    cached_graph_step2_prompt_len: usize,
+    cached_graph_step2_canvas_len: usize,
+    cached_graph_step2_answer_pos: usize,
 
     // Prompt KV Cache tracking (Phase 7B)
     cached_prompt_hash: u64,
@@ -951,9 +968,13 @@ pub const CudaWorkspace = struct {
         ws_ptr.peer_access_enabled = peer_access_enabled;
         ws_ptr.graph0 = null;
         ws_ptr.graph1 = null;
+        ws_ptr.graph0_step2 = null;
         ws_ptr.cached_graph_prompt_len = 0;
         ws_ptr.cached_graph_canvas_len = 0;
         ws_ptr.cached_graph_answer_pos = 0;
+        ws_ptr.cached_graph_step2_prompt_len = 0;
+        ws_ptr.cached_graph_step2_canvas_len = 0;
+        ws_ptr.cached_graph_step2_answer_pos = 0;
         ws_ptr.cached_prompt_hash = 0;
         ws_ptr.cached_prompt_len = 0;
         ws_ptr.prompt_cache_valid = false;
@@ -969,6 +990,10 @@ pub const CudaWorkspace = struct {
         self.prompt_cache_valid = false;
         self.last_stage_timings = .{};
         self.last_canvas_ms = 0.0;
+        if (self.graph0_step2) |*g| {
+            g.deinit();
+            self.graph0_step2 = null;
+        }
         if (self.graph1) |*g1| {
             g1.deinit();
             self.graph1 = null;
@@ -980,6 +1005,9 @@ pub const CudaWorkspace = struct {
         self.cached_graph_prompt_len = 0;
         self.cached_graph_canvas_len = 0;
         self.cached_graph_answer_pos = 0;
+        self.cached_graph_step2_prompt_len = 0;
+        self.cached_graph_step2_canvas_len = 0;
+        self.cached_graph_step2_answer_pos = 0;
     }
 
     pub fn deinit(self: *CudaWorkspace) void {
@@ -989,6 +1017,7 @@ pub const CudaWorkspace = struct {
             sync_failed = true;
             std.log.warn("CudaWorkspace.deinit: stream synchronization failed with {s}", .{@errorName(err)});
         }
+        if (self.graph0_step2) |*g| g.deinit();
         if (self.graph1) |*g1| g1.deinit();
         if (self.graph0) |*g0| g0.deinit();
         self.allocator.free(self.host_norm_hidden);
@@ -1713,13 +1742,10 @@ fn runPartition1CanvasEager(ws: *CudaWorkspace, model: *const CudaModel, P: usiz
     try cuda_mem.rmsNorm(answer_slice, model.output_norm.slice(), dev1.norm_hidden.slice(), 1, ModelConfig.embedding_dim, 1e-6, &dev1.stream);
 }
 
-/// Applies device-resident self-conditioning on Device 0 at target_pos.
-pub fn applyDeviceSelfConditioning(
-    ws: *CudaWorkspace,
+/// Phase 19: Executes device-resident self-conditioning MLP operations on stream without host synchronization.
+pub fn runDeviceSelfConditioning(
+    ws: *CudaDeviceWorkspace,
     model: *const CudaModel,
-    cpu_model: DiffusionGemmaModel,
-    candidate_token_ids: []const u32,
-    candidate_probs: []const f32,
     target_pos: usize,
 ) !void {
     const sc_pre_norm = model.sc_pre_norm orelse return error.MissingSelfCondTensor;
@@ -1729,6 +1755,71 @@ pub fn applyDeviceSelfConditioning(
 
     const emb_dim = ModelConfig.embedding_dim;
     const intermediate_dim = ModelConfig.self_cond_intermediate_dim;
+
+    // 1. Pre-norm on Device: sc_soft_emb -> sc_sig_buf
+    try cuda_mem.rmsNorm(
+        ws.sc_soft_emb.slice(),
+        sc_pre_norm.slice(),
+        ws.sc_sig_buf.slice(),
+        1,
+        emb_dim,
+        1e-6,
+        &ws.stream,
+    );
+
+    // 2. Fused Gate + Up + GeGLU on Device: sc_sig_buf -> sc_geglu_buf
+    try cuda_mem.denseGateUpGegluQ4_K(
+        sc_gate.slice(),
+        sc_up.slice(),
+        ws.sc_sig_buf.slice(),
+        ws.sc_geglu_buf.slice(),
+        intermediate_dim,
+        emb_dim,
+        1,
+        &ws.stream,
+    );
+
+    // 3. Down projection GEMV on Device (Q5_0): sc_geglu_buf -> sc_sig_buf
+    try cuda_mem.gemvQ5_0(
+        sc_down.slice(),
+        ws.sc_geglu_buf.slice(),
+        ws.sc_sig_buf.slice(),
+        emb_dim,
+        intermediate_dim,
+        1,
+        &ws.stream,
+    );
+
+    // 4. Add residual sc_sig_buf to current_emb at target_pos
+    const ans_slice = try ws.current_emb.slice().subslice(target_pos * emb_dim, emb_dim);
+    try cuda_mem.addResidual(
+        ans_slice,
+        ws.sc_sig_buf.slice(),
+        &ws.stream,
+    );
+
+    // 5. Unweighted RMSNorm in-place on current_emb at target_pos
+    try cuda_mem.rmsNorm(
+        ans_slice,
+        null,
+        ans_slice,
+        1,
+        emb_dim,
+        1e-6,
+        &ws.stream,
+    );
+}
+
+/// Applies device-resident self-conditioning on Device 0 at target_pos.
+pub fn applyDeviceSelfConditioning(
+    ws: *CudaWorkspace,
+    model: *const CudaModel,
+    cpu_model: DiffusionGemmaModel,
+    candidate_token_ids: []const u32,
+    candidate_probs: []const f32,
+    target_pos: usize,
+) !void {
+    const emb_dim = ModelConfig.embedding_dim;
     const emb_scale: f32 = @sqrt(@as(f32, @floatFromInt(emb_dim)));
 
     // R39-01: Drain any pending stream operations before overwriting pinned host staging memory
@@ -1746,61 +1837,41 @@ pub fn applyDeviceSelfConditioning(
         }
     }
     try ws.dev0.sc_soft_emb.copyFromHost(soft_emb);
-
-    // 2. Pre-norm on Device 0: sc_soft_emb -> sc_sig_buf
-    try cuda_mem.rmsNorm(
-        ws.dev0.sc_soft_emb.slice(),
-        sc_pre_norm.slice(),
-        ws.dev0.sc_sig_buf.slice(),
-        1,
-        emb_dim,
-        1e-6,
-        &ws.dev0.stream,
-    );
-
-    // 3. Fused Gate + Up + GeGLU on Device 0: sc_sig_buf -> sc_geglu_buf
-    try cuda_mem.denseGateUpGegluQ4_K(
-        sc_gate.slice(),
-        sc_up.slice(),
-        ws.dev0.sc_sig_buf.slice(),
-        ws.dev0.sc_geglu_buf.slice(),
-        intermediate_dim,
-        emb_dim,
-        1,
-        &ws.dev0.stream,
-    );
-
-    // 4. Down projection GEMV on Device 0 (Q5_0): sc_geglu_buf -> sc_sig_buf
-    try cuda_mem.gemvQ5_0(
-        sc_down.slice(),
-        ws.dev0.sc_geglu_buf.slice(),
-        ws.dev0.sc_sig_buf.slice(),
-        emb_dim,
-        intermediate_dim,
-        1,
-        &ws.dev0.stream,
-    );
-
-    // 5. Add residual sc_sig_buf to current_emb at target_pos
-    const ans_slice = try ws.dev0.current_emb.slice().subslice(target_pos * emb_dim, emb_dim);
-    try cuda_mem.addResidual(
-        ans_slice,
-        ws.dev0.sc_sig_buf.slice(),
-        &ws.dev0.stream,
-    );
-
-    // 6. Unweighted RMSNorm in-place on current_emb at target_pos
-    try cuda_mem.rmsNorm(
-        ans_slice,
-        null,
-        ans_slice,
-        1,
-        emb_dim,
-        1e-6,
-        &ws.dev0.stream,
-    );
-
+    try runDeviceSelfConditioning(&ws.dev0, model, target_pos);
     try ws.dev0.stream.synchronize();
+}
+
+fn runSingleGpuStep2CanvasEager(ws: *CudaWorkspace, model: *const CudaModel, P: usize, C: usize, answer_pos: usize) !void {
+    const emb_dim = ModelConfig.embedding_dim;
+    ws.dev0.resetBufferPointers();
+    const d0_cur = try ws.dev0.current_emb.slice().subslice(0, C * emb_dim);
+    const d0_init = try ws.dev0.canvas_init_emb.slice().subslice(0, C * emb_dim);
+    try d0_cur.copyFromDevice(d0_init, &ws.dev0.stream);
+    const ans_slice = try ws.dev0.current_emb.slice().subslice(answer_pos * emb_dim, emb_dim);
+    try ans_slice.copyFromDevice(ws.dev0.canvas_raw_ans.slice(), &ws.dev0.stream);
+    try runDeviceSelfConditioning(&ws.dev0, model, answer_pos);
+    for (0..ModelConfig.num_layers) |l| {
+        const rf = if (model.layers[l].is_global) model.rope_freqs_dev0 else null;
+        const rf_slice = if (rf) |r| r.slice() else null;
+        try runLayerCanvasCuda(&ws.dev0, &model.layers[l], l, P, C, rf_slice);
+    }
+    try cuda_mem.rmsNorm(ans_slice, model.output_norm.slice(), ws.dev0.norm_hidden.slice(), 1, ModelConfig.embedding_dim, 1e-6, &ws.dev0.stream);
+}
+
+fn runPartition0Step2CanvasEager(ws: *CudaWorkspace, model: *const CudaModel, P: usize, C: usize, answer_pos: usize) !void {
+    const emb_dim = ModelConfig.embedding_dim;
+    ws.dev0.resetBufferPointers();
+    const d0_cur = try ws.dev0.current_emb.slice().subslice(0, C * emb_dim);
+    const d0_init = try ws.dev0.canvas_init_emb.slice().subslice(0, C * emb_dim);
+    try d0_cur.copyFromDevice(d0_init, &ws.dev0.stream);
+    const ans_slice = try ws.dev0.current_emb.slice().subslice(answer_pos * emb_dim, emb_dim);
+    try ans_slice.copyFromDevice(ws.dev0.canvas_raw_ans.slice(), &ws.dev0.stream);
+    try runDeviceSelfConditioning(&ws.dev0, model, answer_pos);
+    for (0..15) |l| {
+        const rf = if (model.layers[l].is_global) model.rope_freqs_dev0 else null;
+        const rf_slice = if (rf) |r| r.slice() else null;
+        try runLayerCanvasCuda(&ws.dev0, &model.layers[l], l, P, C, rf_slice);
+    }
 }
 
 pub var enable_prompt_cache: bool = true;
@@ -1850,238 +1921,249 @@ pub fn executeStructuredReadCuda(
             ws.last_stage_timings.prompt_cache_hit = true;
         }
 
-        // R39-01: Drain any pending stream operations before embedding canvas tokens into pinned host staging memory
-        try ws.synchronize();
+        if (candidate_probs == null) {
+            // Step 1: Canvas tokens embedding on host & initial device backup (Phase 19)
+            // R39-01: Drain any pending stream operations before embedding canvas tokens into pinned host staging memory
+            try ws.synchronize();
 
-        // Embed canvas tokens on host
-        const host_emb = ws.host_staging_buf[0 .. C * ModelConfig.embedding_dim];
-        const emb_scale: f32 = @sqrt(@as(f32, @floatFromInt(ModelConfig.embedding_dim)));
-        for (canvas_tokens, 0..) |tok, i| {
-            const blocks = cpu_model.getEmbeddingBlocks(tok);
-            const row = host_emb[i * ModelConfig.embedding_dim .. (i + 1) * ModelConfig.embedding_dim];
-            quant.dequantizeRowQ6_K(blocks, row);
-            for (row) |*val| val.* *= emb_scale;
-            if (candidate_probs == null or i != answer_pos) {
+            // Embed canvas tokens on host
+            const host_emb = ws.host_staging_buf[0 .. C * ModelConfig.embedding_dim];
+            const emb_scale: f32 = @sqrt(@as(f32, @floatFromInt(ModelConfig.embedding_dim)));
+            for (canvas_tokens, 0..) |tok, i| {
+                const blocks = cpu_model.getEmbeddingBlocks(tok);
+                const row = host_emb[i * ModelConfig.embedding_dim .. (i + 1) * ModelConfig.embedding_dim];
+                quant.dequantizeRowQ6_K(blocks, row);
+                for (row) |*val| val.* *= emb_scale;
+                if (i == answer_pos) {
+                    const raw_row = ws.host_staging_buf[C * ModelConfig.embedding_dim .. (C + 1) * ModelConfig.embedding_dim];
+                    @memcpy(raw_row, row);
+                }
                 ops.unweightedRmsNorm(row, 1e-6, row);
             }
-        }
 
-        ws.dev0.resetBufferPointers();
-        if (ws.dev1) |*d1| d1.resetBufferPointers();
+            ws.dev0.resetBufferPointers();
+            if (ws.dev1) |*d1| d1.resetBufferPointers();
 
-        try ws.synchronize();
-        const t_canvas_start = decision.getMonotonicNanos();
+            try ws.synchronize();
+            const t_canvas_start = decision.getMonotonicNanos();
 
-        const d0_emb_slice = try ws.dev0.current_emb.slice().subslice(0, C * ModelConfig.embedding_dim);
-        try d0_emb_slice.copyFromHost(host_emb);
+            const d0_cur_slice = try ws.dev0.current_emb.slice().subslice(0, C * ModelConfig.embedding_dim);
+            const d0_init_slice = try ws.dev0.canvas_init_emb.slice().subslice(0, C * ModelConfig.embedding_dim);
+            try d0_init_slice.copyFromHost(host_emb);
+            try d0_cur_slice.copyFromDevice(d0_init_slice, &ws.dev0.stream);
 
-        // Phase 9: If self-conditioning is enabled (steps t >= 2), apply device-resident SC MLP at answer position
-        if (candidate_probs) |sc_probs| {
-            try applyDeviceSelfConditioning(ws, model, cpu_model, candidate_token_ids, sc_probs, answer_pos);
-        }
+            const raw_row = ws.host_staging_buf[C * ModelConfig.embedding_dim .. (C + 1) * ModelConfig.embedding_dim];
+            try ws.dev0.canvas_raw_ans.slice().copyFromHost(raw_row);
 
-        const graph_valid = (ws.graph0 != null and ws.cached_graph_prompt_len == P and ws.cached_graph_canvas_len == C and ws.cached_graph_answer_pos == answer_pos);
+            const graph_valid = (ws.graph0 != null and ws.cached_graph_prompt_len == P and ws.cached_graph_canvas_len == C and ws.cached_graph_answer_pos == answer_pos);
 
-        if (model.topology == .single_gpu) {
-            var replay_success = false;
-            if (graph_valid and !inject_graph_replay_failure) {
-                if (ws.graph0.?.launch(&ws.dev0.stream)) |_| {
-                    replay_success = true;
-                } else |_| {
+            if (model.topology == .single_gpu) {
+                var replay_success = false;
+                if (graph_valid and !inject_graph_replay_failure) {
+                    if (ws.graph0.?.launch(&ws.dev0.stream)) |_| {
+                        replay_success = true;
+                    } else |_| {
+                        if (ws.graph0) |*g0| {
+                            g0.deinit();
+                            ws.graph0 = null;
+                        }
+                        ws.cached_graph_prompt_len = 0;
+                        ws.cached_graph_canvas_len = 0;
+                        ws.cached_graph_answer_pos = 0;
+                        try ws.dev0.stream.synchronize();
+                    }
+                }
+
+                if (replay_success) {
+                    try ws.dev0.stream.synchronize();
+                    try ws.dev0.norm_hidden.copyToHost(ws.host_norm_hidden);
+                } else {
                     if (ws.graph0) |*g0| {
                         g0.deinit();
                         ws.graph0 = null;
                     }
-                    ws.cached_graph_prompt_len = 0;
-                    ws.cached_graph_canvas_len = 0;
-                    ws.cached_graph_answer_pos = 0;
-                    try ws.dev0.stream.synchronize();
-                }
-            }
 
-            if (replay_success) {
-                try ws.dev0.stream.synchronize();
-                try ws.dev0.norm_hidden.copyToHost(ws.host_norm_hidden);
-            } else {
-                if (ws.graph0) |*g0| {
-                    g0.deinit();
-                    ws.graph0 = null;
-                }
+                    var capture0_ok = false;
+                    if (cuda_mem.CudaGraph.beginCapture(&ws.dev0.stream)) |_| {
+                        capture0_ok = true;
+                    } else |_| {}
 
-                var capture0_ok = false;
-                if (cuda_mem.CudaGraph.beginCapture(&ws.dev0.stream)) |_| {
-                    capture0_ok = true;
-                } else |_| {}
+                    if (capture0_ok) {
+                        errdefer cuda_mem.CudaGraph.cancelCapture(&ws.dev0.stream);
+                        try runSingleGpuCanvasEager(ws, model, P, C, answer_pos);
 
-                if (capture0_ok) {
-                    errdefer cuda_mem.CudaGraph.cancelCapture(&ws.dev0.stream);
-                    try runSingleGpuCanvasEager(ws, model, P, C, answer_pos);
-
-                    var g0_instantiated = false;
-                    if (!inject_graph_capture_failure) {
-                        if (cuda_mem.CudaGraph.endCapture(&ws.dev0.stream)) |g0| {
-                            ws.graph0 = g0;
-                            var launch_ok = false;
-                            if (!inject_graph_replay_failure) {
-                                if (ws.graph0.?.launch(&ws.dev0.stream)) |_| {
-                                    launch_ok = true;
-                                } else |_| {}
-                            }
-                            if (launch_ok) {
-                                g0_instantiated = true;
-                                ws.cached_graph_prompt_len = P;
-                                ws.cached_graph_canvas_len = C;
-                                ws.cached_graph_answer_pos = answer_pos;
-                            } else {
-                                ws.graph0.?.deinit();
-                                ws.graph0 = null;
+                        var g0_instantiated = false;
+                        if (!inject_graph_capture_failure) {
+                            if (cuda_mem.CudaGraph.endCapture(&ws.dev0.stream)) |g0| {
+                                ws.graph0 = g0;
+                                var launch_ok = false;
+                                if (!inject_graph_replay_failure) {
+                                    if (ws.graph0.?.launch(&ws.dev0.stream)) |_| {
+                                        launch_ok = true;
+                                    } else |_| {}
+                                }
+                                if (launch_ok) {
+                                    g0_instantiated = true;
+                                    ws.cached_graph_prompt_len = P;
+                                    ws.cached_graph_canvas_len = C;
+                                    ws.cached_graph_answer_pos = answer_pos;
+                                } else {
+                                    ws.graph0.?.deinit();
+                                    ws.graph0 = null;
+                                    ws.cached_graph_prompt_len = 0;
+                                    ws.cached_graph_canvas_len = 0;
+                                    ws.cached_graph_answer_pos = 0;
+                                }
+                            } else |_| {
                                 ws.cached_graph_prompt_len = 0;
                                 ws.cached_graph_canvas_len = 0;
                                 ws.cached_graph_answer_pos = 0;
                             }
-                        } else |_| {
+                        } else {
+                            cuda_mem.CudaGraph.cancelCapture(&ws.dev0.stream);
                             ws.cached_graph_prompt_len = 0;
                             ws.cached_graph_canvas_len = 0;
                             ws.cached_graph_answer_pos = 0;
                         }
+
+                        if (!g0_instantiated) {
+                            try runSingleGpuCanvasEager(ws, model, P, C, answer_pos);
+                        }
                     } else {
-                        cuda_mem.CudaGraph.cancelCapture(&ws.dev0.stream);
+                        try runSingleGpuCanvasEager(ws, model, P, C, answer_pos);
+                    }
+
+                    try ws.dev0.stream.synchronize();
+                    try ws.dev0.norm_hidden.copyToHost(ws.host_norm_hidden);
+                }
+            } else {
+                var dev1 = &ws.dev1.?;
+                const d0_out_slice = try ws.dev0.emb_buf_1.slice().subslice(0, C * ModelConfig.embedding_dim);
+                const d1_in_slice = try dev1.emb_buf_0.slice().subslice(0, C * ModelConfig.embedding_dim);
+                const ev_opt = if (ws.boundary_event) |*ev| ev else null;
+
+                var replay_success = false;
+                if (graph_valid and ws.graph1 != null and !inject_graph_replay_failure) {
+                    var l0_ok = false;
+                    if (ws.graph0.?.launch(&ws.dev0.stream)) |_| {
+                        l0_ok = true;
+                    } else |_| {}
+
+                    var tr_ok = false;
+                    if (l0_ok) {
+                        if (transferHiddenState(d0_out_slice, d1_in_slice, &ws.dev0.stream, &dev1.stream, ev_opt, ws.host_staging_buf, ws.peer_access_enabled)) |_| {
+                            tr_ok = true;
+                        } else |_| {}
+
+                        if (tr_ok) {
+                            if (!inject_graph1_replay_failure) {
+                                if (ws.graph1.?.launch(&dev1.stream)) |_| {
+                                    replay_success = true;
+                                } else |_| {}
+                            }
+                        }
+                    }
+                    if (!replay_success) {
+                        if (ws.graph0) |*g0| {
+                            g0.deinit();
+                            ws.graph0 = null;
+                        }
+                        if (ws.graph1) |*g1| {
+                            g1.deinit();
+                            ws.graph1 = null;
+                        }
                         ws.cached_graph_prompt_len = 0;
                         ws.cached_graph_canvas_len = 0;
                         ws.cached_graph_answer_pos = 0;
-                    }
 
-                    if (!g0_instantiated) {
-                        try runSingleGpuCanvasEager(ws, model, P, C, answer_pos);
+                        // R40-01 / R41-01: Drain all referencing device streams before entering eager fallback.
+                        try ws.synchronize();
                     }
-                } else {
-                    try runSingleGpuCanvasEager(ws, model, P, C, answer_pos);
                 }
 
-                try ws.dev0.stream.synchronize();
-                try ws.dev0.norm_hidden.copyToHost(ws.host_norm_hidden);
-            }
-        } else {
-            var dev1 = &ws.dev1.?;
-            const d0_out_slice = try ws.dev0.emb_buf_1.slice().subslice(0, C * ModelConfig.embedding_dim);
-            const d1_in_slice = try dev1.emb_buf_0.slice().subslice(0, C * ModelConfig.embedding_dim);
-            const ev_opt = if (ws.boundary_event) |*ev| ev else null;
-
-            var replay_success = false;
-            if (graph_valid and ws.graph1 != null and !inject_graph_replay_failure) {
-                var l0_ok = false;
-                if (ws.graph0.?.launch(&ws.dev0.stream)) |_| {
-                    l0_ok = true;
-                } else |_| {}
-
-                var tr_ok = false;
-                if (l0_ok) {
-                    if (transferHiddenState(d0_out_slice, d1_in_slice, &ws.dev0.stream, &dev1.stream, ev_opt, ws.host_staging_buf, ws.peer_access_enabled)) |_| {
-                        tr_ok = true;
+                if (!replay_success) {
+                    // --- Partition 0 (Device 0, Layers 0..14) ---
+                    var g0_instantiated = false;
+                    var capture0_ok = false;
+                    if (cuda_mem.CudaGraph.beginCapture(&ws.dev0.stream)) |_| {
+                        capture0_ok = true;
                     } else |_| {}
 
-                    if (tr_ok) {
-                        if (!inject_graph1_replay_failure) {
-                            if (ws.graph1.?.launch(&dev1.stream)) |_| {
-                                replay_success = true;
+                    if (capture0_ok) {
+                        errdefer cuda_mem.CudaGraph.cancelCapture(&ws.dev0.stream);
+                        try runPartition0CanvasEager(ws, model, P, C);
+
+                        if (!inject_graph_capture_failure) {
+                            if (cuda_mem.CudaGraph.endCapture(&ws.dev0.stream)) |g0| {
+                                ws.graph0 = g0;
+                                var p0_launch_ok = false;
+                                if (!inject_graph_replay_failure) {
+                                    if (ws.graph0.?.launch(&ws.dev0.stream)) |_| {
+                                        p0_launch_ok = true;
+                                    } else |_| {}
+                                }
+                                if (p0_launch_ok) {
+                                    g0_instantiated = true;
+                                } else {
+                                    ws.graph0.?.deinit();
+                                    ws.graph0 = null;
+                                }
                             } else |_| {}
+                        } else {
+                            cuda_mem.CudaGraph.cancelCapture(&ws.dev0.stream);
                         }
-                    }
-                }
-                if (!replay_success) {
-                    if (ws.graph0) |*g0| {
-                        g0.deinit();
-                        ws.graph0 = null;
-                    }
-                    if (ws.graph1) |*g1| {
-                        g1.deinit();
-                        ws.graph1 = null;
-                    }
-                    ws.cached_graph_prompt_len = 0;
-                    ws.cached_graph_canvas_len = 0;
-                    ws.cached_graph_answer_pos = 0;
 
-                    // R40-01 / R41-01: Drain all referencing device streams before entering eager fallback.
-                    // If stream synchronization fails, stop immediately to prevent unsafe reuse
-                    // of host_staging_buf while asynchronous transfers may still be pending.
-                    try ws.synchronize();
-                }
-            }
-
-            if (!replay_success) {
-                // --- Partition 0 (Device 0, Layers 0..14) ---
-                var g0_instantiated = false;
-                var capture0_ok = false;
-                if (cuda_mem.CudaGraph.beginCapture(&ws.dev0.stream)) |_| {
-                    capture0_ok = true;
-                } else |_| {}
-
-                if (capture0_ok) {
-                    errdefer cuda_mem.CudaGraph.cancelCapture(&ws.dev0.stream);
-                    try runPartition0CanvasEager(ws, model, P, C);
-
-                    if (!inject_graph_capture_failure) {
-                        if (cuda_mem.CudaGraph.endCapture(&ws.dev0.stream)) |g0| {
-                            ws.graph0 = g0;
-                            var p0_launch_ok = false;
-                            if (!inject_graph_replay_failure) {
-                                if (ws.graph0.?.launch(&ws.dev0.stream)) |_| {
-                                    p0_launch_ok = true;
-                                } else |_| {}
-                            }
-                            if (p0_launch_ok) {
-                                g0_instantiated = true;
-                            } else {
-                                ws.graph0.?.deinit();
-                                ws.graph0 = null;
-                            }
-                        } else |_| {}
+                        if (!g0_instantiated) {
+                            try runPartition0CanvasEager(ws, model, P, C);
+                        }
                     } else {
-                        cuda_mem.CudaGraph.cancelCapture(&ws.dev0.stream);
-                    }
-
-                    if (!g0_instantiated) {
                         try runPartition0CanvasEager(ws, model, P, C);
                     }
-                } else {
-                    try runPartition0CanvasEager(ws, model, P, C);
-                }
 
-                // Boundary transfer H_15 to Device 1 (canvas length C)
-                // R39-01: Ensure streams are drained if subsequent execution fails
-                errdefer ws.synchronize() catch {};
-                try transferHiddenState(d0_out_slice, d1_in_slice, &ws.dev0.stream, &dev1.stream, ev_opt, ws.host_staging_buf, ws.peer_access_enabled);
+                    // Boundary transfer H_15 to Device 1 (canvas length C)
+                    // R39-01: Ensure streams are drained if subsequent execution fails
+                    errdefer ws.synchronize() catch {};
+                    try transferHiddenState(d0_out_slice, d1_in_slice, &ws.dev0.stream, &dev1.stream, ev_opt, ws.host_staging_buf, ws.peer_access_enabled);
 
-                // --- Partition 1 (Device 1, Layers 15..29 + Output RMSNorm) ---
-                var capture1_ok = false;
-                if (cuda_mem.CudaGraph.beginCapture(&dev1.stream)) |_| {
-                    capture1_ok = true;
-                } else |_| {}
+                    // --- Partition 1 (Device 1, Layers 15..29 + Output RMSNorm) ---
+                    var capture1_ok = false;
+                    if (cuda_mem.CudaGraph.beginCapture(&dev1.stream)) |_| {
+                        capture1_ok = true;
+                    } else |_| {}
 
-                if (capture1_ok) {
-                    errdefer cuda_mem.CudaGraph.cancelCapture(&dev1.stream);
-                    try runPartition1CanvasEager(ws, model, P, C, answer_pos);
+                    if (capture1_ok) {
+                        errdefer cuda_mem.CudaGraph.cancelCapture(&dev1.stream);
+                        try runPartition1CanvasEager(ws, model, P, C, answer_pos);
 
-                    var g1_instantiated = false;
-                    if (!inject_graph_capture_failure) {
-                        if (cuda_mem.CudaGraph.endCapture(&dev1.stream)) |g1| {
-                            ws.graph1 = g1;
-                            var p1_launch_ok = false;
-                            if (!inject_graph_replay_failure) {
-                                if (ws.graph1.?.launch(&dev1.stream)) |_| {
-                                    p1_launch_ok = true;
-                                } else |_| {}
-                            }
-                            if (p1_launch_ok and g0_instantiated) {
-                                g1_instantiated = true;
-                                ws.cached_graph_prompt_len = P;
-                                ws.cached_graph_canvas_len = C;
-                                ws.cached_graph_answer_pos = answer_pos;
-                            } else {
-                                if (ws.graph1) |*g| {
-                                    g.deinit();
-                                    ws.graph1 = null;
+                        var g1_instantiated = false;
+                        if (!inject_graph_capture_failure) {
+                            if (cuda_mem.CudaGraph.endCapture(&dev1.stream)) |g1| {
+                                ws.graph1 = g1;
+                                var p1_launch_ok = false;
+                                if (!inject_graph_replay_failure) {
+                                    if (ws.graph1.?.launch(&dev1.stream)) |_| {
+                                        p1_launch_ok = true;
+                                    } else |_| {}
                                 }
+                                if (p1_launch_ok and g0_instantiated) {
+                                    g1_instantiated = true;
+                                    ws.cached_graph_prompt_len = P;
+                                    ws.cached_graph_canvas_len = C;
+                                    ws.cached_graph_answer_pos = answer_pos;
+                                } else {
+                                    if (ws.graph1) |*g| {
+                                        g.deinit();
+                                        ws.graph1 = null;
+                                    }
+                                    if (ws.graph0) |*g| {
+                                        g.deinit();
+                                        ws.graph0 = null;
+                                    }
+                                    ws.cached_graph_prompt_len = 0;
+                                    ws.cached_graph_canvas_len = 0;
+                                    ws.cached_graph_answer_pos = 0;
+                                }
+                            } else |_| {
                                 if (ws.graph0) |*g| {
                                     g.deinit();
                                     ws.graph0 = null;
@@ -2090,7 +2172,8 @@ pub fn executeStructuredReadCuda(
                                 ws.cached_graph_canvas_len = 0;
                                 ws.cached_graph_answer_pos = 0;
                             }
-                        } else |_| {
+                        } else {
+                            cuda_mem.CudaGraph.cancelCapture(&dev1.stream);
                             if (ws.graph0) |*g| {
                                 g.deinit();
                                 ws.graph0 = null;
@@ -2099,8 +2182,11 @@ pub fn executeStructuredReadCuda(
                             ws.cached_graph_canvas_len = 0;
                             ws.cached_graph_answer_pos = 0;
                         }
+
+                        if (!g1_instantiated) {
+                            try runPartition1CanvasEager(ws, model, P, C, answer_pos);
+                        }
                     } else {
-                        cuda_mem.CudaGraph.cancelCapture(&dev1.stream);
                         if (ws.graph0) |*g| {
                             g.deinit();
                             ws.graph0 = null;
@@ -2108,35 +2194,237 @@ pub fn executeStructuredReadCuda(
                         ws.cached_graph_prompt_len = 0;
                         ws.cached_graph_canvas_len = 0;
                         ws.cached_graph_answer_pos = 0;
-                    }
-
-                    if (!g1_instantiated) {
                         try runPartition1CanvasEager(ws, model, P, C, answer_pos);
                     }
-                } else {
-                    if (ws.graph0) |*g| {
-                        g.deinit();
-                        ws.graph0 = null;
-                    }
-                    ws.cached_graph_prompt_len = 0;
-                    ws.cached_graph_canvas_len = 0;
-                    ws.cached_graph_answer_pos = 0;
-                    try runPartition1CanvasEager(ws, model, P, C, answer_pos);
+                }
+
+                // Copy normalized hidden state to host asynchronously on dev1.stream, then wait for completion
+                try dev1.norm_hidden.copyToHost(ws.host_norm_hidden);
+                try dev1.stream.synchronize();
+                try ws.dev0.stream.synchronize();
+            }
+
+            // Project candidate logits on host using Q6_K dot products
+            infer.readCandidateLogits(cpu_model, ws.host_norm_hidden, candidate_token_ids, out_raw_logits, out_softcapped_logits);
+
+            const t_canvas_end = decision.getMonotonicNanos();
+            ws.last_canvas_ms = @as(f32, @floatFromInt(t_canvas_end - t_canvas_start)) / 1_000_000.0;
+            return;
+        } else {
+            // Step 2: Multi-Step Graph Chaining with Device-Resident Self-Conditioning (Phase 19)
+            const sc_probs = candidate_probs.?;
+            const emb_dim = ModelConfig.embedding_dim;
+            const emb_scale: f32 = @sqrt(@as(f32, @floatFromInt(emb_dim)));
+
+            // 1. Construct soft embedding on host staging buffer
+            const soft_emb = ws.host_staging_buf[0..emb_dim];
+            @memset(soft_emb, 0.0);
+            const row_temp = ws.host_staging_buf[emb_dim .. 2 * emb_dim];
+            for (candidate_token_ids, sc_probs) |tok, p| {
+                if (p > 0.0) {
+                    const blocks = cpu_model.getEmbeddingBlocks(tok);
+                    quant.dequantizeRowQ6_K(blocks, row_temp);
+                    infer.accumulateScaledF32(soft_emb, row_temp, p * emb_scale);
                 }
             }
 
-            // Copy normalized hidden state to host asynchronously on dev1.stream, then wait for completion
-            try dev1.norm_hidden.copyToHost(ws.host_norm_hidden);
-            try dev1.stream.synchronize();
-            try ws.dev0.stream.synchronize();
+            ws.dev0.resetBufferPointers();
+            if (ws.dev1) |*d1| d1.resetBufferPointers();
+
+            const t_canvas_start = decision.getMonotonicNanos();
+
+            // 2. Asynchronously copy soft embedding into device buffer on ws.dev0.stream
+            try ws.dev0.sc_soft_emb.slice().copyFromHostAsync(soft_emb, &ws.dev0.stream);
+
+            const step2_graph_valid = (ws.graph0_step2 != null and
+                ws.cached_graph_step2_prompt_len == P and
+                ws.cached_graph_step2_canvas_len == C and
+                ws.cached_graph_step2_answer_pos == answer_pos);
+
+            if (model.topology == .single_gpu) {
+                var replay_success = false;
+                if (step2_graph_valid and !inject_graph_replay_failure) {
+                    if (ws.graph0_step2.?.launch(&ws.dev0.stream)) |_| {
+                        replay_success = true;
+                    } else |_| {
+                        if (ws.graph0_step2) |*g| {
+                            g.deinit();
+                            ws.graph0_step2 = null;
+                        }
+                        ws.cached_graph_step2_prompt_len = 0;
+                        ws.cached_graph_step2_canvas_len = 0;
+                        ws.cached_graph_step2_answer_pos = 0;
+                        try ws.dev0.stream.synchronize();
+                    }
+                }
+
+                if (replay_success) {
+                    try ws.dev0.stream.synchronize();
+                    try ws.dev0.norm_hidden.copyToHost(ws.host_norm_hidden);
+                } else {
+                    if (ws.graph0_step2) |*g| {
+                        g.deinit();
+                        ws.graph0_step2 = null;
+                    }
+
+                    var capture0_ok = false;
+                    if (cuda_mem.CudaGraph.beginCapture(&ws.dev0.stream)) |_| {
+                        capture0_ok = true;
+                    } else |_| {}
+
+                    if (capture0_ok) {
+                        errdefer cuda_mem.CudaGraph.cancelCapture(&ws.dev0.stream);
+                        try runSingleGpuStep2CanvasEager(ws, model, P, C, answer_pos);
+
+                        var g0_instantiated = false;
+                        if (!inject_graph_capture_failure) {
+                            if (cuda_mem.CudaGraph.endCapture(&ws.dev0.stream)) |g0| {
+                                ws.graph0_step2 = g0;
+                                var launch_ok = false;
+                                if (!inject_graph_replay_failure) {
+                                    if (ws.graph0_step2.?.launch(&ws.dev0.stream)) |_| {
+                                        launch_ok = true;
+                                    } else |_| {}
+                                }
+                                if (launch_ok) {
+                                    g0_instantiated = true;
+                                    ws.cached_graph_step2_prompt_len = P;
+                                    ws.cached_graph_step2_canvas_len = C;
+                                    ws.cached_graph_step2_answer_pos = answer_pos;
+                                } else {
+                                    ws.graph0_step2.?.deinit();
+                                    ws.graph0_step2 = null;
+                                    ws.cached_graph_step2_prompt_len = 0;
+                                    ws.cached_graph_step2_canvas_len = 0;
+                                    ws.cached_graph_step2_answer_pos = 0;
+                                }
+                            } else |_| {
+                                ws.cached_graph_step2_prompt_len = 0;
+                                ws.cached_graph_step2_canvas_len = 0;
+                                ws.cached_graph_step2_answer_pos = 0;
+                            }
+                        } else {
+                            cuda_mem.CudaGraph.cancelCapture(&ws.dev0.stream);
+                            ws.cached_graph_step2_prompt_len = 0;
+                            ws.cached_graph_step2_canvas_len = 0;
+                            ws.cached_graph_step2_answer_pos = 0;
+                        }
+
+                        if (!g0_instantiated) {
+                            try runSingleGpuStep2CanvasEager(ws, model, P, C, answer_pos);
+                        }
+                    } else {
+                        try runSingleGpuStep2CanvasEager(ws, model, P, C, answer_pos);
+                    }
+
+                    try ws.dev0.stream.synchronize();
+                    try ws.dev0.norm_hidden.copyToHost(ws.host_norm_hidden);
+                }
+            } else {
+                var dev1 = &ws.dev1.?;
+                const d0_out_slice = try ws.dev0.emb_buf_1.slice().subslice(0, C * ModelConfig.embedding_dim);
+                const d1_in_slice = try dev1.emb_buf_0.slice().subslice(0, C * ModelConfig.embedding_dim);
+                const ev_opt = if (ws.boundary_event) |*ev| ev else null;
+
+                var replay_success = false;
+                if (step2_graph_valid and ws.graph1 != null and !inject_graph_replay_failure) {
+                    var l0_ok = false;
+                    if (ws.graph0_step2.?.launch(&ws.dev0.stream)) |_| {
+                        l0_ok = true;
+                    } else |_| {}
+
+                    var tr_ok = false;
+                    if (l0_ok) {
+                        if (transferHiddenState(d0_out_slice, d1_in_slice, &ws.dev0.stream, &dev1.stream, ev_opt, ws.host_staging_buf, ws.peer_access_enabled)) |_| {
+                            tr_ok = true;
+                        } else |_| {}
+
+                        if (tr_ok) {
+                            if (!inject_graph1_replay_failure) {
+                                if (ws.graph1.?.launch(&dev1.stream)) |_| {
+                                    replay_success = true;
+                                } else |_| {}
+                            }
+                        }
+                    }
+                    if (!replay_success) {
+                        if (ws.graph0_step2) |*g| {
+                            g.deinit();
+                            ws.graph0_step2 = null;
+                        }
+                        ws.cached_graph_step2_prompt_len = 0;
+                        ws.cached_graph_step2_canvas_len = 0;
+                        ws.cached_graph_step2_answer_pos = 0;
+
+                        try ws.synchronize();
+                    }
+                }
+
+                if (!replay_success) {
+                    var g0_instantiated = false;
+                    var capture0_ok = false;
+                    if (cuda_mem.CudaGraph.beginCapture(&ws.dev0.stream)) |_| {
+                        capture0_ok = true;
+                    } else |_| {}
+
+                    if (capture0_ok) {
+                        errdefer cuda_mem.CudaGraph.cancelCapture(&ws.dev0.stream);
+                        try runPartition0Step2CanvasEager(ws, model, P, C, answer_pos);
+
+                        if (!inject_graph_capture_failure) {
+                            if (cuda_mem.CudaGraph.endCapture(&ws.dev0.stream)) |g0| {
+                                ws.graph0_step2 = g0;
+                                var p0_launch_ok = false;
+                                if (!inject_graph_replay_failure) {
+                                    if (ws.graph0_step2.?.launch(&ws.dev0.stream)) |_| {
+                                        p0_launch_ok = true;
+                                    } else |_| {}
+                                }
+                                if (p0_launch_ok) {
+                                    g0_instantiated = true;
+                                    ws.cached_graph_step2_prompt_len = P;
+                                    ws.cached_graph_step2_canvas_len = C;
+                                    ws.cached_graph_step2_answer_pos = answer_pos;
+                                } else {
+                                    ws.graph0_step2.?.deinit();
+                                    ws.graph0_step2 = null;
+                                }
+                            } else |_| {}
+                        } else {
+                            cuda_mem.CudaGraph.cancelCapture(&ws.dev0.stream);
+                        }
+
+                        if (!g0_instantiated) {
+                            try runPartition0Step2CanvasEager(ws, model, P, C, answer_pos);
+                        }
+                    } else {
+                        try runPartition0Step2CanvasEager(ws, model, P, C, answer_pos);
+                    }
+
+                    errdefer ws.synchronize() catch {};
+                    try transferHiddenState(d0_out_slice, d1_in_slice, &ws.dev0.stream, &dev1.stream, ev_opt, ws.host_staging_buf, ws.peer_access_enabled);
+
+                    var p1_done = false;
+                    if (ws.graph1 != null and !inject_graph1_replay_failure) {
+                        if (ws.graph1.?.launch(&dev1.stream)) |_| {
+                            p1_done = true;
+                        } else |_| {}
+                    }
+                    if (!p1_done) {
+                        try runPartition1CanvasEager(ws, model, P, C, answer_pos);
+                    }
+                }
+
+                try dev1.norm_hidden.copyToHost(ws.host_norm_hidden);
+                try dev1.stream.synchronize();
+                try ws.dev0.stream.synchronize();
+            }
+
+            infer.readCandidateLogits(cpu_model, ws.host_norm_hidden, candidate_token_ids, out_raw_logits, out_softcapped_logits);
+            const t_canvas_end = decision.getMonotonicNanos();
+            ws.last_canvas_ms = @as(f32, @floatFromInt(t_canvas_end - t_canvas_start)) / 1_000_000.0;
+            return;
         }
-
-        // Project candidate logits on host using Q6_K dot products
-        infer.readCandidateLogits(cpu_model, ws.host_norm_hidden, candidate_token_ids, out_raw_logits, out_softcapped_logits);
-
-        const t_canvas_end = decision.getMonotonicNanos();
-        ws.last_canvas_ms = @as(f32, @floatFromInt(t_canvas_end - t_canvas_start)) / 1_000_000.0;
-        return;
     }
 
     // --- Uncached Fallback Execution Path (when enable_prompt_cache == false or P > max_prompt_tokens) ---
@@ -3031,15 +3319,78 @@ test "executeStructuredReadCuda full 30-layer forward pass on local model if pre
         try std.testing.expectApproxEqAbs(cuda_raw[i], uncached_raw[i], 1e-4);
         try std.testing.expectApproxEqAbs(cuda_softcapped[i], uncached_soft[i], 1e-4);
     }
+
+    // Phase 19: Exercise Step 2 CUDA Graph Capture and Replay with Self-Conditioning
+    enable_prompt_cache = true;
+    const candidate_probs = [_]f32{ 0.75, 0.25 };
+    var step2_cuda_raw: [2]f32 = undefined;
+    var step2_cuda_soft: [2]f32 = undefined;
+
+    // Step 2 Run 1: Graph Capture
+    try executeStructuredReadCuda(
+        ws,
+        cuda_model,
+        cpu_model,
+        &prompt_tokens,
+        canvas.tokens[0..canvas_len],
+        canvas.answer_pos,
+        &candidate_tokens,
+        &candidate_probs,
+        &step2_cuda_raw,
+        &step2_cuda_soft,
+    );
+    try std.testing.expect(ws.graph0_step2 != null);
+
+    // Step 2 Run 2: Graph Replay
+    var step2_replay_raw: [2]f32 = undefined;
+    var step2_replay_soft: [2]f32 = undefined;
+    try executeStructuredReadCuda(
+        ws,
+        cuda_model,
+        cpu_model,
+        &prompt_tokens,
+        canvas.tokens[0..canvas_len],
+        canvas.answer_pos,
+        &candidate_tokens,
+        &candidate_probs,
+        &step2_replay_raw,
+        &step2_replay_soft,
+    );
+    for (0..2) |i| {
+        try std.testing.expectApproxEqAbs(step2_cuda_raw[i], step2_replay_raw[i], 1e-4);
+        try std.testing.expectApproxEqAbs(step2_cuda_soft[i], step2_replay_soft[i], 1e-4);
+    }
+
+    // Compare with CPU reference for Step 2
+    var step2_cpu_raw: [2]f32 = undefined;
+    var step2_cpu_soft: [2]f32 = undefined;
+    try infer.executeStructuredReadSlice(
+        cpu_ws,
+        cpu_model,
+        &prompt_tokens,
+        canvas.tokens[0..canvas_len],
+        canvas.answer_pos,
+        &candidate_tokens,
+        &candidate_probs,
+        &step2_cpu_raw,
+        &step2_cpu_soft,
+    );
+    for (0..2) |i| {
+        const raw_diff = @abs(step2_cpu_raw[i] - step2_cuda_raw[i]);
+        const soft_diff = @abs(step2_cpu_soft[i] - step2_cuda_soft[i]);
+        try std.testing.expect(raw_diff <= 0.05);
+        try std.testing.expect(soft_diff <= 0.05);
+    }
 }
 
 test "CudaDeviceWorkspace: activationWorkspaceBytes matches audited footprint (R24-01, R26-01, R26-04)" {
     const bytes_512 = CudaDeviceWorkspace.activationWorkspaceBytes(512);
-    // Audited exact byte sum for N=512: 376,154,368 bytes (~376.15 MB, 358.73 MiB)
-    // Includes SWA-sized prompt KV prefix cache (k_dim=2048) and Phase 9 self-conditioning scratch buffers.
+    // Audited exact byte sum for N=512: 381,932,800 bytes (~381.93 MB, 364.24 MiB)
+    // Includes SWA-sized prompt KV prefix cache (k_dim=2048), Phase 9 self-conditioning scratch buffers,
+    // and Phase 19 device-resident canvas initialization backup buffers (canvas_init_emb: 5.77 MB, canvas_raw_ans: 11.26 KB).
     // In Phase 10 WP2 & Phase 15 WP2, dead scratch buffers exp_gate_up_buf (23.07 MB), h2 (5.77 MB),
     // ffn_comb (5.77 MB), and post_ffn (5.77 MB) were eliminated via kernel fusions (-40.37 MB total).
-    try std.testing.expectEqual(@as(usize, 376154368), bytes_512);
+    try std.testing.expectEqual(@as(usize, 381932800), bytes_512);
 }
 
 test "CudaDeviceWorkspace: prompt KV cache stride isolates SWA layers with long prompt (R26-01)" {
