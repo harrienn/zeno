@@ -106,6 +106,7 @@ pub fn writeEvaluationResultsJson(
     threshold: ?f32,
     temperature: f32,
     canvas_len: usize,
+    answer_pos: usize,
     results: []const EvaluationResult,
     summary: EvaluationSummary,
 ) !void {
@@ -121,7 +122,8 @@ pub fn writeEvaluationResultsJson(
         \\    "step_cap": {d},
         \\    "entropy_threshold": {s},
         \\    "temperature": {d:.4},
-        \\    "canvas_length": {d}
+        \\    "canvas_length": {d},
+        \\    "answer_position": {d}
         \\  }},
         \\  "summary": {{
         \\    "total_examples": {d},
@@ -146,6 +148,7 @@ pub fn writeEvaluationResultsJson(
         th_str,
         temperature,
         canvas_len,
+        answer_pos,
         summary.total_examples,
         summary.correct_count,
         summary.accuracy,

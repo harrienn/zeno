@@ -129,6 +129,7 @@ pub fn main(init: std.process.Init) !void {
         const query = args[3];
 
         var canvas_override: ?usize = null;
+        var answer_pos: usize = 0;
         var use_cuda = false;
         var step_cap: u32 = 1;
         var raw_candidates: std.ArrayList([]const u8) = .empty;
@@ -157,6 +158,18 @@ pub fn main(init: std.process.Init) !void {
                 arg_i += 1;
                 canvas_override = std.fmt.parseInt(usize, args[arg_i], 10) catch {
                     try stdout_writer.print("Error: Invalid canvas length '{s}'\n", .{args[arg_i]});
+                    try stdout_writer.flush();
+                    return;
+                };
+            } else if (std.mem.eql(u8, args[arg_i], "--answer-pos")) {
+                if (arg_i + 1 >= args.len) {
+                    try stdout_writer.print("Error: --answer-pos requires an integer argument\n", .{});
+                    try stdout_writer.flush();
+                    return;
+                }
+                arg_i += 1;
+                answer_pos = std.fmt.parseInt(usize, args[arg_i], 10) catch {
+                    try stdout_writer.print("Error: Invalid answer position '{s}'\n", .{args[arg_i]});
                     try stdout_writer.flush();
                     return;
                 };
@@ -205,6 +218,7 @@ pub fn main(init: std.process.Init) !void {
             .temperature = 1.0,
             .entropy_threshold = 0.5,
             .canvas_length = canvas_override,
+            .answer_position = answer_pos,
         };
 
         const resp = engine.decide(arena, req) catch |err| {
@@ -404,6 +418,7 @@ pub fn main(init: std.process.Init) !void {
         const fixture_path = args[3];
 
         var canvas_override: ?usize = null;
+        var answer_pos: usize = 0;
         var step_cap: u32 = 1;
         var out_json_path: ?[]const u8 = null;
         var use_cuda = false;
@@ -432,6 +447,18 @@ pub fn main(init: std.process.Init) !void {
                 arg_i += 1;
                 canvas_override = std.fmt.parseInt(usize, args[arg_i], 10) catch {
                     try stdout_writer.print("Error: Invalid canvas length '{s}'\n", .{args[arg_i]});
+                    try stdout_writer.flush();
+                    return;
+                };
+            } else if (std.mem.eql(u8, args[arg_i], "--answer-pos")) {
+                if (arg_i + 1 >= args.len) {
+                    try stdout_writer.print("Error: --answer-pos requires an integer argument\n", .{});
+                    try stdout_writer.flush();
+                    return;
+                }
+                arg_i += 1;
+                answer_pos = std.fmt.parseInt(usize, args[arg_i], 10) catch {
+                    try stdout_writer.print("Error: Invalid answer position '{s}'\n", .{args[arg_i]});
                     try stdout_writer.flush();
                     return;
                 };
@@ -467,6 +494,7 @@ pub fn main(init: std.process.Init) !void {
             .temperature = 1.0,
             .entropy_threshold = fix.entropy_threshold,
             .canvas_length = canvas_override,
+            .answer_position = answer_pos,
         };
 
         const resp = try engine.decide(arena, req);
@@ -516,6 +544,7 @@ pub fn main(init: std.process.Init) !void {
         const dataset_path = args[3];
 
         var canvas_override: ?usize = null;
+        var answer_pos: usize = 0;
         var step_cap: u32 = 1;
         var entropy_threshold: ?f32 = null;
         var eval_temperature: f32 = 1.0;
@@ -578,6 +607,18 @@ pub fn main(init: std.process.Init) !void {
                     try stdout_writer.flush();
                     return;
                 };
+            } else if (std.mem.eql(u8, args[arg_i], "--answer-pos")) {
+                if (arg_i + 1 >= args.len) {
+                    try stdout_writer.print("Error: --answer-pos requires an integer argument\n", .{});
+                    try stdout_writer.flush();
+                    return;
+                }
+                arg_i += 1;
+                answer_pos = std.fmt.parseInt(usize, args[arg_i], 10) catch {
+                    try stdout_writer.print("Error: Invalid answer position '{s}'\n", .{args[arg_i]});
+                    try stdout_writer.flush();
+                    return;
+                };
             } else if (std.mem.eql(u8, args[arg_i], "--out")) {
                 if (arg_i + 1 >= args.len) {
                     try stdout_writer.print("Error: --out requires an output path argument\n", .{});
@@ -613,11 +654,12 @@ pub fn main(init: std.process.Init) !void {
         defer engine.deinit();
 
         const eff_canvas = canvas_override orelse 256;
-        try stdout_writer.print("Evaluating dataset '{s}' ({d} examples, step_cap={d}, canvas={d})\n\n", .{
+        try stdout_writer.print("Evaluating dataset '{s}' ({d} examples, step_cap={d}, canvas={d}, answer_pos={d})\n\n", .{
             ds.name,
             ds.examples.len,
             step_cap,
             eff_canvas,
+            answer_pos,
         });
         try stdout_writer.flush();
 
@@ -637,6 +679,7 @@ pub fn main(init: std.process.Init) !void {
                 .temperature = eval_temperature,
                 .entropy_threshold = entropy_threshold,
                 .canvas_length = canvas_override,
+                .answer_position = answer_pos,
             };
             _ = try engine.decide(arena, warmup_req);
         }
@@ -670,6 +713,7 @@ pub fn main(init: std.process.Init) !void {
                 .temperature = eval_temperature,
                 .entropy_threshold = entropy_threshold,
                 .canvas_length = canvas_override,
+                .answer_position = answer_pos,
             };
 
             const t_start = getMonotonicMs();
@@ -803,6 +847,7 @@ pub fn main(init: std.process.Init) !void {
                 entropy_threshold,
                 eval_temperature,
                 eff_canvas,
+                answer_pos,
                 results,
                 summary,
             );

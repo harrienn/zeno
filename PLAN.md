@@ -296,6 +296,7 @@ Step Capping: What is the empirical trade-off between single-step read latency a
 -> RESOLVED with empirical evidence on ARC-Challenge (N=150): Single-step reads (T=1) suffer significant option-rotation sensitivity (75.33% canonical vs 65.33% rotated, -10.0% drop). Adaptive 2-step denoising (tau=0.50) virtually eliminates rotation bias (86.00% vs 84.67%, delta only 1.33%) and cuts multi-class Brier score nearly in half (0.3956 -> 0.2448). Because 85%–88% of queries resolve under tau=0.50 after Step 1, latency overhead is only +36ms median (574.6ms vs 576.5ms). Documented in specs/calibration-analysis.md and specs/denoising.md.
 
 Canvas Geometry: How does answer-position placement within the configured canvas affect attention and decision quality?
+-> RESOLVED with empirical evidence in specs/canvas-geometry.md: Answer placement at canvas index k in {0, 1} maximizes prompt cue attention and logit margin. Moving answer position deeper into the canvas (k >= 4) induces RoPE positional attenuation and unmasked PAD token attention sink dilution, causing logit margins to collapse and normalized entropy to climb towards random dispersion (0.196 -> 0.989). Canvas length reduction (C=16 vs C=256) yields a 14.2x speedup (101.3ms vs 1438.1ms) while preserving 100% discrete decision parity across golden fixtures; intermediate widths (C in {32, 64}) exhibit representation instability from partial PAD token interference in MoE router boundary expert selection. Production recommendations: C=16, answer_pos in {0, 1}.
 
 Multi-GPU Communication: What is the optimal tensor-parallel decomposition for 128 MoE experts during 1-step reads?
 
@@ -337,7 +338,7 @@ Implement and validate the CPU representation of one denoising step.
 **Current objective:**
 
 ```text
-Completed empirical calibration and temperature scaling evaluation (specs/calibration-analysis.md), resolving research vectors on logit calibration, option rotation bias, and adaptive denoising step trade-offs.
+Completed canvas geometry and positional attention dynamics research study (specs/canvas-geometry.md), answering the research vector on answer-position placement, RoPE positional attenuation, and canvas length scaling.
 ```
 
 This active objective builds upon completed Phase 15 through Phase 18 optimizations that broke the sub-100ms latency milestone on dual Ampere GPUs (`sm_86`, dual RTX 3060 12GB):

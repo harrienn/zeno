@@ -34,19 +34,32 @@ pub const Canvas = struct {
     /// Seeds the canvas with answer token at position 0, following TURN_CLOSE at position 1, and PAD tail.
     /// In DiffusionGemma's dual-region architecture, prompt tokens (length P) precede the 256-token canvas.
     pub fn seedSingleStep(prompt_tokens: []const u32, seed_token: u32) CanvasError!Canvas {
+        return seedSingleStepAt(prompt_tokens, seed_token, 0);
+    }
+
+    /// Seeds the canvas with answer token at a designated position in [0, canvas_length),
+    /// adjacent TURN_CLOSE, and PAD tail.
+    pub fn seedSingleStepAt(prompt_tokens: []const u32, seed_token: u32, answer_pos: usize) CanvasError!Canvas {
         if (prompt_tokens.len > root.ModelConfig.max_prompt_tokens) {
+            return error.CanvasOverflow;
+        }
+        if (answer_pos >= root.ModelConfig.canvas_length) {
             return error.CanvasOverflow;
         }
 
         var canvas = Canvas{
             .tokens = @splat(root.SpecialTokens.pad),
-            .answer_pos = 0,
+            .answer_pos = answer_pos,
             .is_pinned = true,
             .prompt_len = prompt_tokens.len,
         };
 
-        canvas.tokens[0] = seed_token;
-        canvas.tokens[1] = root.SpecialTokens.turn_close;
+        canvas.tokens[answer_pos] = seed_token;
+        if (answer_pos + 1 < root.ModelConfig.canvas_length) {
+            canvas.tokens[answer_pos + 1] = root.SpecialTokens.turn_close;
+        } else if (answer_pos > 0) {
+            canvas.tokens[answer_pos - 1] = root.SpecialTokens.turn_close;
+        }
 
         return canvas;
     }

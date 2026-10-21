@@ -45,6 +45,8 @@ pub const DecisionRequest = struct {
     entropy_threshold: ?f32 = null,
     /// Optional canvas length override (default: 256). Must be in [16, 256] and multiple of 16.
     canvas_length: ?usize = null,
+    /// Optional answer position override within canvas (default: 0).
+    answer_position: ?usize = null,
 };
 
 /// Returns monotonic host clock in nanoseconds for stage-level profiling.

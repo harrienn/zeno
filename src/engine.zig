@@ -188,7 +188,9 @@ pub const DecisionEngine = struct {
         prompt_tokens[0] = root.SpecialTokens.bos;
         @memcpy(prompt_tokens[1..], raw_prompt_tokens);
 
-        const canvas = try Canvas.seedSingleStep(prompt_tokens, root.SpecialTokens.mask);
+        const ans_pos = req.answer_position orelse 0;
+        if (ans_pos >= canvas_len) return error.CanvasOverflow;
+        const canvas = try Canvas.seedSingleStepAt(prompt_tokens, root.SpecialTokens.mask, ans_pos);
 
         // 4. Adaptive multi-step forward evaluation loop (Phase 9)
         const raw_logits = try request_allocator.alloc(f32, cand_count);
