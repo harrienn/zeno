@@ -1,0 +1,5724 @@
+{
+  "schema": "zeno.dataset/v1",
+  "benchmark": "boolq_validation_150",
+  "model": "Qwen3.5-0.8B-UD-Q3_K_XL (Autoregressive GBNF)",
+  "backend": "Autoregressive (llama.cpp)",
+  "summary": {
+    "total_examples": 150,
+    "correct_count": 99,
+    "accuracy": 0.66,
+    "mean_latency_ms": 76.56191026658537,
+    "median_latency_ms": 76.29081300001417,
+    "mean_normalized_entropy": 0.5005123382694835,
+    "step_counts": [
+      0,
+      150,
+      0,
+      0,
+      0
+    ],
+    "uncertain_count": 0
+  },
+  "results": [
+    {
+      "id": "boolq_0",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.809425630230138,
+      "entropy_nats": 0.4870547356960141,
+      "normalized_entropy": 0.7026714518301244,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 113.34414399971138,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.809425630230138,
+          "raw_logit": -0.2114303813262048
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.19057436976986197,
+          "raw_logit": -1.6577127681059898
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 323,
+        "prompt_ms": 77.028,
+        "prompt_per_token_ms": 0.23847678018575852,
+        "prompt_per_second": 4193.280365581347,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_1",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.5138166529472037,
+      "entropy_nats": 0.6927653321574091,
+      "normalized_entropy": 0.9994491092032897,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 100.05529500085686,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.5138166529472037,
+          "raw_logit": -0.6658887834902049
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.48618334705279626,
+          "raw_logit": -0.7211694689150095
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 312,
+        "prompt_ms": 68.438,
+        "prompt_per_token_ms": 0.21935256410256412,
+        "prompt_per_second": 4558.870802770391,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_2",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999806651249422,
+      "entropy_nats": 0.00022918768989934317,
+      "normalized_entropy": 0.00033064794365058,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 69.77364300109912,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999806651249422,
+          "raw_logit": -1.9335061978892122e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 1.9334875057730003e-05,
+          "raw_logit": -10.853600094900033
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 117,
+        "prompt_ms": 44.462,
+        "prompt_per_token_ms": 0.38001709401709405,
+        "prompt_per_second": 2631.4605730736357,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_3",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999833744278968,
+      "entropy_nats": 0.00019958268195365144,
+      "normalized_entropy": 0.00028793694550185213,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 82.08093400025973,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999833744278968,
+          "raw_logit": -1.6625710309601723e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 1.6625572103256717e-05,
+          "raw_logit": -11.004568559788476
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 170,
+        "prompt_ms": 51.302,
+        "prompt_per_token_ms": 0.3017764705882353,
+        "prompt_per_second": 3313.7109664340574,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_4",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999731016884419,
+      "entropy_nats": 0.0003099609069608267,
+      "normalized_entropy": 0.0004471790633418301,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 79.45531100085645,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999731016884419,
+          "raw_logit": -2.6898673324179685e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 2.689831155810814e-05,
+          "raw_logit": -10.523447040683008
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 155,
+        "prompt_ms": 49.477,
+        "prompt_per_token_ms": 0.31920645161290323,
+        "prompt_per_second": 3132.7687612425975,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_5",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.5777875982441464,
+      "entropy_nats": 0.6809960628042363,
+      "normalized_entropy": 0.9824696426725809,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 76.79408100011642,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.5777875982441464,
+          "raw_logit": -0.5485489549322619
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.4222124017558537,
+          "raw_logit": -0.862246769873668
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 142,
+        "prompt_ms": 47.776,
+        "prompt_per_token_ms": 0.3364507042253521,
+        "prompt_per_second": 2972.203616878767,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_6",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.7222707452010216,
+      "entropy_nats": 0.5907958761456953,
+      "normalized_entropy": 0.8523382806930448,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 82.39610800046648,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.7222707452010216,
+          "raw_logit": -0.3253552170285305
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.27772925479897836,
+          "raw_logit": -1.2811085434445462
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 191,
+        "prompt_ms": 52.489,
+        "prompt_per_token_ms": 0.2748115183246073,
+        "prompt_per_second": 3638.8576654156113,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_7",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.6947668114118126,
+      "entropy_nats": 0.6152333803424179,
+      "normalized_entropy": 0.8875941468093599,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 80.58487800008152,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.6947668114118126,
+          "raw_logit": -0.36417901286630133
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.3052331885881873,
+          "raw_logit": -1.1866792417481373
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 187,
+        "prompt_ms": 51.065,
+        "prompt_per_token_ms": 0.2730748663101604,
+        "prompt_per_second": 3661.999412513463,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_8",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.7589292612680058,
+      "entropy_nats": 0.5523110071064162,
+      "normalized_entropy": 0.7968163509808157,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 86.47922499949345,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.7589292612680058,
+          "raw_logit": -0.2758467058402895
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.24107073873199428,
+          "raw_logit": -1.4226648668510316
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 68,
+        "prompt_ms": 58.55,
+        "prompt_per_token_ms": 0.8610294117647058,
+        "prompt_per_second": 1161.4005123825789,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_9",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999774433305291,
+      "entropy_nats": 0.00026390104379644665,
+      "normalized_entropy": 0.0003807287271705547,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 79.61189599882346,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999774433305291,
+          "raw_logit": -2.2556923876424557e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 2.2556669470896145e-05,
+          "raw_logit": -10.699479772068937
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 167,
+        "prompt_ms": 49.802,
+        "prompt_per_token_ms": 0.29821556886227546,
+        "prompt_per_second": 3353.278984779728,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_10",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.999986602604767,
+      "entropy_nats": 0.00016372211225285807,
+      "normalized_entropy": 0.00023620107943106452,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 87.12497099986649,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.999986602604767,
+          "raw_logit": -1.3397484978884645e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 1.3397395233022387e-05,
+          "raw_logit": -11.220450255498081
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 242,
+        "prompt_ms": 57.79,
+        "prompt_per_token_ms": 0.23880165289256197,
+        "prompt_per_second": 4187.5757051392975,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_11",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.9999639236425666,
+      "entropy_nats": 0.0004051322552398879,
+      "normalized_entropy": 0.0005844822955387481,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 78.83584500086727,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999639236425666,
+          "raw_logit": -3.6077008200846625e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 3.6076357433393537e-05,
+          "raw_logit": -10.229872825920962
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 162,
+        "prompt_ms": 48.632,
+        "prompt_per_token_ms": 0.30019753086419754,
+        "prompt_per_second": 3331.1399901299555,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_12",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.828256440889405,
+      "entropy_nats": 0.458640104521146,
+      "normalized_entropy": 0.6616778043454532,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 79.45977000053972,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.828256440889405,
+          "raw_logit": -0.18843246132840852
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.1717435591105951,
+          "raw_logit": -1.761752850122354
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 171,
+        "prompt_ms": 51.709,
+        "prompt_per_token_ms": 0.3023918128654971,
+        "prompt_per_second": 3306.9678392542883,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_13",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999644769900096,
+      "entropy_nats": 0.0003994673355293232,
+      "normalized_entropy": 0.0005763095439652822,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 79.81080100034887,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999644769900096,
+          "raw_logit": -3.552364094749644e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 3.552300999035373e-05,
+          "raw_logit": -10.245329902711179
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 175,
+        "prompt_ms": 50.235,
+        "prompt_per_token_ms": 0.28705714285714284,
+        "prompt_per_second": 3483.626953319399,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_14",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.8635693756113025,
+      "entropy_nats": 0.39843074304076276,
+      "normalized_entropy": 0.5748140571226134,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 88.80281899837428,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8635693756113025,
+          "raw_logit": -0.1466810422818516
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.13643062438869744,
+          "raw_logit": -1.991939039794669
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 217,
+        "prompt_ms": 54.657,
+        "prompt_per_token_ms": 0.25187557603686633,
+        "prompt_per_second": 3970.214245201895,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_15",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999689652313926,
+      "entropy_nats": 0.00035318767399413733,
+      "normalized_entropy": 0.0005095421057744498,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 74.6040180001728,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999689652313926,
+          "raw_logit": -3.1035250195836085e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 3.103476860743826e-05,
+          "raw_logit": -10.380402413984733
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 148,
+        "prompt_ms": 47.162,
+        "prompt_per_token_ms": 0.31866216216216214,
+        "prompt_per_second": 3138.119672617786,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_16",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.8587442965248678,
+      "entropy_nats": 0.4072364191621056,
+      "normalized_entropy": 0.587517962394549,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 82.71949699883407,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8587442965248678,
+          "raw_logit": -0.1522840770689519
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.1412557034751322,
+          "raw_logit": -1.9571835311857733
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 206,
+        "prompt_ms": 54.777,
+        "prompt_per_token_ms": 0.2659077669902913,
+        "prompt_per_second": 3760.702484619457,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_17",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.8515320590439874,
+      "entropy_nats": 0.4200423459006839,
+      "normalized_entropy": 0.6059930093942832,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 71.92172699978983,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8515320590439874,
+          "raw_logit": -0.1607181295071219
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.1484679409560126,
+          "raw_logit": -1.9073862298641775
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 117,
+        "prompt_ms": 44.876,
+        "prompt_per_token_ms": 0.38355555555555554,
+        "prompt_per_second": 2607.1842410196987,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_18",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.8191611427373117,
+      "entropy_nats": 0.47266310505238507,
+      "normalized_entropy": 0.6819087176702551,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 96.647259000747,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8191611427373117,
+          "raw_logit": -0.19947445900387525
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.18083885726268834,
+          "raw_logit": -1.7101489356274102
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 235,
+        "prompt_ms": 61.541,
+        "prompt_per_token_ms": 0.26187659574468086,
+        "prompt_per_second": 3818.592483060074,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_19",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999659232527518,
+      "entropy_nats": 0.0003846200979117772,
+      "normalized_entropy": 0.0005548895078835486,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 72.65633000133676,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999659232527518,
+          "raw_logit": -3.4077327873743854e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 3.407674724821251e-05,
+          "raw_logit": -10.286895305152987
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 124,
+        "prompt_ms": 44.888,
+        "prompt_per_token_ms": 0.362,
+        "prompt_per_second": 2762.4309392265195,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_20",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.7840798632764732,
+      "entropy_nats": 0.5216954979395134,
+      "normalized_entropy": 0.7526475077314345,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 88.95527599997877,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.7840798632764732,
+          "raw_logit": -0.24324439739568815
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.21592013672352678,
+          "raw_logit": -1.532846677058774
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 236,
+        "prompt_ms": 57.944,
+        "prompt_per_token_ms": 0.24552542372881356,
+        "prompt_per_second": 4072.897970454231,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_21",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999723441749008,
+      "entropy_nats": 0.00031792197208026587,
+      "normalized_entropy": 0.0004586644525098391,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 88.07300599983137,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999723441749008,
+          "raw_logit": -2.7656207528608394e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 2.7655825099192978e-05,
+          "raw_logit": -10.495674179519092
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 249,
+        "prompt_ms": 58.444,
+        "prompt_per_token_ms": 0.23471485943775103,
+        "prompt_per_second": 4260.488672917665,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_22",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.6738365193459294,
+      "entropy_nats": 0.6314283184396068,
+      "normalized_entropy": 0.9109585036896779,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 71.59868899907451,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.6738365193459294,
+          "raw_logit": -0.39476775038975653
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.3261634806540706,
+          "raw_logit": -1.1203565489127059
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 112,
+        "prompt_ms": 43.888,
+        "prompt_per_token_ms": 0.39185714285714285,
+        "prompt_per_second": 2551.9504192489976,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_23",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999745728738691,
+      "entropy_nats": 0.0002944380165174392,
+      "normalized_entropy": 0.00042478426627889226,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 73.68429599955562,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999745728738691,
+          "raw_logit": -2.5427449405701914e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 2.5427126130778598e-05,
+          "raw_logit": -10.579693995896468
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 150,
+        "prompt_ms": 47.213,
+        "prompt_per_token_ms": 0.31475333333333333,
+        "prompt_per_second": 3177.0910554296483,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_24",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.7807286229080014,
+      "entropy_nats": 0.5259842198033726,
+      "normalized_entropy": 0.7588348254961762,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 84.15585100010503,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.7807286229080014,
+          "raw_logit": -0.24752766339488058
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.21927137709199873,
+          "raw_logit": -1.5174451514930252
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 223,
+        "prompt_ms": 54.745,
+        "prompt_per_token_ms": 0.2454932735426009,
+        "prompt_per_second": 4073.431363594849,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_25",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.8979068541711439,
+      "entropy_nats": 0.3296578938948428,
+      "normalized_entropy": 0.4755958087119898,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 76.29081300001417,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8979068541711439,
+          "raw_logit": -0.10768894192716029
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.10209314582885609,
+          "raw_logit": -2.2818696880056515
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 158,
+        "prompt_ms": 48.285,
+        "prompt_per_token_ms": 0.3056012658227848,
+        "prompt_per_second": 3272.2377549963758,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_26",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.7677352622533093,
+      "entropy_nats": 0.5419984020186385,
+      "normalized_entropy": 0.7819384067620325,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 81.49102399875119,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.7677352622533093,
+          "raw_logit": -0.2643103158684935
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.23226473774669057,
+          "raw_logit": -1.4598774469109739
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 182,
+        "prompt_ms": 51.402,
+        "prompt_per_token_ms": 0.2824285714285714,
+        "prompt_per_second": 3540.718259989884,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_27",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.6892496516769295,
+      "entropy_nats": 0.6196997170961331,
+      "normalized_entropy": 0.8940377086948849,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 90.22259199991822,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.6892496516769295,
+          "raw_logit": -0.37215173444371297
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.3107503483230706,
+          "raw_logit": -1.1687654276810178
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 272,
+        "prompt_ms": 60.976,
+        "prompt_per_token_ms": 0.22417647058823528,
+        "prompt_per_second": 4460.771451062714,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_28",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999805773557835,
+      "entropy_nats": 0.00023014010063796616,
+      "normalized_entropy": 0.00033202198190008077,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 69.91953899887449,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999805773557835,
+          "raw_logit": -1.9422832838501178e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 1.9422644216446208e-05,
+          "raw_logit": -10.8490709449237
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 128,
+        "prompt_ms": 45.223,
+        "prompt_per_token_ms": 0.3533046875,
+        "prompt_per_second": 2830.4181500563873,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_29",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999846100098129,
+      "entropy_nats": 0.00018593856109927175,
+      "normalized_entropy": 0.0002682526400079489,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 80.15824399990379,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999846100098129,
+          "raw_logit": -1.5390108614245317e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 1.5389990187162117e-05,
+          "raw_logit": -11.081793247724988
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 181,
+        "prompt_ms": 50.853,
+        "prompt_per_token_ms": 0.28095580110497237,
+        "prompt_per_second": 3559.27870528779,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_30",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999882875004065,
+      "entropy_nats": 0.0001447061532180028,
+      "normalized_entropy": 0.00020876684963373117,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 83.80263499930152,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999882875004065,
+          "raw_logit": -1.1712568185389221e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 1.171249959347633e-05,
+          "raw_logit": -11.354853945108266
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 180,
+        "prompt_ms": 53.727,
+        "prompt_per_token_ms": 0.2984833333333333,
+        "prompt_per_second": 3350.2708135574294,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_31",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.999971568345344,
+      "entropy_nats": 0.0003260540227424458,
+      "normalized_entropy": 0.00047039652167242383,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 73.15650199961965,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.999971568345344,
+          "raw_logit": -2.843205884320142e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 2.8431654655993477e-05,
+          "raw_logit": -10.468007432939988
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 114,
+        "prompt_ms": 45.579,
+        "prompt_per_token_ms": 0.39981578947368424,
+        "prompt_per_second": 2501.151846244981,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_32",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.5118602911909386,
+      "entropy_nats": 0.6928658211569829,
+      "normalized_entropy": 0.9995940841846387,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 75.27454000046419,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.48813970880906143,
+          "raw_logit": -0.7171536255585763
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.5118602911909386,
+          "raw_logit": -0.6697035599457833
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 143,
+        "prompt_ms": 47.138,
+        "prompt_per_token_ms": 0.3296363636363636,
+        "prompt_per_second": 3033.645890788748,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_33",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999418557058565,
+      "entropy_nats": 0.0006251996471130539,
+      "normalized_entropy": 0.0009019724304555328,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 75.90607900056057,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999418557058565,
+          "raw_logit": -5.8145984588522596e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 5.8144294143440566e-05,
+          "raw_logit": -9.752582806884654
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 146,
+        "prompt_ms": 48.033,
+        "prompt_per_token_ms": 0.3289931506849315,
+        "prompt_per_second": 3039.57695750838,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_34",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.8382853370612279,
+      "entropy_nats": 0.4425022753254214,
+      "normalized_entropy": 0.6383958381940682,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 79.41114799905336,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8382853370612279,
+          "raw_logit": -0.17639673876980622
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.16171466293877212,
+          "raw_logit": -1.821921836616791
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 164,
+        "prompt_ms": 48.184,
+        "prompt_per_token_ms": 0.29380487804878047,
+        "prompt_per_second": 3403.6194587414907,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_35",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.7806337127546719,
+      "entropy_nats": 0.5261047215600698,
+      "normalized_entropy": 0.7590086727829817,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 84.68143999925815,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.7806337127546719,
+          "raw_logit": -0.2476492369095973
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.2193662872453282,
+          "raw_logit": -1.5170124018113307
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 202,
+        "prompt_ms": 54.9,
+        "prompt_per_token_ms": 0.2717821782178218,
+        "prompt_per_second": 3679.417122040073,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_36",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.715227852549546,
+      "entropy_nats": 0.5974041399087241,
+      "normalized_entropy": 0.8618719900528528,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 81.55159800116962,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.715227852549546,
+          "raw_logit": -0.3351541121597187
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.284772147450454,
+          "raw_logit": -1.2560659011001483
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 176,
+        "prompt_ms": 52.493,
+        "prompt_per_token_ms": 0.29825568181818185,
+        "prompt_per_second": 3352.8279961137678,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_37",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.8500878864625251,
+      "entropy_nats": 0.42255660956015234,
+      "normalized_entropy": 0.6096203251072857,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 85.4870570001367,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8500878864625251,
+          "raw_logit": -0.16241553900449135
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.14991211353747494,
+          "raw_logit": -1.8977060663482412
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 223,
+        "prompt_ms": 57.081,
+        "prompt_per_token_ms": 0.2559686098654709,
+        "prompt_per_second": 3906.729034179499,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_38",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.9999719914282915,
+      "entropy_nats": 0.0003216220356259468,
+      "normalized_entropy": 0.000464002515838167,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 92.74152499892807,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999719914282915,
+          "raw_logit": -2.800896395585093e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 2.8008571708492044e-05,
+          "raw_logit": -10.482999962191903
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 282,
+        "prompt_ms": 62.43,
+        "prompt_per_token_ms": 0.22138297872340426,
+        "prompt_per_second": 4517.059106198943,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_39",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.6545232631829111,
+      "entropy_nats": 0.6446015045880168,
+      "normalized_entropy": 0.9299633940186962,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 63.17399799991108,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.6545232631829111,
+          "raw_logit": -0.42384815082164906
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.34547673681708896,
+          "raw_logit": -1.0628299699744812
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 96,
+        "prompt_ms": 41.396,
+        "prompt_per_token_ms": 0.43120833333333336,
+        "prompt_per_second": 2319.0646439269494,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_40",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999771628532039,
+      "entropy_nats": 0.0002669002623053295,
+      "normalized_entropy": 0.0003850556848398624,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 98.70907000004081,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999771628532039,
+          "raw_logit": -2.2837407567680158e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 2.283714679608578e-05,
+          "raw_logit": -10.687122102342057
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 318,
+        "prompt_ms": 68.81,
+        "prompt_per_token_ms": 0.21638364779874214,
+        "prompt_per_second": 4621.421305042872,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_41",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.6065023243896458,
+      "entropy_nats": 0.6702869554179915,
+      "normalized_entropy": 0.9670196665540981,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 80.75833499970031,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.6065023243896458,
+          "raw_logit": -0.5000467181409972
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.3934976756103543,
+          "raw_logit": -0.9326801181043761
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 203,
+        "prompt_ms": 55.75,
+        "prompt_per_token_ms": 0.2746305418719212,
+        "prompt_per_second": 3641.2556053811654,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_42",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.8425250052743489,
+      "entropy_nats": 0.43545902397339975,
+      "normalized_entropy": 0.6282345743967721,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 84.20569400004752,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8425250052743489,
+          "raw_logit": -0.17135193734519907
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.157474994725651,
+          "raw_logit": -1.8484885969673914
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 202,
+        "prompt_ms": 56.657,
+        "prompt_per_token_ms": 0.28048019801980195,
+        "prompt_per_second": 3565.3140829906283,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_43",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "No",
+      "is_correct": true,
+      "decision_probability": 0.5212600713328811,
+      "entropy_nats": 0.6922429267025614,
+      "normalized_entropy": 0.9986954374442475,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 69.38819800052443,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.47873992866711884,
+          "raw_logit": -0.7365977754352011
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.5212600713328811,
+          "raw_logit": -0.6515061845538535
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 98,
+        "prompt_ms": 42.788,
+        "prompt_per_token_ms": 0.43661224489795913,
+        "prompt_per_second": 2290.3617836776666,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_44",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9450816452922575,
+      "entropy_nats": 0.21274994604968467,
+      "normalized_entropy": 0.3069332921152746,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 75.07404199895973,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9450816452922575,
+          "raw_logit": -0.0564839580857478
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.054918354707742534,
+          "raw_logit": -2.9019076565110407
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 138,
+        "prompt_ms": 48.829,
+        "prompt_per_token_ms": 0.35383333333333333,
+        "prompt_per_second": 2826.189354686764,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_45",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.8842930331365085,
+      "entropy_nats": 0.3582832431556294,
+      "normalized_entropy": 0.5168934581342413,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 75.64587900014885,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8842930331365085,
+          "raw_logit": -0.12296678582511737
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.11570696686349143,
+          "raw_logit": -2.1566944316991408
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 142,
+        "prompt_ms": 47.308,
+        "prompt_per_token_ms": 0.3331549295774648,
+        "prompt_per_second": 3001.6064936163016,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_46",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999756895443224,
+      "entropy_nats": 0.000282599125426443,
+      "normalized_entropy": 0.0004077043568122875,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 78.9643160005653,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999756895443224,
+          "raw_logit": -2.4310751181550986e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 2.4310455677573006e-05,
+          "raw_logit": -10.624604025362185
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 171,
+        "prompt_ms": 50.549,
+        "prompt_per_token_ms": 0.29560818713450293,
+        "prompt_per_second": 3382.856238501256,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_47",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.8146589241551977,
+      "entropy_nats": 0.4793965117272526,
+      "normalized_entropy": 0.6916229700883751,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 83.78733700010343,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8146589241551977,
+          "raw_logit": -0.20498575130507166
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.1853410758448023,
+          "raw_logit": -1.6855574981312433
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 237,
+        "prompt_ms": 57.273,
+        "prompt_per_token_ms": 0.2416582278481013,
+        "prompt_per_second": 4138.075532973652,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_48",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.99998685106981,
+      "entropy_nats": 0.00016093190753051507,
+      "normalized_entropy": 0.00023217566491507533,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 89.44999799859943,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.99998685106981,
+          "raw_logit": -1.3149016637939335e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 1.314893018998598e-05,
+          "raw_logit": -11.239170157023636
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 237,
+        "prompt_ms": 61.142,
+        "prompt_per_token_ms": 0.2579831223628692,
+        "prompt_per_second": 3876.2225638677173,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_49",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.8566388433883041,
+      "entropy_nats": 0.41101835343185744,
+      "normalized_entropy": 0.592974140210488,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 77.91138399988995,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8566388433883041,
+          "raw_logit": -0.15473886882347387
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.14336115661169582,
+          "raw_logit": -1.9423882619051391
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 169,
+        "prompt_ms": 49.954,
+        "prompt_per_token_ms": 0.29558579881656805,
+        "prompt_per_second": 3383.112463466389,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_50",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.868583206632081,
+      "entropy_nats": 0.38907112530171817,
+      "normalized_entropy": 0.5613109830258773,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 71.51856800010137,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.868583206632081,
+          "raw_logit": -0.14089189290197873
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.13141679336791906,
+          "raw_logit": -2.0293813776889658
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 96,
+        "prompt_ms": 42.832,
+        "prompt_per_token_ms": 0.44616666666666666,
+        "prompt_per_second": 2241.3149047441166,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_51",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.99998478350972,
+      "entropy_nats": 0.00018401489197862524,
+      "normalized_entropy": 0.00026547737210728093,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 78.6729280007421,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.99998478350972,
+          "raw_logit": -1.5216606051986016e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 1.5216490280020737e-05,
+          "raw_logit": -11.093130831333022
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 168,
+        "prompt_ms": 50.126,
+        "prompt_per_token_ms": 0.2983690476190476,
+        "prompt_per_second": 3351.5540837090534,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_52",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.8419583031724058,
+      "entropy_nats": 0.43640825174358183,
+      "normalized_entropy": 0.6296040205934879,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 85.56397200118226,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8419583031724058,
+          "raw_logit": -0.1720247871389388
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.15804169682759414,
+          "raw_logit": -1.8448963767995834
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 249,
+        "prompt_ms": 58.291,
+        "prompt_per_token_ms": 0.2341004016064257,
+        "prompt_per_second": 4271.6714415604465,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_53",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.8625107550321102,
+      "entropy_nats": 0.40037942545052346,
+      "normalized_entropy": 0.5776254115714426,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 85.93154399932246,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8625107550321102,
+          "raw_logit": -0.1479076605519205
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.13748924496788986,
+          "raw_logit": -1.9842095833500772
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 228,
+        "prompt_ms": 57.224,
+        "prompt_per_token_ms": 0.25098245614035086,
+        "prompt_per_second": 3984.3422340276807,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_54",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.7673147859803655,
+      "entropy_nats": 0.5425006140935263,
+      "normalized_entropy": 0.7826629456319478,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 72.82492800004547,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.7673147859803655,
+          "raw_logit": -0.2648581498416514
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.23268521401963446,
+          "raw_logit": -1.458068751648292
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 125,
+        "prompt_ms": 45.267,
+        "prompt_per_token_ms": 0.362136,
+        "prompt_per_second": 2761.393509620695,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_55",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.9295804493920251,
+      "entropy_nats": 0.25472284455787714,
+      "normalized_entropy": 0.36748738464477965,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 106.36414299915486,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9295804493920251,
+          "raw_logit": -0.07302192431044142
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.0704195506079749,
+          "raw_logit": -2.653284346872087
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 418,
+        "prompt_ms": 76.864,
+        "prompt_per_token_ms": 0.18388516746411485,
+        "prompt_per_second": 5438.176519567027,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_56",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.8500176257927119,
+      "entropy_nats": 0.42267851286900326,
+      "normalized_entropy": 0.609796194406433,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 77.83810600085417,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8500176257927119,
+          "raw_logit": -0.1624981934860476
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.149982374207288,
+          "raw_logit": -1.8972374970749148
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 195,
+        "prompt_ms": 51.66,
+        "prompt_per_token_ms": 0.26492307692307693,
+        "prompt_per_second": 3774.680603948897,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_57",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.8312209300147697,
+      "entropy_nats": 0.45394498069711087,
+      "normalized_entropy": 0.6549041724881581,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 71.4413429996057,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8312209300147697,
+          "raw_logit": -0.18485965903439056
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.16877906998523026,
+          "raw_logit": -1.779164697486539
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 103,
+        "prompt_ms": 44.441,
+        "prompt_per_token_ms": 0.43146601941747575,
+        "prompt_per_second": 2317.679620170563,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_58",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.9999758291540379,
+      "entropy_nats": 0.00028111542922090607,
+      "normalized_entropy": 0.0004055638356543736,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 74.7596799992607,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999758291540379,
+          "raw_logit": -2.4171138081672655e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 2.4170845962011157e-05,
+          "raw_logit": -10.63036336336444
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 140,
+        "prompt_ms": 48.332,
+        "prompt_per_token_ms": 0.34522857142857144,
+        "prompt_per_second": 2896.631631217413,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_59",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.8712182004035657,
+      "entropy_nats": 0.3840643794237978,
+      "normalized_entropy": 0.5540877755768103,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 80.6488280013582,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8712182004035657,
+          "raw_logit": -0.13786281639293835
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.12878179959643438,
+          "raw_logit": -2.049635782777826
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 154,
+        "prompt_ms": 49.042,
+        "prompt_per_token_ms": 0.3184545454545455,
+        "prompt_per_second": 3140.1655723665426,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_60",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.6566066654044405,
+      "entropy_nats": 0.6432606414784168,
+      "normalized_entropy": 0.9280289374599654,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 80.82962800108362,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.6566066654044405,
+          "raw_logit": -0.42067012257347947
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.3433933345955596,
+          "raw_logit": -1.068878740737542
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 225,
+        "prompt_ms": 54.857,
+        "prompt_per_token_ms": 0.24380888888888888,
+        "prompt_per_second": 4101.573181180159,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_61",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.6706059626734798,
+      "entropy_nats": 0.6337486713703199,
+      "normalized_entropy": 0.9143060653559298,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 71.70953800050484,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.6706059626734798,
+          "raw_logit": -0.39957355343946416
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.3293940373265202,
+          "raw_logit": -1.1105005630219835
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 99,
+        "prompt_ms": 44.721,
+        "prompt_per_token_ms": 0.4517272727272727,
+        "prompt_per_second": 2213.7250955926747,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_62",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.6547546161108946,
+      "entropy_nats": 0.6444535559086084,
+      "normalized_entropy": 0.9297499491926077,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 79.63108200056013,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.6547546161108946,
+          "raw_logit": -0.42349474543070764
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.3452453838891054,
+          "raw_logit": -1.0634998571250436
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 196,
+        "prompt_ms": 53.656,
+        "prompt_per_token_ms": 0.2737551020408163,
+        "prompt_per_second": 3652.8999552706127,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_63",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.999962423078471,
+      "entropy_nats": 0.0004204519964257918,
+      "normalized_entropy": 0.000606584010175354,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 82.8854079991288,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.999962423078471,
+          "raw_logit": -3.7577627559150685e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 3.757692152885911e-05,
+          "raw_logit": -10.189120485140172
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 175,
+        "prompt_ms": 54.737,
+        "prompt_per_token_ms": 0.31278285714285714,
+        "prompt_per_second": 3197.106162193763,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_64",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.789495287423311,
+      "entropy_nats": 0.5146246098522478,
+      "normalized_entropy": 0.7424463725532555,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 68.52964099925885,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.789495287423311,
+          "raw_logit": -0.23636141436909247
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.2105047125766889,
+          "raw_logit": -1.5582472385725836
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 109,
+        "prompt_ms": 42.96,
+        "prompt_per_token_ms": 0.3941284403669725,
+        "prompt_per_second": 2537.243947858473,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_65",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999445547534862,
+      "entropy_nats": 0.0005988134777870659,
+      "normalized_entropy": 0.0008639052348208735,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 74.84573200054001,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999445547534862,
+          "raw_logit": -5.544678365829566e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 5.54452465137628e-05,
+          "raw_logit": -9.800114573473518
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 120,
+        "prompt_ms": 49.07,
+        "prompt_per_token_ms": 0.40891666666666665,
+        "prompt_per_second": 2445.4860403505195,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_66",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.7038372006148657,
+      "entropy_nats": 0.6075779066449254,
+      "normalized_entropy": 0.8765496328703315,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 78.43511999999464,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.7038372006148657,
+          "raw_logit": -0.35120819869290804
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.2961627993851344,
+          "raw_logit": -1.216845977928748
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 167,
+        "prompt_ms": 51.385,
+        "prompt_per_token_ms": 0.3076946107784431,
+        "prompt_per_second": 3249.975673834777,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_67",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.7385438706922459,
+      "entropy_nats": 0.5745744790820266,
+      "normalized_entropy": 0.8289357515929993,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 67.634144999829,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.7385438706922459,
+          "raw_logit": -0.30307477364005214
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.2614561293077541,
+          "raw_logit": -1.3414887751048958
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 90,
+        "prompt_ms": 41.295,
+        "prompt_per_token_ms": 0.45883333333333337,
+        "prompt_per_second": 2179.440610243371,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_68",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.601684071799244,
+      "entropy_nats": 0.6723229233403807,
+      "normalized_entropy": 0.969956947379138,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 76.73549999890383,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.601684071799244,
+          "raw_logit": -0.5080227691034882
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.39831592820075595,
+          "raw_logit": -0.9205097991327851
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 182,
+        "prompt_ms": 50.761,
+        "prompt_per_token_ms": 0.2789065934065934,
+        "prompt_per_second": 3585.429759067,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_69",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999624770248358,
+      "entropy_nats": 0.0004199022937000959,
+      "normalized_entropy": 0.0006057909567790294,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 86.7931859993405,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999624770248358,
+          "raw_logit": -3.7523679168682726e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 3.7522975164177806e-05,
+          "raw_logit": -10.190557141549448
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 234,
+        "prompt_ms": 59.213,
+        "prompt_per_token_ms": 0.25304700854700857,
+        "prompt_per_second": 3951.834901119686,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_70",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999641391471649,
+      "entropy_nats": 0.00040292703340599414,
+      "normalized_entropy": 0.0005813008329349295,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 72.0179680010915,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999641391471649,
+          "raw_logit": -3.5861495850890324e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 3.5860852835073516e-05,
+          "raw_logit": -10.235864307720012
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 131,
+        "prompt_ms": 45.689,
+        "prompt_per_token_ms": 0.34877099236641224,
+        "prompt_per_second": 2867.210926043468,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_71",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.8210681072891219,
+      "entropy_nats": 0.4697699943399608,
+      "normalized_entropy": 0.6777348411926979,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 79.30923599997186,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8210681072891219,
+          "raw_logit": -0.19714921646721567
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.178931892710878,
+          "raw_logit": -1.7207500331939
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 196,
+        "prompt_ms": 52.524,
+        "prompt_per_token_ms": 0.2679795918367347,
+        "prompt_per_second": 3731.6274465006472,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_72",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.6643780799525842,
+      "entropy_nats": 0.6380887244734759,
+      "normalized_entropy": 0.9205674384450478,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 79.34136599942576,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.6643780799525842,
+          "raw_logit": -0.4089038940320091
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.33562192004741576,
+          "raw_logit": -1.0917699905285911
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 188,
+        "prompt_ms": 51.686,
+        "prompt_per_token_ms": 0.2749255319148936,
+        "prompt_per_second": 3637.348605038115,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_73",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.8182542366559042,
+      "entropy_nats": 0.4740303724389048,
+      "normalized_entropy": 0.6838812675483563,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 69.5898859994486,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8182542366559042,
+          "raw_logit": -0.20058218791073265
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.18174576334409576,
+          "raw_logit": -1.7051464731890529
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 101,
+        "prompt_ms": 42.518,
+        "prompt_per_token_ms": 0.42097029702970296,
+        "prompt_per_second": 2375.4645091490665,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_74",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999463353399407,
+      "entropy_nats": 0.000581334721431344,
+      "normalized_entropy": 0.000838688719705567,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 72.63901799888117,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999463353399407,
+          "raw_logit": -5.366610005868174e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 5.3664660059231386e-05,
+          "raw_logit": -9.83275587254761
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 134,
+        "prompt_ms": 46.568,
+        "prompt_per_token_ms": 0.3475223880597015,
+        "prompt_per_second": 2877.512454904656,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_75",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.8904126514555352,
+      "entropy_nats": 0.34565171893779756,
+      "normalized_entropy": 0.49867002078630634,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 80.74342600048112,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8904126514555352,
+          "raw_logit": -0.11607027038911348
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.10958734854446477,
+          "raw_logit": -2.211033344119582
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 185,
+        "prompt_ms": 51.992,
+        "prompt_per_token_ms": 0.2810378378378378,
+        "prompt_per_second": 3558.239729189106,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_76",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.7574521800957293,
+      "entropy_nats": 0.5539989963382362,
+      "normalized_entropy": 0.7992516046746364,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 87.2168240002793,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.7574521800957293,
+          "raw_logit": -0.27779487217780185
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.24254781990427066,
+          "raw_logit": -1.416556392563544
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 198,
+        "prompt_ms": 54.209,
+        "prompt_per_token_ms": 0.2737828282828283,
+        "prompt_per_second": 3652.530022689959,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_77",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.595869703597375,
+      "entropy_nats": 0.6746508580637675,
+      "normalized_entropy": 0.9733154472600812,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 63.344579000840895,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.595869703597375,
+          "raw_logit": -0.5177332539424228
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.404130296402625,
+          "raw_logit": -0.9060179371699618
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 108,
+        "prompt_ms": 42.877,
+        "prompt_per_token_ms": 0.3970092592592593,
+        "prompt_per_second": 2518.832940737458,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_78",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.8904172111945412,
+      "entropy_nats": 0.3456421663464164,
+      "normalized_entropy": 0.4986562393100932,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 88.71458300018276,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8904172111945412,
+          "raw_logit": -0.11606514947430664
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.10958278880545881,
+          "raw_logit": -2.2110749532462792
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 249,
+        "prompt_ms": 62.705,
+        "prompt_per_token_ms": 0.2518273092369478,
+        "prompt_per_second": 3970.975201339606,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_79",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.6947721202329649,
+      "entropy_nats": 0.6152290137693548,
+      "normalized_entropy": 0.887587847176056,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 73.63939100105199,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.6947721202329649,
+          "raw_logit": -0.3641713717401243
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.30522787976703514,
+          "raw_logit": -1.186696634572766
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 133,
+        "prompt_ms": 46.662,
+        "prompt_per_token_ms": 0.3508421052631579,
+        "prompt_per_second": 2850.2850285028503,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_80",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.8032910629831181,
+      "entropy_nats": 0.4958060538142517,
+      "normalized_entropy": 0.7152969350805475,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 69.87607599876355,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8032910629831181,
+          "raw_logit": -0.219038161243172
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.19670893701688186,
+          "raw_logit": -1.626030119861336
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 109,
+        "prompt_ms": 43.898,
+        "prompt_per_token_ms": 0.40273394495412845,
+        "prompt_per_second": 2483.0288395826688,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_81",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999535973239022,
+      "entropy_nats": 0.0005094146209517256,
+      "normalized_entropy": 0.0007349299474033856,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 78.42789599999378,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999535973239022,
+          "raw_logit": -4.6403752735270365e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 4.640267609777727e-05,
+          "raw_logit": -9.978153425874114
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 166,
+        "prompt_ms": 52.184,
+        "prompt_per_token_ms": 0.3143614457831325,
+        "prompt_per_second": 3181.051663345087,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_82",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.9999580780180324,
+      "entropy_nats": 0.00046448211489967056,
+      "normalized_entropy": 0.0006701060437473724,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 88.30169500106422,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999580780180324,
+          "raw_logit": -4.19228607184641e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 4.192198196755013e-05,
+          "raw_logit": -10.07970023930888
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 253,
+        "prompt_ms": 61.076,
+        "prompt_per_token_ms": 0.24140711462450593,
+        "prompt_per_second": 4142.379985591721,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_83",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999685625758893,
+      "entropy_nats": 0.0003573647867048791,
+      "normalized_entropy": 0.0005155684055674713,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 80.8269230001315,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999685625758893,
+          "raw_logit": -3.14379182768883e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 3.14374241107061e-05,
+          "raw_logit": -10.367511524080793
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 255,
+        "prompt_ms": 58.765,
+        "prompt_per_token_ms": 0.23045098039215686,
+        "prompt_per_second": 4339.3176210329275,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_84",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.7184537845242952,
+      "entropy_nats": 0.5944077357308526,
+      "normalized_entropy": 0.8575490926049386,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 80.34332300121605,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.7184537845242952,
+          "raw_logit": -0.3306538976970286
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.28154621547570485,
+          "raw_logit": -1.2674586691203682
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 198,
+        "prompt_ms": 53.621,
+        "prompt_per_token_ms": 0.27081313131313134,
+        "prompt_per_second": 3692.5831297439436,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_85",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.7031534901660201,
+      "entropy_nats": 0.6081686314646217,
+      "normalized_entropy": 0.8774018686382374,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 88.60000700042292,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.7031534901660201,
+          "raw_logit": -0.35218007506301
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.2968465098339799,
+          "raw_logit": -1.2145400756733615
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 268,
+        "prompt_ms": 60.374,
+        "prompt_per_token_ms": 0.2252761194029851,
+        "prompt_per_second": 4438.996919203631,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_86",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999734402499136,
+      "entropy_nats": 0.00030639594260676965,
+      "normalized_entropy": 0.00044203590694728606,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 67.16551200042886,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999734402499136,
+          "raw_logit": -2.656010280277118e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 2.655975008630242e-05,
+          "raw_logit": -10.536113642801574
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 117,
+        "prompt_ms": 44.575,
+        "prompt_per_token_ms": 0.380982905982906,
+        "prompt_per_second": 2624.789680314077,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_87",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999800740889725,
+      "entropy_nats": 0.00023559360351053498,
+      "normalized_entropy": 0.0003398897234498095,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 77.80596599877754,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999800740889725,
+          "raw_logit": -1.9926109551109722e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 1.9925911027453095e-05,
+          "raw_logit": -10.823489611499973
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 119,
+        "prompt_ms": 44.444,
+        "prompt_per_token_ms": 0.37347899159663867,
+        "prompt_per_second": 2677.526775267753,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_88",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.8985822440541763,
+      "entropy_nats": 0.32818698133116864,
+      "normalized_entropy": 0.4734737304507958,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 64.30627999907301,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8985822440541763,
+          "raw_logit": -0.1069370421070956
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.10141775594582374,
+          "raw_logit": -2.288507095207682
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 93,
+        "prompt_ms": 44.459,
+        "prompt_per_token_ms": 0.47805376344086026,
+        "prompt_per_second": 2091.814930610225,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_89",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.8429348768674999,
+      "entropy_nats": 0.43477097975313567,
+      "normalized_entropy": 0.6272419364122848,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 78.20141999945918,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8429348768674999,
+          "raw_logit": -0.17086557560431961
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.15706512313250004,
+          "raw_logit": -1.8510947626160386
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 178,
+        "prompt_ms": 52.026,
+        "prompt_per_token_ms": 0.2922808988764045,
+        "prompt_per_second": 3421.366239956944,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_90",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.7387176723526208,
+      "entropy_nats": 0.5743939227759332,
+      "normalized_entropy": 0.828675263905597,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 75.16936200045166,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.7387176723526208,
+          "raw_logit": -0.3028394711480933
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.26128232764737924,
+          "raw_logit": -1.3421537411676243
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 156,
+        "prompt_ms": 48.933,
+        "prompt_per_token_ms": 0.31367307692307694,
+        "prompt_per_second": 3188.0326160259947,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_91",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.8097937209462612,
+      "entropy_nats": 0.4865219331844576,
+      "normalized_entropy": 0.7019027802889286,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 80.52166800007399,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8097937209462612,
+          "raw_logit": -0.21097572924686003
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.19020627905373874,
+          "raw_logit": -1.6596461165149263
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 185,
+        "prompt_ms": 50.876,
+        "prompt_per_token_ms": 0.2750054054054054,
+        "prompt_per_second": 3636.292161333439,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_92",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999678362590346,
+      "entropy_nats": 0.00036488653558922003,
+      "normalized_entropy": 0.000526419995381722,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 71.18773500042153,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999678362590346,
+          "raw_logit": -3.216425822958202e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 3.2163740965370194e-05,
+          "raw_logit": -10.344670796868499
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 124,
+        "prompt_ms": 45.212,
+        "prompt_per_token_ms": 0.3646129032258065,
+        "prompt_per_second": 2742.634698752543,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_93",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999660013428272,
+      "entropy_nats": 0.00038381670659549645,
+      "normalized_entropy": 0.000553730459215657,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 65.91208200006804,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999660013428272,
+          "raw_logit": -3.39992351402406e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 3.399865717275771e-05,
+          "raw_logit": -10.289189529046949
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 113,
+        "prompt_ms": 43.951,
+        "prompt_per_token_ms": 0.38894690265486725,
+        "prompt_per_second": 2571.045027416896,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_94",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.8072853352313379,
+      "entropy_nats": 0.4901354006302524,
+      "normalized_entropy": 0.7071159118533905,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 55.6510549995437,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8072853352313379,
+          "raw_logit": -0.21407809794950358
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.1927146647686621,
+          "raw_logit": -1.6465446049075112
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 78,
+        "prompt_ms": 39.78,
+        "prompt_per_token_ms": 0.51,
+        "prompt_per_second": 1960.7843137254902,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_95",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.999976067597993,
+      "entropy_nats": 0.0002785795090685679,
+      "normalized_entropy": 0.0004019052762265049,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 64.75764899914793,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.999976067597993,
+          "raw_logit": -2.393268839154522e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 2.3932402007056588e-05,
+          "raw_logit": -10.640277284689532
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 97,
+        "prompt_ms": 42.226,
+        "prompt_per_token_ms": 0.43531958762886597,
+        "prompt_per_second": 2297.1628854260407,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_96",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999921080569979,
+      "entropy_nats": 0.00010061962352626302,
+      "normalized_entropy": 0.00014516343187745415,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 63.604729000871885,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999921080569979,
+          "raw_logit": -7.89197414364896e-06
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 7.891943002122193e-06,
+          "raw_logit": -11.749668192064883
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 149,
+        "prompt_ms": 46.815,
+        "prompt_per_token_ms": 0.3141946308724832,
+        "prompt_per_second": 3182.7405746021573,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_97",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.7546184785850253,
+      "entropy_nats": 0.557204110314439,
+      "normalized_entropy": 0.803875606713588,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 82.91471299889963,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.7546184785850253,
+          "raw_logit": -0.281542983830965
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.24538152141497466,
+          "raw_logit": -1.4049410493979815
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 245,
+        "prompt_ms": 60.267,
+        "prompt_per_token_ms": 0.24598775510204082,
+        "prompt_per_second": 4065.243001974546,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_98",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.8562044711977101,
+      "entropy_nats": 0.411794091076598,
+      "normalized_entropy": 0.594093293063586,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 65.42280100075004,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8562044711977101,
+          "raw_logit": -0.1552460631432423
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.1437955288022898,
+          "raw_logit": -1.939362927347649
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 167,
+        "prompt_ms": 49.692,
+        "prompt_per_token_ms": 0.2975568862275449,
+        "prompt_per_second": 3360.701923850922,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_99",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.8341052070033632,
+      "entropy_nats": 0.4493167786225526,
+      "normalized_entropy": 0.6482270883069609,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 93.49051499884808,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8341052070033632,
+          "raw_logit": -0.1813957370932683
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.16589479299663676,
+          "raw_logit": -1.79640146867591
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 272,
+        "prompt_ms": 65.355,
+        "prompt_per_token_ms": 0.24027573529411766,
+        "prompt_per_second": 4161.885089128605,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_100",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.8951675548960106,
+      "entropy_nats": 0.3355730176676665,
+      "normalized_entropy": 0.484129528445287,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 81.94647100026486,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8951675548960106,
+          "raw_logit": -0.11074436605498038
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.10483244510398936,
+          "raw_logit": -2.255391964321582
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 225,
+        "prompt_ms": 59.812,
+        "prompt_per_token_ms": 0.2658311111111111,
+        "prompt_per_second": 3761.78693238815,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_101",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.6872213389453511,
+      "entropy_nats": 0.6213059062267685,
+      "normalized_entropy": 0.8963549497883823,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 69.40189299893973,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.6872213389453511,
+          "raw_logit": -0.3750988567782595
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.3127786610546489,
+          "raw_logit": -1.1622594917727662
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 151,
+        "prompt_ms": 47.19,
+        "prompt_per_token_ms": 0.3125165562913907,
+        "prompt_per_second": 3199.8304725577455,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_102",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9151982270981583,
+      "entropy_nats": 0.2903431079985059,
+      "normalized_entropy": 0.41887656206573315,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 96.16313599872228,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9151982270981583,
+          "raw_logit": -0.08861459553269502
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.08480177290184171,
+          "raw_logit": -2.467438829541484
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 365,
+        "prompt_ms": 73.519,
+        "prompt_per_token_ms": 0.2014219178082192,
+        "prompt_per_second": 4964.703001945075,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_103",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.8107819876856207,
+      "entropy_nats": 0.485087085774612,
+      "normalized_entropy": 0.699832733046312,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 73.62010499855387,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8107819876856207,
+          "raw_logit": -0.20975608013500052
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.18921801231437924,
+          "raw_logit": -1.6648554243885405
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 203,
+        "prompt_ms": 56.022,
+        "prompt_per_token_ms": 0.2759704433497537,
+        "prompt_per_second": 3623.5764521081,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_104",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999675055515977,
+      "entropy_nats": 0.00036830589009292464,
+      "normalized_entropy": 0.000531353081167258,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 87.36652500010678,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999675055515977,
+          "raw_logit": -3.24949763582794e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 3.2494448402214106e-05,
+          "raw_logit": -10.334441301613118
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 314,
+        "prompt_ms": 66.546,
+        "prompt_per_token_ms": 0.2119299363057325,
+        "prompt_per_second": 4718.540558410723,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_105",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.8456211316601214,
+      "entropy_nats": 0.43023007698363613,
+      "normalized_entropy": 0.6206907985055689,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 65.84160000056727,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8456211316601214,
+          "raw_logit": -0.16768385460103316
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.15437886833987857,
+          "raw_logit": -1.8683455138417557
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 104,
+        "prompt_ms": 43.531,
+        "prompt_per_token_ms": 0.41856730769230766,
+        "prompt_per_second": 2389.102019250649,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_106",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.6961082399800511,
+      "entropy_nats": 0.6141258089215769,
+      "normalized_entropy": 0.8859962590130821,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 55.37782900137245,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.6961082399800511,
+          "raw_logit": -0.3622501135265484
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.3038917600199488,
+          "raw_logit": -1.1910836935436382
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 72,
+        "prompt_ms": 39.93,
+        "prompt_per_token_ms": 0.5545833333333333,
+        "prompt_per_second": 1803.1555221637866,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_107",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.652981223471539,
+      "entropy_nats": 0.6455815856493445,
+      "normalized_entropy": 0.931377352105543,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 71.19031999900471,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.652981223471539,
+          "raw_logit": -0.42620690437403486
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.347018776528461,
+          "raw_logit": -1.0583763894661982
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 193,
+        "prompt_ms": 52.11,
+        "prompt_per_token_ms": 0.27,
+        "prompt_per_second": 3703.7037037037035,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_108",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.7590009653079386,
+      "entropy_nats": 0.5522287615591159,
+      "normalized_entropy": 0.7966976957375904,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 61.21620199883182,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.7590009653079386,
+          "raw_logit": -0.27575222977185004
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.24099903469206133,
+          "raw_logit": -1.4229623509266351
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 133,
+        "prompt_ms": 45.43,
+        "prompt_per_token_ms": 0.34157894736842104,
+        "prompt_per_second": 2927.580893682589,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_109",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.8082505548028236,
+      "entropy_nats": 0.48874975790912367,
+      "normalized_entropy": 0.7051168519711741,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 76.10024400128168,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8082505548028236,
+          "raw_logit": -0.21288317595205616
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.19174944519717638,
+          "raw_logit": -1.6515657321044
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 234,
+        "prompt_ms": 57.113,
+        "prompt_per_token_ms": 0.24407264957264957,
+        "prompt_per_second": 4097.140756045033,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_110",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999775698636807,
+      "entropy_nats": 0.0002625468521831029,
+      "normalized_entropy": 0.00037877504164557027,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 94.38048000083654,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999775698636807,
+          "raw_logit": -2.2430387878576233e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 2.24301363193071e-05,
+          "raw_logit": -10.70510513190684
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 281,
+        "prompt_ms": 66.852,
+        "prompt_per_token_ms": 0.23790747330960854,
+        "prompt_per_second": 4203.314784897983,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_111",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.8036735455727462,
+      "entropy_nats": 0.49526744074979656,
+      "normalized_entropy": 0.7145198806835,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 74.15901900094468,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8036735455727462,
+          "raw_logit": -0.21856213010370032
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.1963264544272538,
+          "raw_logit": -1.6279764214855363
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 211,
+        "prompt_ms": 54.751,
+        "prompt_per_token_ms": 0.2594834123222749,
+        "prompt_per_second": 3853.8108892988257,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_112",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.6325488611762902,
+      "entropy_nats": 0.6575851851981731,
+      "normalized_entropy": 0.948694885647455,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 62.901665000026696,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.6325488611762902,
+          "raw_logit": -0.45799781049255167
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.3674511388237099,
+          "raw_logit": -1.0011649247503644
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 140,
+        "prompt_ms": 46.73,
+        "prompt_per_token_ms": 0.33378571428571424,
+        "prompt_per_second": 2995.9340894500324,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_113",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999736571669304,
+      "entropy_nats": 0.00030410959778829114,
+      "normalized_entropy": 0.0004387374086159049,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 68.85524400058785,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999736571669304,
+          "raw_logit": -2.634318004809098e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 2.6342833069525015e-05,
+          "raw_logit": -10.544314309744175
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 183,
+        "prompt_ms": 51.249,
+        "prompt_per_token_ms": 0.28004918032786885,
+        "prompt_per_second": 3570.80138149037,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_114",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999572282381785,
+      "entropy_nats": 0.0004730390499878576,
+      "normalized_entropy": 0.0006824510915643087,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 66.36306200016406,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999572282381785,
+          "raw_logit": -4.277267655943535e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 4.27717618214637e-05,
+          "raw_logit": -10.059632443647425
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 173,
+        "prompt_ms": 50.266,
+        "prompt_per_token_ms": 0.29055491329479766,
+        "prompt_per_second": 3441.690208092946,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_115",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999598559579826,
+      "entropy_nats": 0.0004465228397038071,
+      "normalized_entropy": 0.00064419628648434,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 65.14815399896179,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999598559579826,
+          "raw_logit": -4.0144847810973803e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 4.0144042017350076e-05,
+          "raw_logit": -10.123036521675001
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 159,
+        "prompt_ms": 48.383,
+        "prompt_per_token_ms": 0.30429559748427676,
+        "prompt_per_second": 3286.2782382241694,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_116",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.824334083234635,
+      "entropy_nats": 0.46475747442359877,
+      "normalized_entropy": 0.6705033035670053,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 61.235017001308734,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.824334083234635,
+          "raw_logit": -0.19317939042285334
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.17566591676536505,
+          "raw_logit": -1.7391712880058612
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 117,
+        "prompt_ms": 44.443,
+        "prompt_per_token_ms": 0.37985470085470086,
+        "prompt_per_second": 2632.5855590306687,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_117",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999794148556317,
+      "entropy_nats": 0.00024271800857267987,
+      "normalized_entropy": 0.0003501680673022502,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 73.21173499985889,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999794148556317,
+          "raw_logit": -2.0585356245304507e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 2.058514436829543e-05,
+          "raw_logit": -10.790940889490564
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 232,
+        "prompt_ms": 57.068,
+        "prompt_per_token_ms": 0.24598275862068963,
+        "prompt_per_second": 4065.3255765052218,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_118",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.9999574234947911,
+      "entropy_nats": 0.0004710744022039218,
+      "normalized_entropy": 0.000679616703949331,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 62.770368000201415,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999574234947911,
+          "raw_logit": -4.257741161401681e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 4.25765052088062e-05,
+          "raw_logit": -10.064207977752597
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 145,
+        "prompt_ms": 46.923,
+        "prompt_per_token_ms": 0.32360689655172414,
+        "prompt_per_second": 3090.1690002770497,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_119",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.5569926688661391,
+      "entropy_nats": 0.6866367109001819,
+      "normalized_entropy": 0.9906073777080012,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 71.31205899895576,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.5569926688661391,
+          "raw_logit": -0.5852032009616877
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.4430073311338609,
+          "raw_logit": -0.8141689602390314
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 209,
+        "prompt_ms": 53.854,
+        "prompt_per_token_ms": 0.25767464114832533,
+        "prompt_per_second": 3880.863074237754,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_120",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.738410891487467,
+      "entropy_nats": 0.5747125207660613,
+      "normalized_entropy": 0.8291349036459921,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 83.82371499828878,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.738410891487467,
+          "raw_logit": -0.30325484578382184
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.2615891085125331,
+          "raw_logit": -1.3409802943922202
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 261,
+        "prompt_ms": 62.236,
+        "prompt_per_token_ms": 0.2384521072796935,
+        "prompt_per_second": 4193.714248987724,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_121",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.843372762124013,
+      "entropy_nats": 0.4340345074856873,
+      "normalized_entropy": 0.6261794315242847,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 67.48813000012888,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.843372762124013,
+          "raw_logit": -0.17034623351485714
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.1566272378759869,
+          "raw_logit": -1.8538865777531384
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 159,
+        "prompt_ms": 48.907,
+        "prompt_per_token_ms": 0.3075911949685534,
+        "prompt_per_second": 3251.068354223322,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_122",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.9999787476799271,
+      "entropy_nats": 0.00024990675139127406,
+      "normalized_entropy": 0.00036053923091686213,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 66.21549299961771,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999787476799271,
+          "raw_logit": -2.125254590663815e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 2.1252320072811174e-05,
+          "raw_logit": -10.759044488656542
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 164,
+        "prompt_ms": 48.096,
+        "prompt_per_token_ms": 0.2932682926829268,
+        "prompt_per_second": 3409.8469727212246,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_123",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.5821554039967166,
+      "entropy_nats": 0.6795867529537163,
+      "normalized_entropy": 0.9804364383401596,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 63.494040001387475,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.5821554039967166,
+          "raw_logit": -0.5410178497169518
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.4178445960032833,
+          "raw_logit": -0.8726456954811119
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 143,
+        "prompt_ms": 47.363,
+        "prompt_per_token_ms": 0.3312097902097902,
+        "prompt_per_second": 3019.2344234951333,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_124",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9074283070114045,
+      "entropy_nats": 0.30844774734353086,
+      "normalized_entropy": 0.44499603546588395,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 71.05295100154763,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9074283070114045,
+          "raw_logit": -0.09714071650223531
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.09257169298859545,
+          "raw_logit": -2.3797718753309707
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 165,
+        "prompt_ms": 53.662,
+        "prompt_per_token_ms": 0.3252242424242424,
+        "prompt_per_second": 3074.8015355372518,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_125",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.7060659582130913,
+      "entropy_nats": 0.6056366774997962,
+      "normalized_entropy": 0.8737490312094245,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 61.38375699993048,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.7060659582130913,
+          "raw_logit": -0.3480466206217526
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.2939340417869087,
+          "raw_logit": -1.224399884476733
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 132,
+        "prompt_ms": 45.713,
+        "prompt_per_token_ms": 0.34631060606060604,
+        "prompt_per_second": 2887.5812132216215,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_126",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.5810572611096898,
+      "entropy_nats": 0.6799484495671104,
+      "normalized_entropy": 0.9809582562506097,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 60.46973599950434,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.5810572611096898,
+          "raw_logit": -0.5429059708597291
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.4189427388903103,
+          "raw_logit": -0.870021029758655
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 95,
+        "prompt_ms": 44.594,
+        "prompt_per_token_ms": 0.4694105263157895,
+        "prompt_per_second": 2130.33143472216,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_127",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.5924729627453956,
+      "entropy_nats": 0.6759458254559918,
+      "normalized_entropy": 0.9751836902949562,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 59.67343699921912,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.5924729627453956,
+          "raw_logit": -0.5234500395112675
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.4075270372546043,
+          "raw_logit": -0.8976479994111697
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 111,
+        "prompt_ms": 43.91,
+        "prompt_per_token_ms": 0.39558558558558554,
+        "prompt_per_second": 2527.897973126851,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_128",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.717888414474577,
+      "entropy_nats": 0.5949365873031508,
+      "normalized_entropy": 0.8583120641456595,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 75.8111689992802,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.717888414474577,
+          "raw_logit": -0.3314411336068429
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.282111585525423,
+          "raw_logit": -1.2654525929574287
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 183,
+        "prompt_ms": 58.951,
+        "prompt_per_token_ms": 0.32213661202185795,
+        "prompt_per_second": 3104.2730403216233,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_129",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.6459329768602635,
+      "entropy_nats": 0.6499279970600508,
+      "normalized_entropy": 0.9376478982934321,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 96.78954499941028,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.6459329768602635,
+          "raw_logit": -0.4370595315723456
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.3540670231397364,
+          "raw_logit": -1.038269052865986
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 380,
+        "prompt_ms": 74.587,
+        "prompt_per_token_ms": 0.19628157894736842,
+        "prompt_per_second": 5094.721600278868,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_130",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999556463364241,
+      "entropy_nats": 0.0004889234323010182,
+      "normalized_entropy": 0.0007053674111550897,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 70.2965470009076,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999556463364241,
+          "raw_logit": -4.435464722873556e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 4.43536635758329e-05,
+          "raw_logit": -10.023315246626396
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 166,
+        "prompt_ms": 53.513,
+        "prompt_per_token_ms": 0.3223674698795181,
+        "prompt_per_second": 3102.049969166371,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_131",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9168445261929686,
+      "entropy_nats": 0.286409287345775,
+      "normalized_entropy": 0.4132012585182917,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 75.31305099837482,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9168445261929686,
+          "raw_logit": -0.08681736723659145
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.08315547380703132,
+          "raw_logit": -2.487043244998432
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 233,
+        "prompt_ms": 58.656,
+        "prompt_per_token_ms": 0.2517424892703863,
+        "prompt_per_second": 3972.3131478450628,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_132",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.8343221731194314,
+      "entropy_nats": 0.4489662069436894,
+      "normalized_entropy": 0.6477213202843888,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 81.55261799947766,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8343221731194314,
+          "raw_logit": -0.18113565251317085
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.1656778268805686,
+          "raw_logit": -1.7977101783463008
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 275,
+        "prompt_ms": 61.398,
+        "prompt_per_token_ms": 0.22326545454545454,
+        "prompt_per_second": 4478.973256457865,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_133",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.6531909183267994,
+      "entropy_nats": 0.6454489259246661,
+      "normalized_entropy": 0.9311859645786237,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 68.46822499937844,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.6531909183267994,
+          "raw_logit": -0.42588582134010444
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.3468090816732006,
+          "raw_logit": -1.0589808473563398
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 176,
+        "prompt_ms": 50.509,
+        "prompt_per_token_ms": 0.2869829545454545,
+        "prompt_per_second": 3484.5275099487217,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_134",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.740184816106822,
+      "entropy_nats": 0.5728635165159697,
+      "normalized_entropy": 0.8264673543838023,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 82.3903260006773,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.740184816106822,
+          "raw_logit": -0.3008553724709292
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.259815183893178,
+          "raw_logit": -1.3477847319069642
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 287,
+        "prompt_ms": 61.904,
+        "prompt_per_token_ms": 0.21569337979094078,
+        "prompt_per_second": 4636.210907211165,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_135",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999869384116575,
+      "entropy_nats": 0.00015994996806000344,
+      "normalized_entropy": 0.00023075902571051505,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 58.975502999601304,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999869384116575,
+          "raw_logit": -1.3061673645754548e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 1.3061588342443699e-05,
+          "raw_logit": -11.24583482264085
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 106,
+        "prompt_ms": 42.814,
+        "prompt_per_token_ms": 0.4039056603773585,
+        "prompt_per_second": 2475.8256645022657,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_136",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.7987270252734512,
+      "entropy_nats": 0.5021620853015822,
+      "normalized_entropy": 0.7244667501870533,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 82.4942919989553,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.7987270252734512,
+          "raw_logit": -0.22473603705498743
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.20127297472654884,
+          "raw_logit": -1.6030932090673164
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 267,
+        "prompt_ms": 60.487,
+        "prompt_per_token_ms": 0.2265430711610487,
+        "prompt_per_second": 4414.171640187148,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_137",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.6301907082204378,
+      "entropy_nats": 0.6588541045431674,
+      "normalized_entropy": 0.9505255492937663,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 88.65892799985886,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.6301907082204378,
+          "raw_logit": -0.46173279394341654
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.36980929177956234,
+          "raw_logit": -0.99476783384515
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 318,
+        "prompt_ms": 67.258,
+        "prompt_per_token_ms": 0.21150314465408804,
+        "prompt_per_second": 4728.062089268191,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_138",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999842889801215,
+      "entropy_nats": 0.00018949281553213207,
+      "normalized_entropy": 0.0002733803452522941,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 65.88272800036066,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999842889801215,
+          "raw_logit": -1.5711143297882596e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 1.5711019878501185e-05,
+          "raw_logit": -11.06114818873953
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 158,
+        "prompt_ms": 49.207,
+        "prompt_per_token_ms": 0.3114367088607595,
+        "prompt_per_second": 3210.925274859268,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_139",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.9999615605683739,
+      "entropy_nats": 0.0004292303591425159,
+      "normalized_entropy": 0.0006192485105338965,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 98.42012499939301,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999615605683739,
+          "raw_logit": -3.8440170439954425e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 3.8439431626004777e-05,
+          "raw_logit": -10.166426759975534
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 432,
+        "prompt_ms": 77.514,
+        "prompt_per_token_ms": 0.17943055555555554,
+        "prompt_per_second": 5573.1867791624745,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_140",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.8671964158439542,
+      "entropy_nats": 0.3916816659181983,
+      "normalized_entropy": 0.5650771970273124,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 66.34700100039481,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8671964158439542,
+          "raw_logit": -0.14248978132656673
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.1328035841560458,
+          "raw_logit": -2.018884053177153
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 155,
+        "prompt_ms": 49.659,
+        "prompt_per_token_ms": 0.32038064516129033,
+        "prompt_per_second": 3121.287178557764,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_141",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.6801848153013994,
+      "entropy_nats": 0.626730070516527,
+      "normalized_entropy": 0.9041803647101838,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 63.519829000142636,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.6801848153013994,
+          "raw_logit": -0.3853907305314968
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.3198151846986005,
+          "raw_logit": -1.1400119978502223
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 156,
+        "prompt_ms": 47.842,
+        "prompt_per_token_ms": 0.3066794871794872,
+        "prompt_per_second": 3260.733246937837,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_142",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999733618561687,
+      "entropy_nats": 0.00030722179034767803,
+      "normalized_entropy": 0.00044322735338762394,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 62.18226000055438,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999733618561687,
+          "raw_logit": -2.6638498632957713e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 2.6638143831280624e-05,
+          "raw_logit": -10.53316639072255
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 121,
+        "prompt_ms": 46.892,
+        "prompt_per_token_ms": 0.38753719008264464,
+        "prompt_per_second": 2580.397509170007,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_143",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.8286026344243899,
+      "entropy_nats": 0.4580950096774453,
+      "normalized_entropy": 0.6608913987176321,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 65.8069439996325,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.8286026344243899,
+          "raw_logit": -0.18801456997581129
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.17139736557561014,
+          "raw_logit": -1.7637706429738582
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 177,
+        "prompt_ms": 50.262,
+        "prompt_per_token_ms": 0.28396610169491526,
+        "prompt_per_second": 3521.547093231467,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_144",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.6387474806516261,
+      "entropy_nats": 0.6541354467156653,
+      "normalized_entropy": 0.9437179650463771,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 65.75799199890753,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.6387474806516261,
+          "raw_logit": -0.4482460816573223
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.36125251934837377,
+          "raw_logit": -1.018178065605076
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 140,
+        "prompt_ms": 46.344,
+        "prompt_per_token_ms": 0.33102857142857145,
+        "prompt_per_second": 3020.8872777490074,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_145",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.845455476191249,
+      "entropy_nats": 0.43051169581523463,
+      "normalized_entropy": 0.6210970885973369,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 60.3741059985623,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.845455476191249,
+          "raw_logit": -0.16787977176839652
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.15454452380875103,
+          "raw_logit": -1.867273044168299
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 122,
+        "prompt_ms": 45.086,
+        "prompt_per_token_ms": 0.3695573770491803,
+        "prompt_per_second": 2705.939759570598,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_146",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.7706191972276364,
+      "entropy_nats": 0.5385270754119571,
+      "normalized_entropy": 0.7769303410812674,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 58.4594610008935,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.7706191972276364,
+          "raw_logit": -0.26056093504790595
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.22938080277236364,
+          "raw_logit": -1.472371762303155
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 111,
+        "prompt_ms": 43.009,
+        "prompt_per_token_ms": 0.3874684684684685,
+        "prompt_per_second": 2580.8551698481715,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_147",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.7765170367032185,
+      "entropy_nats": 0.5312810168762248,
+      "normalized_entropy": 0.7664764883657752,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 73.84954599910998,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.7765170367032185,
+          "raw_logit": -0.2529366962564663
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.2234829632967815,
+          "raw_logit": -1.4984200946939663
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 225,
+        "prompt_ms": 57.839,
+        "prompt_per_token_ms": 0.2570622222222222,
+        "prompt_per_second": 3890.1087501512825,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_148",
+      "category": "reading_comprehension",
+      "ground_truth": "No",
+      "decision": "Yes",
+      "is_correct": false,
+      "decision_probability": 0.6415739192333282,
+      "entropy_nats": 0.6525072387440781,
+      "normalized_entropy": 0.9413689574802324,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 56.753348999336595,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.6415739192333282,
+          "raw_logit": -0.44383087283003836
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 0.3584260807666719,
+          "raw_logit": -1.0260328305326751
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 79,
+        "prompt_ms": 41.326,
+        "prompt_per_token_ms": 0.523113924050633,
+        "prompt_per_second": 1911.6294826501476,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    },
+    {
+      "id": "boolq_149",
+      "category": "reading_comprehension",
+      "ground_truth": "Yes",
+      "decision": "Yes",
+      "is_correct": true,
+      "decision_probability": 0.9999895293501728,
+      "entropy_nats": 0.00013053685042991727,
+      "normalized_entropy": 0.000188324866768506,
+      "uncertain": false,
+      "steps_executed": 1,
+      "latency_ms": 84.59524699901522,
+      "candidates": [
+        {
+          "token": "Yes",
+          "label": "Yes",
+          "probability": 0.9999895293501728,
+          "raw_logit": -1.0470704644813268e-05
+        },
+        {
+          "token": "No",
+          "label": "No",
+          "probability": 1.04706498271938e-05,
+          "raw_logit": -11.466934469373264
+        }
+      ],
+      "stage_timings": {
+        "cache_n": 0,
+        "prompt_n": 304,
+        "prompt_ms": 64.807,
+        "prompt_per_token_ms": 0.2131809210526316,
+        "prompt_per_second": 4690.851296927801,
+        "predicted_n": 1,
+        "predicted_ms": 0.001,
+        "predicted_per_token_ms": 0.0,
+        "predicted_per_second": 0.0
+      }
+    }
+  ]
+}

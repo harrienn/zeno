@@ -301,6 +301,11 @@ Canvas Geometry: How does answer-position placement within the configured canvas
 Multi-GPU Communication: What is the optimal tensor-parallel decomposition for 128 MoE experts during 1-step reads?
 
 Comparison with Autoregressive Models: How does structured diffusion compare against grammar-constrained autoregressive decoding in latency, throughput, and error rates?
+-> RESOLVED with empirical evidence in specs/autoregressive-vs-diffusion.md:
+1. Latency & Scaling: Structured diffusion delivers flat O(1) latency (99.87ms single-step; 203.99ms adaptive 2-step), eliminating the linear O(N) generation penalty of autoregressive decoders (which require 300ms–2000ms for 8–64 token JSON schemas). With prompt KV prefix caching, diffusion prefill is 0.0ms.
+2. Throughput & Memory: Diffusion operates on a statically pinned C=16 canvas with zero dynamic KV cache expansion or fragmentation, requiring exactly 1 (T=1) or 2 (T=2) DRAM parameter passes over weights, cutting parameter streaming traffic by 10x–20x compared to multi-token AR generation.
+3. Accuracy & Calibration: On ARC-Challenge (N=150), adaptive 2-step structured diffusion achieves 86.00% accuracy (vs 58.67% AR 0.8B and 82%–84% AR 27B baselines) with >3x lower calibration error (ECE 5.04% vs 19.10%, Brier 0.2448 vs 0.6020). On BoolQ, diffusion achieves 85.33% (vs 66.00% AR).
+4. Positional Robustness: AR suffers from severe primacy bias (Option A chosen ~50% of the time, dropping content agreement to 49.33% under cyclic rotation). Adaptive 2-step diffusion dampens positional asymmetry, achieving 80.00% content agreement across rotations with only a -1.33% net delta (McNemar p=0.845).
 ```
 
 Research findings should be written down in `specs/` when they become sufficiently supported.
@@ -338,7 +343,7 @@ Implement and validate the CPU representation of one denoising step.
 **Current objective:**
 
 ```text
-Completed CUDA Phase 19 cold prefill acceleration and multi-step CUDA graph chaining (specs/cuda-phase19-prefill-rfc.md), slashing adaptive two-step denoising latency by -55.5% (458.9ms -> 203.99ms).
+Completed empirical research study comparing structured discrete diffusion vs. grammar-constrained autoregressive decoding (specs/autoregressive-vs-diffusion.md), resolving the comparative research vector on latency, throughput, calibration, and error rates.
 ```
 
 This active objective builds upon completed Phase 15 through Phase 19 optimizations that broke the sub-100ms latency milestone and halved multi-step denoising latency on dual Ampere GPUs (`sm_86`, dual RTX 3060 12GB):
