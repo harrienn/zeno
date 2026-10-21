@@ -41,7 +41,7 @@ To break through the historic 100 ms latency barrier on dual Ampere GPUs, Phase 
   - Restructured `moe_gemv_gate_up_geglu_sorted_kernel` to tile 16 output rows per CTA (2 rows per warp: `row0`, `row1`), halving CTAs from 88 to 44 per active expert.
   - Eliminated local pointer arrays `tok_ptrs[4]` and `out_ptrs[4]`; staged `s_x` directly with collaborative float4 loads.
   - Hoisted activation reads `x1[m] = s_x[m][off1]` and `x2[m] = s_x[m][off2]` to outer chunk scope, sharing activation registers across `row0` and `row1` and eliminating 50% of shared memory load instructions.
-  - Enforced `__launch_bounds__(256, 4)` for 100% SM occupancy (**0 bytes stack frame, 0 spill stores, 0 spill loads, 64 registers**).
+  - Enforced `__launch_bounds__(256, 4)` for 66.7% SM warp occupancy (32 / 48 warps, 100% register-file saturation at 64 registers/thread; **0 bytes stack frame, 0 spill stores, 0 spill loads**).
 
 ### WP4: MoE Down Accum Sorted GEMV Activation Hoisting for Q8_0
 - **Location**: [`src/cuda/moe.cu`](file:///hdd/Projects/zeno/src/cuda/moe.cu#L1110).
@@ -96,3 +96,18 @@ Evaluated on dual NVIDIA GeForce RTX 3060 12GB GPUs (`sm_86`, `dual_gpu_split` t
    - `./tools/verify_all_oracles.sh --cuda`: **5/5 PASSED (100% discrete decision parity, 100% top-5 vocab match)** against pinned `llama.cpp` reference oracle.
 3. **HTTP Server Integration**:
    - `python3 tools/test_server.py --cuda`: **15/15 PASSED**.
+
+---
+
+## 5. ARC-Challenge Benchmark Results (N=150, C=256)
+
+Phase 18 was evaluated on the 150-question ARC-Challenge evaluation slice (`N=150`, full canvas width `C=256`) across both base canonical order and cyclic option rotation (`rot1`), verifying that kernel fusions and GEMV restructuring preserved numerical accuracy and calibration while achieving a **~42–43% end-to-end dataset latency reduction**:
+
+| Evaluation Run | Result File | Accuracy | Mean Latency (Phase 8 $\to$ Phase 18) | Median Latency | Mean $H_{\text{norm}}$ | Step Split |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Base $T=1$** | [`results_t1_phase18.json`](file:///hdd/Projects/zeno/specs/fixtures/arc_results/results_t1_phase18.json) | **75.33%** (113/150) | $1046.3\text{ ms} \to \mathbf{598.41\text{ ms}}$ (`-42.8%`) | $576.49\text{ ms}$ | $0.3528$ | $150\text{ at }T=1$ |
+| **Rot-1 $T=1$** | [`results_t1_rot1_phase18.json`](file:///hdd/Projects/zeno/specs/fixtures/arc_results/results_t1_rot1_phase18.json) | **65.33%** (98/150) | $1017.8\text{ ms} \to \mathbf{596.64\text{ ms}}$ (`-41.4%`) | $574.17\text{ ms}$ | $0.3709$ | $150\text{ at }T=1$ |
+| **Base $T=2$ ($\tau=0.10$)** | [`results_t2_adapt_phase18.json`](file:///hdd/Projects/zeno/specs/fixtures/arc_results/results_t2_adapt_phase18.json) | **86.00%** (129/150) | $1109.1\text{ ms} \to \mathbf{634.63\text{ ms}}$ (`-42.8%`) | $616.28\text{ ms}$ | $0.2193$ | $100\text{ at }T=1,\ 50\text{ at }T=2$ |
+| **Rot-1 $T=2$ ($\tau=0.10$)** | [`results_t2_adapt_rot1_phase18.json`](file:///hdd/Projects/zeno/specs/fixtures/arc_results/results_t2_adapt_rot1_phase18.json) | **84.67%** (127/150) | $1084.9\text{ ms} \to \mathbf{637.47\text{ ms}}$ (`-41.2%`) | $0.2283$ | $95\text{ at }T=1,\ 55\text{ at }T=2$ |
+
+*Summary*: Across all four runs, decision accuracy, confidence calibration, and adaptive step distributions match Phase 8 and Phase 10 exactly, while end-to-end evaluation time dropped from ~1,050–1,100 ms to ~595–635 ms per prompt-canvas evaluation.

@@ -18,9 +18,9 @@ Candidate Logit Extraction & Entropy (calibration to be evaluated)
 Structured Decision (typed label, boolean, or score)
 ```
 
-The intended runtime should make this execution process explicit, reproducible, inspectable, and efficient. These are design goals; implementation and performance have not yet been established.
+The runtime makes this execution process explicit, reproducible, inspectable, and efficient. The repository provides a complete CPU reference implementation and an accelerated sub-100ms dual-GPU CUDA runtime.
 
-Zeno is intended to remain smaller in scope than a general-purpose conversational framework. Its relative speed has not yet been measured.
+Zeno remains smaller in scope than a general-purpose conversational framework, focusing exclusively on deterministic System One decision execution.
 
 ---
 
@@ -82,7 +82,7 @@ The implementation should remain free to collapse layers when doing so improves 
 
 ## 4. Frontend
 
-The planned frontend will provide the interface for structured decision queries and runtime diagnostics.
+The frontend provides the interface for structured decision queries and runtime diagnostics.
 
 Responsibilities include:
 

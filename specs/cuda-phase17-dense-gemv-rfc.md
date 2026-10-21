@@ -21,7 +21,7 @@ The delivered **CUDA Phase 17** implementation applied the following optimizatio
 1. Eliminated 128-byte stack frames and pointer arrays across all batched GEMV kernels.
 2. Implemented paired-block Q8_0 streaming and 16-row CTA tiling for Dense Down projection, cutting barrier stalls and redundant shared-memory activation loads by 50%.
 3. Implemented batched F32 streaming (`gemv_f32_batched_16x_kernel`) with 16-row CTA tiling for MoE Router Gate projection, eliminating 93.75% of redundant DRAM router weight traffic.
-4. Enforced `__launch_bounds__(256, 4)` to cap registers at $\le 64$, saturating hardware SM occupancy at 100% (32 warps/SM) across all dense projections.
+4. Enforced `__launch_bounds__(256, 4)` to cap registers at $\le 64$, saturating hardware SM occupancy at 66.7% (32 / 48 warps/SM, 100% of the SM register file) across all dense projections.
 5. Generalized 16x batched GEMVs to all sequence lengths $\ge 16$, reducing prompt prefill latency by ~150 ms.
 
 ---
@@ -40,8 +40,8 @@ for (int t = 0; t < 16; ++t) {
 ```
 - On 64-bit CUDA, `tok_x[16]` is an array of 16 64-bit pointers (128 bytes total).
 - The compiler allocated 128 bytes of local memory stack frame (`128 bytes stack frame`) and pinned 32 32-bit registers for pointer storage.
-- In `dense_gemv_gate_up_geglu_q4k_kernel`, this pushed register consumption to **85 registers**, capping SM occupancy at **$\le 2$ blocks / 16 warps per SM (33% occupancy)**.
-- In `gemv_q4k_batched_16x_kernel`, registers climbed to **80 registers**, capping occupancy at **3 blocks / 24 warps per SM (50% occupancy)**.
+- In `dense_gemv_gate_up_geglu_q4k_kernel`, this pushed register consumption to **85 registers**, capping SM occupancy at **$\le 2$ blocks / 16 warps per SM (33.3% warp occupancy: 16 / 48 warps)**.
+- In `gemv_q4k_batched_16x_kernel`, registers climbed to **80 registers**, capping occupancy at **3 blocks / 24 warps per SM (50.0% warp occupancy: 24 / 48 warps)**.
 - Critically, inside the arithmetic inner loops, `tok_x[t]` was only evaluated as a boolean check (`if (tok_x[t])`), meaning 32 registers and 128 stack bytes were held alive solely to test if `t_base + t < batch_size`.
 
 ### 2.2 Dense Down Q8_0 Bottleneck: Single-Block Striding & Barrier Overhead
@@ -92,12 +92,13 @@ for (int t = 0; t < 16; ++t) {
   - Uses only **56 registers per thread** and 4 KB shared memory.
 - **Full SM Occupancy Saturation with `__launch_bounds__(256, 4)`**:
   - Applied `__launch_bounds__(256, 4)` across all 16x GEMVs.
-  - `dense_gemv_gate_up_geglu_q4k_kernel`: 85 $\to$ 64 registers (occupancy $33\% \to 100\%$, doubling active warps from 16 to 32).
-  - `gemv_q4k_batched_16x_kernel`: 80 $\to$ 64 registers (occupancy $50\% \to 100\%$).
-  - `gemv_q4k_fused_qk_16x_kernel`: 75 $\to$ 64 registers (occupancy $50\% \to 100\%$).
-  - `gemv_q8_0_batched_16x_kernel`: 40 $\to$ 56 registers (occupancy remains 100%).
-  - `gemv_q6k_batched_16x_kernel`: 59 registers (occupancy 100%).
-  - `gemv_q5_0_batched_16x_kernel`: 46 $\to$ 33 registers (occupancy 100%).
+  - On Ampere `sm_86` (max 48 warps / 1,536 threads per SM, 65,536 registers/SM), 4 blocks of 256 threads cap residency at 32 warps (1,024 threads), consuming $1024 \times 64 = 65,536$ registers (100% of the register file) and achieving the architectural maximum of **66.7% warp occupancy** (32 / 48 warps).
+  - `dense_gemv_gate_up_geglu_q4k_kernel`: 85 $\to$ 64 registers (warp occupancy $33.3\% \to 66.7\%$, doubling active warps from 16 to 32).
+  - `gemv_q4k_batched_16x_kernel`: 80 $\to$ 64 registers (warp occupancy $50.0\% \to 66.7\%$).
+  - `gemv_q4k_fused_qk_16x_kernel`: 75 $\to$ 64 registers (warp occupancy $50.0\% \to 66.7\%$).
+  - `gemv_q8_0_batched_16x_kernel`: 40 $\to$ 56 registers (warp occupancy 66.7%).
+  - `gemv_q6k_batched_16x_kernel`: 59 registers (warp occupancy 66.7%).
+  - `gemv_q5_0_batched_16x_kernel`: 46 $\to$ 33 registers (warp occupancy 66.7%).
 
 ---
 
@@ -112,7 +113,7 @@ Measured via `zeno decide` and HTTP API server on dual NVIDIA GeForce RTX 3060 1
 | **Prompt Prefill ($P=29$)** | 398.63 ms | **246.07 ms** | **-152.56 ms faster** |
 | **Total Engine Latency (Prompt Cache Hit)** | 138.64 ms | **113.05 ms** | **-25.59 ms faster** |
 | **Total Stack Frame Allocation** | 128 bytes / thread | **0 bytes** | **100% eliminated** |
-| **Dense Gate/Up SM Occupancy** | 16 warps / SM (33%) | **32 warps / SM (100%)** | **2.0x active warps** |
+| **Dense Gate/Up SM Occupancy** | 16 warps / SM (33.3%) | **32 warps / SM (66.7%, 100% register file)** | **2.0x active warps** |
 
 ### 4.2 Verification & Parity
 1. **CPU Isolation**: `zig build test -Dcuda=false` passes cleanly.

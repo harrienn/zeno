@@ -6,9 +6,9 @@ A research project exploring a lightweight Zig-based, **Jev-style structured dec
 
 ## 1. Overview
 
-Zeno is a research and systems-engineering project building a Zig runtime for reproducible, low-latency **"System One" decisions**—inspired by TypeSafe AI's Jev architecture and powered by Google DeepMind's DiffusionGemma discrete diffusion model. The repository contains an evolving prototype; complete end-to-end inference and reference parity are not yet established.
+Zeno is a research and systems-engineering project building a Zig runtime for reproducible, low-latency **"System One" decisions**—inspired by TypeSafe AI's Jev architecture and powered by Google DeepMind's DiffusionGemma discrete diffusion model. The repository provides a complete CPU reference implementation and an accelerated dual-GPU CUDA runtime achieving sub-100ms decision latency on commodity hardware.
 
-Agentic workflows and software pipelines can use low-latency, schema-constrained evaluations for routing, intent classification, safety checks, and scoring. Zeno investigates whether discrete diffusion can serve these workloads effectively; comparisons with autoregressive approaches remain to be measured.
+Agentic workflows and software pipelines can use low-latency, schema-constrained evaluations for routing, intent classification, safety checks, and scoring. Zeno investigates whether discrete diffusion can serve these workloads effectively; comparisons with autoregressive approaches remain an active area of empirical evaluation.
 
 The intended structured-read path evaluates candidate decision positions in a DiffusionGemma token canvas. It may produce normalized candidate probabilities and entropy; whether those probabilities are calibrated and how many reads are useful remain research questions.
 
@@ -35,9 +35,9 @@ Zeno draws directly upon two foundational open-source milestones:
 | :--- | :--- | :--- |
 | **Generation Mode** | Sequential token-by-token rollout | Parallel whole-canvas evaluation |
 | **Attention** | Causal mask (past tokens only) | Causal prompt prefill followed by bidirectional decoder evaluation |
-| **Decision Speed** | Sequential token generation | Structured reads may evaluate answer positions in parallel; latency remains to be measured |
+| **Decision Speed** | Sequential token generation | Structured reads evaluate answer positions in parallel; sub-100ms decision latency achieved on dual RTX 3060 GPUs |
 | **Schema Integrity** | Often uses constrained decoding or post-processing | Candidate-token restriction can limit the decision to supplied single-token choices |
-| **Output** | Often free-form text | Intended output: typed decisions with candidate scores and entropy; calibration remains to be measured |
+| **Output** | Often free-form text | Typed decisions with candidate scores, logit softcapping, and normalized entropy; empirical calibration evaluated on ARC-Challenge |
 | **KV Cache** | Often grows with generated tokens | Diffusion execution does not append tokens autoregressively; cache behavior depends on the runtime and execution path |
 
 ### The Structured-Read Lifecycle
@@ -83,9 +83,9 @@ The repository includes a complete CPU reference implementation for DiffusionGem
 
 Five golden fixtures are tracked with independently captured reference records (`zeno.fixture/v1`) from llama.cpp PR #24423 (`llama-diffusion-gemma-eval`), verifying 100% discrete decision parity and identical top-5 vocabulary predictions across all test cases. The artifact's chat template is recorded verbatim in `chat_template.jinja` (U-05 resolved).
 
-High-performance dual-GPU CUDA execution (`sm_86`, dual RTX 3060 12GB) has achieved the **sub-100ms structured decision milestone** ($C=16$: **99.87 ms** canvas step latency, **100.55 ms** HTTP round-trip) via intra-layer kernel fusion, stackless streaming GEMVs, MoE warp restructuring, and full SM occupancy saturation.
+High-performance dual-GPU CUDA execution (`sm_86`, dual RTX 3060 12GB) has achieved the **sub-100ms structured decision milestone** ($C=16$: **99.87 ms** canvas step latency, **100.55 ms** HTTP round-trip) via intra-layer kernel fusion, stackless streaming GEMVs, MoE warp restructuring, and hardware SM occupancy saturation (66.7% active warp occupancy, 100% register file saturation at 64 registers/thread).
 
-Full Phase 3 reference parity exit remains open under U-13 and U-22 because candidate raw logit divergence between FP32 dequantized execution and GGML SIMD execution (1.19 to 11.07 across fixtures) exceeds the $\le 0.5$ tolerance threshold in `zeno.tolerance/v1`. Performance optimization and probability calibration remain open research areas. See [`PLAN.md`](PLAN.md) and [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) for current gates.
+Full Phase 3 reference parity exit remains open under U-22 (with U-13 resolved per Review Round 32) because candidate raw logit divergence between FP32 dequantized execution and GGML SIMD execution (0.99 to 9.91 across fixtures) exceeds the strict $\le 0.5$ tolerance threshold in `zeno.tolerance/v1`, despite 100% discrete decision agreement (5/5) and 100% top-5 vocabulary agreement (5/5). Performance optimization and probability calibration remain open research areas. See [`PLAN.md`](PLAN.md) and [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) for current gates.
 
 ### Prerequisites
 

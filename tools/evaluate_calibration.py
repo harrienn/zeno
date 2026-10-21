@@ -122,6 +122,130 @@ def compute_selective_risk(results: List[Dict[str, Any]]) -> List[Dict[str, Any]
         })
     return curve
 
+def optimize_temperature(
+    results: List[Dict[str, Any]],
+    use_softcapped: bool = True,
+    t_min: float = 0.05,
+    t_max: float = 5.0,
+    steps: int = 1000
+) -> Dict[str, Any]:
+    """Finds optimal temperature T that minimizes Negative Log-Likelihood (NLL)."""
+    data = []
+    logit_key = "softcapped_logit" if use_softcapped else "raw_logit"
+    for r in results:
+        gt = r.get("ground_truth")
+        cands = r.get("candidates", [])
+        if not cands or not gt or logit_key not in cands[0]:
+            continue
+        logits = [float(c[logit_key]) for c in cands]
+        target_idx = None
+        for idx, c in enumerate(cands):
+            if c["label"] == gt:
+                target_idx = idx
+                break
+        if target_idx is not None:
+            data.append((logits, target_idx))
+
+    if not data:
+        return {}
+
+    def eval_t(T: float):
+        total_nll = 0.0
+        total_sq_err = 0.0
+        scaled_results = []
+        for logits, target_idx in data:
+            max_l = max(logits)
+            exp_l = [math.exp((l - max_l) / T) for l in logits]
+            sum_exp = sum(exp_l)
+            probs = [e / sum_exp for e in exp_l]
+            gt_prob = max(probs[target_idx], 1e-15)
+            total_nll += -math.log(gt_prob)
+            for idx, p in enumerate(probs):
+                target = 1.0 if idx == target_idx else 0.0
+                total_sq_err += (p - target) ** 2
+            
+            top_prob = max(probs)
+            top_idx = probs.index(top_prob)
+            is_correct = (top_idx == target_idx)
+            scaled_results.append({
+                "decision_probability": top_prob,
+                "is_correct": is_correct
+            })
+            
+        nll = total_nll / len(data)
+        brier = total_sq_err / len(data)
+        ece, mce, bin_stats = compute_ece_and_bins(scaled_results)
+        return nll, brier, ece, mce, bin_stats
+
+    best_t = 1.0
+    best_nll = float('inf')
+    dt = (t_max - t_min) / steps
+    for step in range(steps + 1):
+        T = t_min + step * dt
+        nll, _, _, _, _ = eval_t(T)
+        if nll < best_nll:
+            best_nll = nll
+            best_t = T
+
+    base_nll, base_brier, base_ece, base_mce, _ = eval_t(1.0)
+    opt_nll, opt_brier, opt_ece, opt_mce, opt_bins = eval_t(best_t)
+
+    return {
+        "logit_type": "softcapped" if use_softcapped else "raw",
+        "optimal_temperature": best_t,
+        "base_nll": base_nll,
+        "calibrated_nll": opt_nll,
+        "base_brier": base_brier,
+        "calibrated_brier": opt_brier,
+        "base_ece": base_ece,
+        "calibrated_ece": opt_ece,
+        "base_mce": base_mce,
+        "calibrated_mce": opt_mce,
+        "calibrated_bins": opt_bins
+    }
+
+def evaluate_dataset_at_temperature(results: List[Dict[str, Any]], T: float, use_softcapped: bool = True) -> Tuple[float, float, float]:
+    """Evaluates NLL, Brier score, and ECE for a dataset at a specific temperature T."""
+    logit_key = "softcapped_logit" if use_softcapped else "raw_logit"
+    total_nll = 0.0
+    total_sq_err = 0.0
+    scaled = []
+    valid_count = 0
+    for r in results:
+        gt = r.get("ground_truth")
+        cands = r.get("candidates", [])
+        if not cands or not gt or logit_key not in cands[0]:
+            continue
+        logits = [float(c[logit_key]) for c in cands]
+        target_idx = None
+        for idx, c in enumerate(cands):
+            if c["label"] == gt:
+                target_idx = idx
+                break
+        if target_idx is None:
+            continue
+        max_l = max(logits)
+        exp_l = [math.exp((l - max_l) / T) for l in logits]
+        sum_exp = sum(exp_l)
+        probs = [e / sum_exp for e in exp_l]
+        total_nll += -math.log(max(probs[target_idx], 1e-15))
+        for idx, p in enumerate(probs):
+            target = 1.0 if idx == target_idx else 0.0
+            total_sq_err += (p - target) ** 2
+        top_prob = max(probs)
+        top_idx = probs.index(top_prob)
+        scaled.append({
+            "decision_probability": top_prob,
+            "is_correct": (top_idx == target_idx)
+        })
+        valid_count += 1
+    if valid_count == 0:
+        return 0.0, 0.0, 0.0
+    nll = total_nll / valid_count
+    brier = total_sq_err / valid_count
+    ece, _, _ = compute_ece_and_bins(scaled)
+    return nll, brier, ece
+
 def analyze_run(data: Dict[str, Any], filepath: str) -> Dict[str, Any]:
     cfg = data.get("config", {})
     summary = data.get("summary", {})
@@ -143,11 +267,15 @@ def analyze_run(data: Dict[str, Any], filepath: str) -> Dict[str, Any]:
             cat_stats[cat]["correct"] += 1
         cat_stats[cat]["conf_sum"] += float(r["decision_probability"])
         cat_stats[cat]["ent_sum"] += float(r["normalized_entropy"])
+
+    temp_softcapped = optimize_temperature(results, use_softcapped=True)
+    temp_raw = optimize_temperature(results, use_softcapped=False)
         
     return {
         "file": filepath,
         "config": cfg,
         "summary": summary,
+        "raw_results": results,
         "results_count": len(results),
         "accuracy": summary.get("accuracy", 0.0) * 100.0 if "accuracy" in summary else (sum(1 for r in results if r["is_correct"]) / len(results) * 100.0),
         "ece": ece,
@@ -160,7 +288,9 @@ def analyze_run(data: Dict[str, Any], filepath: str) -> Dict[str, Any]:
         "step_dist": summary.get("step_distribution", {}),
         "bin_stats": bin_stats,
         "selective": selective,
-        "cat_stats": cat_stats
+        "cat_stats": cat_stats,
+        "temp_softcapped": temp_softcapped,
+        "temp_raw": temp_raw,
     }
 
 def print_single_report(analysis: Dict[str, Any]):
@@ -213,32 +343,94 @@ def print_single_report(analysis: Dict[str, Any]):
         m_conf = cs["conf_sum"] / cs["total"] if cs["total"] > 0 else 0.0
         m_ent = cs["ent_sum"] / cs["total"] if cs["total"] > 0 else 0.0
         print(f"| {cat:<24} | {cs['total']:>5} | {acc:>11.2f}% | {m_conf:>9.4f} | {m_ent:>11.4f} |")
+
+    if analysis.get("temp_softcapped"):
+        ts = analysis["temp_softcapped"]
+        print("\n--- Temperature Scaling Optimization (Post-Hoc Calibration) ---")
+        print(f"Optimal Temperature (Softcapped): T = {ts['optimal_temperature']:.3f}")
+        print(f"  NLL:   {ts['base_nll']:.4f} -> {ts['calibrated_nll']:.4f} (delta = {ts['calibrated_nll'] - ts['base_nll']:+.4f})")
+        print(f"  Brier: {ts['base_brier']:.4f} -> {ts['calibrated_brier']:.4f} (delta = {ts['calibrated_brier'] - ts['base_brier']:+.4f})")
+        print(f"  ECE:   {ts['base_ece']:.4f} -> {ts['calibrated_ece']:.4f} (delta = {ts['calibrated_ece'] - ts['base_ece']:+.4f})")
+        print(f"  MCE:   {ts['base_mce']:.4f} -> {ts['calibrated_mce']:.4f} (delta = {ts['calibrated_mce'] - ts['base_mce']:+.4f})")
+    if analysis.get("temp_raw"):
+        tr = analysis["temp_raw"]
+        print(f"\nOptimal Temperature (Raw Logits):  T = {tr['optimal_temperature']:.3f}")
+        print(f"  NLL:   {tr['base_nll']:.4f} -> {tr['calibrated_nll']:.4f} (delta = {tr['calibrated_nll'] - tr['base_nll']:+.4f})")
+        print(f"  Brier: {tr['base_brier']:.4f} -> {tr['calibrated_brier']:.4f} (delta = {tr['calibrated_brier'] - tr['base_brier']:+.4f})")
+        print(f"  ECE:   {tr['base_ece']:.4f} -> {tr['calibrated_ece']:.4f} (delta = {tr['calibrated_ece'] - tr['base_ece']:+.4f})")
+        print(f"  MCE:   {tr['base_mce']:.4f} -> {tr['calibrated_mce']:.4f} (delta = {tr['calibrated_mce'] - tr['base_mce']:+.4f})")
+
     print("=" * 80 + "\n")
 
 def print_comparison_table(analyses: List[Dict[str, Any]]):
-    print("\n" + "=" * 90)
-    print(" Comparative Step Dynamics Evaluation Matrix")
-    print("=" * 90)
-    print("| Run Name / Config | Mode | Steps | Acc (%) | ECE (Gap) | Brier | NLL   | Mean Latency | Multi-Step Rate |")
-    print("|:-------------------|:-----|:-----:|:-------:|:---------:|:-----:|:-----:|:------------:|:---------------:|")
+    print("\n" + "=" * 105)
+    print(" Comparative Step Dynamics & Calibration Matrix")
+    print("=" * 105)
+    print("| Run Name / Config | Mode | Steps | Acc (%) | ECE (Base) | ECE (Calib) | T_opt | Brier | NLL   | Latency |")
+    print("|:-------------------|:-----|:-----:|:-------:|:----------:|:-----------:|:-----:|:-----:|:-----:|:-------:|")
     for a in analyses:
         cfg = a["config"]
         name = Path(a["file"]).stem
-        mode = f"step_cap={cfg.get('step_cap', 1)}, tau={cfg.get('entropy_threshold', 'none')}"
+        mode = f"step={cfg.get('step_cap', 1)}, tau={cfg.get('entropy_threshold', 'none')}"
         steps = f"T={cfg.get('step_cap', 1)}"
         acc = f"{a['accuracy']:.2f}%"
-        ece = f"{a['ece']:.4f}"
+        ece_base = f"{a['ece']:.4f}"
+        ts = a.get("temp_softcapped", {})
+        ece_calib = f"{ts.get('calibrated_ece', 0.0):.4f}" if ts else "N/A"
+        t_opt = f"{ts.get('optimal_temperature', 1.0):.2f}" if ts else "N/A"
         brier = f"{a['brier']:.4f}"
         nll = f"{a['nll']:.4f}"
         lat = f"{a['mean_latency']:.1f}ms"
         
-        # Multi-step rate: fraction that needed extra steps (steps_executed > 1)
-        s_dist = a.get("step_dist", {})
-        t2 = s_dist.get("step_2", 0) + s_dist.get("step_3", 0) + s_dist.get("step_4", 0)
-        multi_step_rate = f"{t2}/{a['results_count']} ({t2/a['results_count']*100:.1f}%)" if a['results_count'] > 0 else "N/A"
-        
-        print(f"| {name:<18} | {mode:<20} | {steps:<5} | {acc:>7} | {ece:>9} | {brier:>5} | {nll:>5} | {lat:>12} | {multi_step_rate:>15} |")
-    print("=" * 90 + "\n")
+        print(f"| {name:<18} | {mode:<18} | {steps:<5} | {acc:>7} | {ece_base:>10} | {ece_calib:>11} | {t_opt:>5} | {brier:>5} | {nll:>5} | {lat:>7} |")
+    print("=" * 105 + "\n")
+
+def print_cross_calibration_matrix(analyses: List[Dict[str, Any]], use_softcapped: bool = True):
+    key = "temp_softcapped" if use_softcapped else "temp_raw"
+    valid = [a for a in analyses if "raw_results" in a and a.get(key)]
+    if len(valid) < 2:
+        return
+
+    logit_label = "Softcapped" if use_softcapped else "Raw Logits"
+    print("\n" + "=" * 120)
+    print(f" Temperature Cross-Calibration Transfer Matrix ({logit_label})")
+    print(" Format in cells: ECE (%) / NLL (lower is better; * indicates target evaluated at its own T_opt)")
+    print("=" * 120)
+
+    # Column names
+    col_headers = []
+    for a in valid:
+        short_stem = Path(a["file"]).stem.replace("results_", "").replace("_phase18", "")
+        t_opt = a[key]["optimal_temperature"]
+        col_headers.append((short_stem, t_opt))
+
+    header_line = f"| {'Target Run':<22} | {'Base (T=1.00)':<18} |"
+    sep_line = f"|:{'-'*22}-|:{'-'*18}-|"
+    for short_stem, t_opt in col_headers:
+        hdr = f"{short_stem} (T={t_opt:.2f})"
+        header_line += f" {hdr:<20} |"
+        sep_line += f":{'-'*20}-|"
+    print(header_line)
+    print(sep_line)
+
+    for target in valid:
+        tgt_name = Path(target["file"]).stem.replace("results_", "").replace("_phase18", "")
+        tgt_raw = target["raw_results"]
+
+        base_nll, base_brier, base_ece = evaluate_dataset_at_temperature(tgt_raw, 1.0, use_softcapped=use_softcapped)
+        base_cell = f"{base_ece*100:>5.2f}% / {base_nll:.3f}"
+        row = f"| {tgt_name:<22} | {base_cell:<18} |"
+
+        for src in valid:
+            src_t = src[key]["optimal_temperature"]
+            is_self = (src["file"] == target["file"])
+            marker = "*" if is_self else " "
+            s_nll, s_brier, s_ece = evaluate_dataset_at_temperature(tgt_raw, src_t, use_softcapped=use_softcapped)
+            cell = f"{s_ece*100:>5.2f}% / {s_nll:.3f}{marker}"
+            row += f" {cell:<20} |"
+        print(row)
+
+    print("=" * 120 + "\n")
 
 def main():
     if len(sys.argv) < 2:
@@ -254,6 +446,8 @@ def main():
         
     if len(analyses) > 1:
         print_comparison_table(analyses)
+        print_cross_calibration_matrix(analyses, use_softcapped=True)
+        print_cross_calibration_matrix(analyses, use_softcapped=False)
 
 if __name__ == "__main__":
     main()

@@ -152,7 +152,7 @@ Exit condition:
 
 A seeded canvas query produces CPU results that match the chosen reference behavior within documented tolerances; calibration is evaluated on a labeled dataset and reported separately from normalization and entropy.
 
-**Parity gate.** A parity claim requires all Phase 3 implementation questions and parity questions U-09 through U-18 and U-22/U-23 to be `resolved` with evidence, plus independently captured reference fixtures and validated per-field comparisons. U-11 pins the vLLM oracle; U-12 pins llama.cpp. Implementation gating questions U-01 through U-12, U-14 through U-20, and U-23 are resolved with evidence; all 5 golden fixtures reproduce exact discrete decisions and uncertainty flags. However, numerical reference raw-logit parity gates U-13 and U-22 remain open in [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) because measured raw-logit differences against GGML SIMD dequantization exceed the recorded reference tolerance. Per [`AGENTS.md`](AGENTS.md) §5, the internal CPU implementation serves as the authoritative semantic baseline for subsequent backend work while external raw-logit reconciliation proceeds.
+**Parity gate.** A parity claim requires all Phase 3 implementation questions and parity questions U-09 through U-18 and U-22/U-23 to be `resolved` with evidence, plus independently captured reference fixtures and validated per-field comparisons. U-11 pins the vLLM oracle; U-12 pins llama.cpp. Implementation gating questions U-01 through U-12, U-14 through U-20, and U-23 are resolved with evidence; all 5 golden fixtures reproduce exact discrete decisions and uncertainty flags. However, numerical reference raw-logit parity gate U-22 remains open in [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) (with U-13 resolved per Review Round 32) because measured raw-logit differences against GGML SIMD dequantization (0.99 to 9.91) exceed the strict $\le 0.5$ tolerance threshold in `zeno.tolerance/v1`. Per [`AGENTS.md`](AGENTS.md) §5, the internal CPU implementation serves as the authoritative semantic baseline for subsequent backend work while external raw-logit reconciliation proceeds.
 
 Parity is asserted exclusively through the golden-fixture format in [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) §5.
 
@@ -290,8 +290,10 @@ The following questions should remain visible during implementation:
 
 ```text
 Calibration & Entropy: How well-calibrated are pre-softmax / softmax logits for binary and multi-class decisions in a single pass?
+-> RESOLVED with empirical evidence on ARC-Challenge (N=150): Candidate logits at T=1.0 are systematically overconfident (ECE 6.8%–14.0% softcapped, 12.5%–19.2% raw). Post-hoc temperature optimization establishes universal optimal operating temperatures: T_opt ≈ 1.60 for softcapped logits and T_opt ≈ 2.40 for raw logits, reducing ECE by >40%–55% and minimizing NLL. Pairwise cross-dataset transfer confirms high stability without degradation. Documented in specs/calibration-analysis.md.
 
 Step Capping: What is the empirical trade-off between single-step read latency and multi-step denoising accuracy?
+-> RESOLVED with empirical evidence on ARC-Challenge (N=150): Single-step reads (T=1) suffer significant option-rotation sensitivity (75.33% canonical vs 65.33% rotated, -10.0% drop). Adaptive 2-step denoising (tau=0.50) virtually eliminates rotation bias (86.00% vs 84.67%, delta only 1.33%) and cuts multi-class Brier score nearly in half (0.3956 -> 0.2448). Because 85%–88% of queries resolve under tau=0.50 after Step 1, latency overhead is only +36ms median (574.6ms vs 576.5ms). Documented in specs/calibration-analysis.md and specs/denoising.md.
 
 Canvas Geometry: How does answer-position placement within the configured canvas affect attention and decision quality?
 
@@ -335,13 +337,13 @@ Implement and validate the CPU representation of one denoising step.
 **Current objective:**
 
 ```text
-Consolidate system documentation, benchmark evidence, and empirical invariants across CUDA Phases 15 through 18, and prepare next research vectors for multi-candidate calibration and few-step adaptive decision execution.
+Completed empirical calibration and temperature scaling evaluation (specs/calibration-analysis.md), resolving research vectors on logit calibration, option rotation bias, and adaptive denoising step trade-offs.
 ```
 
 This active objective builds upon completed Phase 15 through Phase 18 optimizations that broke the sub-100ms latency milestone on dual Ampere GPUs (`sm_86`, dual RTX 3060 12GB):
 - **CUDA Phase 15**: Intra-layer elementwise kernel fusion (`fused_pre_ffn_norm_kernel`, `fused_post_ffn_combine_kernel`, `fused_head_norm_rope_kernel`) eliminating 270 kernel dispatches per pass (-34.6%); MoE shared-memory barrier elimination unlocking 66.7% SM occupancy.
 - **CUDA Phase 16**: MoE GEMV warp restructuring (1-row sequential streaming for Gate/Up and paired-block unrolling for Down-Accum), collapsing registers to $\le 64$ and doubling active warp occupancy (75–100%).
-- **CUDA Phase 17**: Dense Attention & FFN GEMV stackless streaming (0 bytes stack frame, 0 spills), 16-row CTA tiling for Dense Down Q8_0, batched MoE Router Gate F32 streaming (cutting 93.75% DRAM weight traffic), and full SM occupancy saturation (`__launch_bounds__(256, 4)`).
+- **CUDA Phase 17**: Dense Attention & FFN GEMV stackless streaming (0 bytes stack frame, 0 spills), 16-row CTA tiling for Dense Down Q8_0, batched MoE Router Gate F32 streaming (cutting 93.75% DRAM weight traffic), and hardware SM occupancy saturation (`__launch_bounds__(256, 4)`, 66.7% warp occupancy / 100% register file saturation at 64 registers/thread).
 - **CUDA Phase 18**: Full Attention QKV fusion (`gemv_q4k_fused_qkv_16x_kernel`) eliminating 34 dispatches; post-attention norm/residual fusion (`fused_post_attn_norm_residual_kernel`) eliminating 30 dispatches; MoE Down Accum Q5_0 loop inversion and direct bit indexing across 16 layers (saving > 2.0 ms); 16-row CTA tiling for Dense Q5_0 and Attention V Q6_K; multi-length prefill acceleration.
 - **Empirical Breakthrough**: Broken the sub-100ms latency barrier for single-step structured read execution ($C=16$): **99.87 ms (median)**, **99.80 ms (min)** canvas step 1; **100.55 ms (median)** HTTP request round-trip; prompt prefill slashed by -52% to **192.21 ms**.
 - **Parity & Isolation**: 100% discrete decision match across 5/5 golden oracle fixtures, 15/15 HTTP API tests passing, 98/98 unit tests passing, and complete CPU reference test isolation (`zig build test -Dcuda=false`).

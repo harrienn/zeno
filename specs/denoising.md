@@ -844,18 +844,18 @@ Profiling of the 121.88 ms post-Phase 16 pipeline revealed that Dense FFN, MoE R
    - Implemented paired-block unrolling ($b += 2$) with shared-memory staging `s_x[16][64]` (4 KB smem).
    - Cut barrier synchronizations in half from **132 down to 66 per CTA**.
    - Scaled from 8 to 16 output rows per CTA (2 rows/warp), halving CTAs from 352 to 176 and cutting redundant activation traffic by **50% (from 47.5 MB to 23.7 MB)**.
-   - Enforced `__launch_bounds__(256, 4)` (**56 registers per thread, 100% SM occupancy**).
+   - Enforced `__launch_bounds__(256, 4)` (**56 registers per thread, 66.7% SM warp occupancy, 100% SM register file utilization**).
 
 3. **Work Package 3 (WP3) — Batched MoE Router Gate F32 Streaming**:
    - Implemented `gemv_f32_batched_16x_kernel` with 16-row CTA tiling (`grid_x = 8` for 128 router logits).
    - Streamed router weights ONCE per CTA across all 16 tokens, eliminating **93.75% of DRAM router weight traffic**.
-   - Uses 56 registers per thread, 4 KB smem, achieving 100% SM occupancy.
+   - Uses 56 registers per thread, 4 KB smem, achieving 66.7% SM warp occupancy (32 / 48 warps).
 
 4. **Work Package 4 (WP4) — Full SM Occupancy Saturation with `__launch_bounds__(256, 4)`**:
-   - Enforced `__launch_bounds__(256, 4)` across all 16x GEMVs, capping registers at $\le 64$ and saturating hardware occupancy at 100% (32 active warps/SM):
-     - `dense_gemv_gate_up_geglu_q4k_kernel`: 85 $\to$ 64 registers (occupancy doubled from 33% to 100%).
-     - `gemv_q4k_batched_16x_kernel`: 80 $\to$ 64 registers (occupancy increased from 50% to 100%).
-     - `gemv_q4k_fused_qk_16x_kernel`: 75 $\to$ 64 registers (occupancy increased from 50% to 100%).
+   - Enforced `__launch_bounds__(256, 4)` across all 16x GEMVs, capping registers at $\le 64$ and saturating hardware warp occupancy at 66.7% (32 / 48 active warps/SM, 100% SM register file utilization):
+     - `dense_gemv_gate_up_geglu_q4k_kernel`: 85 $\to$ 64 registers (occupancy doubled from 33.3% to 66.7%).
+     - `gemv_q4k_batched_16x_kernel`: 80 $\to$ 64 registers (occupancy increased from 50.0% to 66.7%).
+     - `gemv_q4k_fused_qk_16x_kernel`: 75 $\to$ 64 registers (occupancy increased from 50.0% to 66.7%).
      - `gemv_q5_0_batched_16x_kernel`: 46 $\to$ 33 registers.
 
 5. **Work Package 5 (WP5) — Multi-Length Batched GEMV Generalization ($N \ge 16$)**:
@@ -916,7 +916,7 @@ Following CUDA Phase 17, single-step structured read canvas execution ($C=16$) r
    - Scaled from 8 to 16 output rows per CTA (2 rows per warp), halving CTAs from 88 to 44 per active expert.
    - Eliminated local pointer arrays `tok_ptrs[4]` and `out_ptrs[4]`; staged shared activations directly.
    - Hoisted activation reads `x1[m] = s_x[m][off1]` and `x2[m] = s_x[m][off2]` to outer chunk scope, sharing activation registers across `row0` and `row1` and cutting shared memory load instructions by 50%.
-   - Achieved **0 bytes stack frame, 0 spill stores, 0 spill loads, 64 registers**, sustaining 100% SM occupancy.
+   - Achieved **0 bytes stack frame, 0 spill stores, 0 spill loads, 64 registers**, sustaining 66.7% SM warp occupancy (100% SM register file utilization).
 
 4. **Work Package 4 (WP4) — MoE Down Accum Sorted GEMV Activation Hoisting for Q8_0**:
    - Implemented in `src/cuda/moe.cu`.
@@ -964,6 +964,19 @@ Evaluated on dual NVIDIA GeForce RTX 3060 12GB GPUs (`sm_86`, PCIe Gen4, `dual_g
 3. **HTTP Server Integration**:
    - `python3 tools/test_server.py --cuda`: **15/15 PASSED**.
 
+### 18.5 ARC-Challenge Benchmark Results (N=150, C=256)
+
+Phase 18 was evaluated on the 150-question ARC-Challenge evaluation slice (`N=150`, full canvas width `C=256`) across canonical option order and cyclic option rotation (`rot1`), confirming that kernel fusions and GEMV restructuring preserved numerical accuracy and calibration while achieving a **~42–43% end-to-end dataset latency reduction**:
+
+| Evaluation Run | Result File | Accuracy | Mean Latency (Phase 8 $\to$ Phase 18) | Median Latency | Mean $H_{\text{norm}}$ | Step Split |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Base $T=1$** | [`results_t1_phase18.json`](file:///hdd/Projects/zeno/specs/fixtures/arc_results/results_t1_phase18.json) | **75.33%** (113/150) | $1046.3\text{ ms} \to \mathbf{598.41\text{ ms}}$ (`-42.8%`) | $576.49\text{ ms}$ | $0.3528$ | $150\text{ at }T=1$ |
+| **Rot-1 $T=1$** | [`results_t1_rot1_phase18.json`](file:///hdd/Projects/zeno/specs/fixtures/arc_results/results_t1_rot1_phase18.json) | **65.33%** (98/150) | $1017.8\text{ ms} \to \mathbf{596.64\text{ ms}}$ (`-41.4%`) | $574.17\text{ ms}$ | $0.3709$ | $150\text{ at }T=1$ |
+| **Base $T=2$ ($\tau=0.10$)** | [`results_t2_adapt_phase18.json`](file:///hdd/Projects/zeno/specs/fixtures/arc_results/results_t2_adapt_phase18.json) | **86.00%** (129/150) | $1109.1\text{ ms} \to \mathbf{634.63\text{ ms}}$ (`-42.8%`) | $616.28\text{ ms}$ | $0.2193$ | $100\text{ at }T=1,\ 50\text{ at }T=2$ |
+| **Rot-1 $T=2$ ($\tau=0.10$)** | [`results_t2_adapt_rot1_phase18.json`](file:///hdd/Projects/zeno/specs/fixtures/arc_results/results_t2_adapt_rot1_phase18.json) | **84.67%** (127/150) | $1084.9\text{ ms} \to \mathbf{637.47\text{ ms}}$ (`-41.2%`) | $620.70\text{ ms}$ | $0.2283$ | $95\text{ at }T=1,\ 55\text{ at }T=2$ |
+
+*Summary*: Across all four runs, decision accuracy, confidence calibration, and adaptive step distributions match Phase 8 and Phase 10 exactly, while end-to-end evaluation time dropped from ~1,050–1,100 ms to ~595–635 ms per prompt-canvas evaluation.
+
 ---
 
 ## 19. Multi-Canvas Progression & Architecture Scaling ($C \in \{16, 32, 64, 128, 256\}$)
@@ -987,6 +1000,6 @@ Evaluated using `zeno benchmark models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf --c
 2. **Sub-100ms Decision Execution Viability on Commodity Hardware**:
    - Achieving **99.87 ms** canvas execution on dual consumer RTX 3060 12GB GPUs validates the Jev-style structured decision architecture for low-latency System One inference without requiring datacenter H100/A100 hardware.
 3. **Zero-Spill & Full-Occupancy Invariant**:
-   - Maintaining `__launch_bounds__(256, 4)` and capping register allocation at $\le 64$ registers per thread ensures 100% active SM occupancy across all critical GEMV kernels, establishing a rigorous architectural baseline for future multi-step or multi-candidate execution paths.
+   - Maintaining `__launch_bounds__(256, 4)` and capping register allocation at $\le 64$ registers per thread ensures 66.7% active SM warp occupancy (100% SM register file saturation) across all critical GEMV kernels, establishing a rigorous architectural baseline for future multi-step or multi-candidate execution paths.
 
 

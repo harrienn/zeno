@@ -519,16 +519,12 @@ pub const CudaDeviceWorkspace = struct {
     top_indices: DeviceBuffer(i32),
     top_weights: DeviceBuffer(f32),
     moe_in: DeviceBuffer(f32),
-    exp_gate_up_buf: DeviceBuffer(f32),
     exp_act_buf: DeviceBuffer(f32),
     moe_accum: DeviceBuffer(f32),
     expert_counts: DeviceBuffer(i32),
     expert_offsets: DeviceBuffer(i32),
     sorted_instances: DeviceBuffer(i32),
     instance_to_sorted: DeviceBuffer(i32),
-    h2: DeviceBuffer(f32),
-    ffn_comb: DeviceBuffer(f32),
-    post_ffn: DeviceBuffer(f32),
 
     // Prompt KV Cache buffers (Phase 7B)
     prompt_k_cache: DeviceBuffer(f32),
@@ -598,8 +594,6 @@ pub const CudaDeviceWorkspace = struct {
         errdefer top_weights.deinit();
         var moe_in = try DeviceBuffer(f32).init(device_id, emb_size);
         errdefer moe_in.deinit();
-        var exp_gate_up_buf = try DeviceBuffer(f32).init(device_id, max_seq_len * 8 * 1408);
-        errdefer exp_gate_up_buf.deinit();
         var exp_act_buf = try DeviceBuffer(f32).init(device_id, max_seq_len * 8 * 704);
         errdefer exp_act_buf.deinit();
         var moe_accum = try DeviceBuffer(f32).init(device_id, emb_size);
@@ -612,12 +606,6 @@ pub const CudaDeviceWorkspace = struct {
         errdefer sorted_instances.deinit();
         var instance_to_sorted = try DeviceBuffer(i32).init(device_id, max_seq_len * 8);
         errdefer instance_to_sorted.deinit();
-        var h2 = try DeviceBuffer(f32).init(device_id, emb_size);
-        errdefer h2.deinit();
-        var ffn_comb = try DeviceBuffer(f32).init(device_id, emb_size);
-        errdefer ffn_comb.deinit();
-        var post_ffn = try DeviceBuffer(f32).init(device_id, emb_size);
-        errdefer post_ffn.deinit();
         var prompt_k_cache = try DeviceBuffer(f32).init(device_id, cache_total_floats);
         errdefer prompt_k_cache.deinit();
         var prompt_v_cache = try DeviceBuffer(f32).init(device_id, cache_total_floats);
@@ -657,16 +645,12 @@ pub const CudaDeviceWorkspace = struct {
             .top_indices = top_indices,
             .top_weights = top_weights,
             .moe_in = moe_in,
-            .exp_gate_up_buf = exp_gate_up_buf,
             .exp_act_buf = exp_act_buf,
             .moe_accum = moe_accum,
             .expert_counts = expert_counts,
             .expert_offsets = expert_offsets,
             .sorted_instances = sorted_instances,
             .instance_to_sorted = instance_to_sorted,
-            .h2 = h2,
-            .ffn_comb = ffn_comb,
-            .post_ffn = post_ffn,
             .prompt_k_cache = prompt_k_cache,
             .prompt_v_cache = prompt_v_cache,
             .norm_hidden = norm_hidden,
@@ -684,16 +668,12 @@ pub const CudaDeviceWorkspace = struct {
         self.norm_hidden.deinit();
         self.prompt_v_cache.deinit();
         self.prompt_k_cache.deinit();
-        self.post_ffn.deinit();
-        self.ffn_comb.deinit();
-        self.h2.deinit();
         self.instance_to_sorted.deinit();
         self.sorted_instances.deinit();
         self.expert_offsets.deinit();
         self.expert_counts.deinit();
         self.moe_accum.deinit();
         self.exp_act_buf.deinit();
-        self.exp_gate_up_buf.deinit();
         self.moe_in.deinit();
         self.top_weights.deinit();
         self.top_indices.deinit();
@@ -732,15 +712,14 @@ pub const CudaDeviceWorkspace = struct {
         const d_emb = ModelConfig.embedding_dim;
         const q_dim = infer.max_q_dim;
         const k_dim = infer.max_k_dim;
-        return (max_seq_len * d_emb * @sizeOf(f32) * 13) + // emb_buf_0, emb_buf_1, norm_x, attn_out, dense_in, dense_out, h1, r_in, moe_in, moe_accum, h2, ffn_comb, post_ffn
+        return (max_seq_len * d_emb * @sizeOf(f32) * 10) + // emb_buf_0, emb_buf_1, norm_x, attn_out, dense_in, dense_out, h1, r_in, moe_in, moe_accum (h2, ffn_comb, post_ffn eliminated in Phase 15 WP2)
             (max_seq_len * q_dim * @sizeOf(f32) * 2) + // q_buf, head_out
             (max_seq_len * k_dim * @sizeOf(f32) * 2) + // k_buf, v_buf
             (max_seq_len * 2112 * @sizeOf(f32) * 3) + // gate_buf, up_buf, geglu_buf
             (max_seq_len * 128 * @sizeOf(f32)) + // router_logits
             (max_seq_len * 8 * @sizeOf(i32)) + // top_indices
             (max_seq_len * 8 * @sizeOf(f32)) + // top_weights
-            (max_seq_len * 8 * 1408 * @sizeOf(f32)) + // exp_gate_up_buf
-            (max_seq_len * 8 * 704 * @sizeOf(f32)) + // exp_act_buf
+            (max_seq_len * 8 * 704 * @sizeOf(f32)) + // exp_act_buf (exp_gate_up_buf eliminated in Phase 10 WP2)
             (128 * @sizeOf(i32) * 2) + // expert_counts, expert_offsets
             (max_seq_len * 8 * @sizeOf(i32) * 2) + // sorted_instances, instance_to_sorted
             (cache_total_floats * @sizeOf(f32) * 2) + // prompt_k_cache, prompt_v_cache (Phase 7B)
@@ -770,6 +749,7 @@ pub var quarantined_buffers: [MAX_QUARANTINED_BUFFERS]?QuarantinedPinnedBuffer =
 pub var quarantined_buffers_count: usize = 0;
 
 pub fn quarantinePinnedBuffer(buf: *cuda_mem.PinnedBuffer(f32)) void {
+    if (comptime !cuda.is_enabled) return;
     if (buf.ptr) |p| {
         var placed = false;
         for (&quarantined_buffers) |*slot| {
@@ -784,20 +764,54 @@ pub fn quarantinePinnedBuffer(buf: *cuda_mem.PinnedBuffer(f32)) void {
             }
         }
         if (!placed) {
-            // R42-02: Explicit fallback when all 16 slots are concurrently occupied.
-            // Log an error so the allocation failure is visible and never silently dropped.
-            std.log.err("quarantinePinnedBuffer: quarantine capacity ({d}) exhausted; unable to record buffer {*} (len={d})", .{
+            // Quarantine capacity reached. Attempt an opportunistic drain of quiescent slots.
+            drainQuarantinedPinnedBuffers() catch {};
+            for (&quarantined_buffers) |*slot| {
+                if (slot.* == null) {
+                    slot.* = .{
+                        .ptr = p,
+                        .len = buf.len,
+                    };
+                    quarantined_buffers_count += 1;
+                    placed = true;
+                    break;
+                }
+            }
+        }
+        if (!placed) {
+            // R43-01: Explicit teardown when quarantine capacity (16) remains exhausted even after drain.
+            // Synchronize all devices to establish whole-device quiescence and deinit directly
+            // so we never leak or drop ownership of host memory.
+            std.log.err("quarantinePinnedBuffer: quarantine capacity ({d}) exhausted; synchronizing devices for immediate safe teardown of buffer {*} (len={d})", .{
                 MAX_QUARANTINED_BUFFERS,
                 p,
                 buf.len,
             });
+            var dev_count: c_int = 0;
+            if (cuda.c.zeno_cuda_get_device_count(&dev_count) != cuda.c.ZENO_CUDA_SUCCESS or dev_count <= 0) {
+                dev_count = 1;
+            }
+            var d: c_int = 0;
+            var sync_ok = true;
+            while (d < dev_count) : (d += 1) {
+                if (cuda.c.zeno_cuda_device_synchronize(d) != cuda.c.ZENO_CUDA_SUCCESS) {
+                    sync_ok = false;
+                    break;
+                }
+            }
+            if (sync_ok) {
+                buf.deinit();
+                return;
+            } else {
+                std.log.err("quarantinePinnedBuffer: device synchronization failed during emergency teardown; buffer {*} retained to prevent memory corruption", .{p});
+            }
         }
         _ = buf.move();
     }
 }
 
 pub fn drainQuarantinedPinnedBuffers() !void {
-    if (!cuda.is_enabled) return;
+    if (comptime !cuda.is_enabled) return;
 
     if (inject_device_sync_failure) {
         std.log.warn("drainQuarantinedPinnedBuffers: injected device synchronization failure; retaining quarantine", .{});
@@ -883,9 +897,19 @@ pub const CudaWorkspace = struct {
         }
         if (err0) |e| return e;
         if (err1) |e| return e;
+
+        // R43-01: Streams successfully synchronized; opportunistically drain any quarantined pinned buffers
+        if (quarantined_buffers_count > 0) {
+            drainQuarantinedPinnedBuffers() catch {};
+        }
     }
 
     pub fn init(allocator: std.mem.Allocator, topology: ExecutionTopology, devices: [2]i32, max_seq_len: usize) !*CudaWorkspace {
+        // Clean slate: opportunistically drain any previously quarantined host pinned allocations.
+        if (quarantined_buffers_count > 0) {
+            drainQuarantinedPinnedBuffers() catch {};
+        }
+
         const ws_ptr = try allocator.create(CudaWorkspace);
         errdefer allocator.destroy(ws_ptr);
 
@@ -975,6 +999,9 @@ pub const CudaWorkspace = struct {
         // the pinned allocation (retain the allocation without calling cudaFreeHost).
         if (!sync_failed) {
             self.host_staging_pinned.deinit();
+            if (quarantined_buffers_count > 0) {
+                drainQuarantinedPinnedBuffers() catch {};
+            }
         } else {
             std.log.warn("CudaWorkspace.deinit: quarantining host_staging_pinned ({*} len={d}) due to failed stream synchronization", .{
                 self.host_staging_pinned.ptr,
@@ -1793,6 +1820,11 @@ pub fn executeStructuredReadCuda(
 ) !void {
     if (!is_enabled) return error.CudaDisabledAtBuild;
     if (answer_pos >= canvas_tokens.len) return error.InvalidParam;
+
+    // R43-01: Drain any previously quarantined pinned buffers once devices are confirmed quiescent
+    if (quarantined_buffers_count > 0) {
+        drainQuarantinedPinnedBuffers() catch {};
+    }
 
     const P = prompt_tokens.len;
     const C = canvas_tokens.len;
@@ -3003,10 +3035,11 @@ test "executeStructuredReadCuda full 30-layer forward pass on local model if pre
 
 test "CudaDeviceWorkspace: activationWorkspaceBytes matches audited footprint (R24-01, R26-01, R26-04)" {
     const bytes_512 = CudaDeviceWorkspace.activationWorkspaceBytes(512);
-    // Audited exact byte sum for N=512: 416,524,544 bytes (~416.52 MB, 397.23 MiB)
+    // Audited exact byte sum for N=512: 376,154,368 bytes (~376.15 MB, 358.73 MiB)
     // Includes SWA-sized prompt KV prefix cache (k_dim=2048) and Phase 9 self-conditioning scratch buffers.
-    // In Phase 13 WP1, intermediate exp_down_buf (46.14 MB for N=512) was eliminated via fused accumulation.
-    try std.testing.expectEqual(@as(usize, 416524544), bytes_512);
+    // In Phase 10 WP2 & Phase 15 WP2, dead scratch buffers exp_gate_up_buf (23.07 MB), h2 (5.77 MB),
+    // ffn_comb (5.77 MB), and post_ffn (5.77 MB) were eliminated via kernel fusions (-40.37 MB total).
+    try std.testing.expectEqual(@as(usize, 376154368), bytes_512);
 }
 
 test "CudaDeviceWorkspace: prompt KV cache stride isolates SWA layers with long prompt (R26-01)" {
@@ -3155,6 +3188,31 @@ test "R41-01: CudaWorkspace quarantine policy and failed stream synchronization"
         try std.testing.expect(quarantined_buffers[0] != null); // Reused slot 0!
         try drainQuarantinedPinnedBuffers();
         try std.testing.expectEqual(prev_quarantine_count, quarantined_buffers_count);
+    }
+
+    // Test 3: R43-01: Quarantine capacity overflow handling and automatic reclamation
+    {
+        try drainQuarantinedPinnedBuffers();
+        try std.testing.expectEqual(@as(usize, 0), quarantined_buffers_count);
+
+        // Fill all 16 slots
+        var mock_buffers: [MAX_QUARANTINED_BUFFERS]cuda_mem.PinnedBuffer(f32) = undefined;
+        for (0..MAX_QUARANTINED_BUFFERS) |i| {
+            mock_buffers[i] = try cuda_mem.PinnedBuffer(f32).init(64);
+            quarantinePinnedBuffer(&mock_buffers[i]);
+            try std.testing.expect(mock_buffers[i].ptr == null); // Pointer was moved into quarantine
+        }
+        try std.testing.expectEqual(@as(usize, MAX_QUARANTINED_BUFFERS), quarantined_buffers_count);
+
+        // Allocate a 17th pinned buffer: quarantine table is full
+        var buf17 = try cuda_mem.PinnedBuffer(f32).init(64);
+        // With devices quiescent, quarantinePinnedBuffer attempts opportunistic drain first or forces safe teardown
+        quarantinePinnedBuffer(&buf17);
+        try std.testing.expect(buf17.ptr == null); // buf17 safely handled without memory leak
+
+        // Final cleanup
+        try drainQuarantinedPinnedBuffers();
+        try std.testing.expectEqual(@as(usize, 0), quarantined_buffers_count);
     }
 }
 

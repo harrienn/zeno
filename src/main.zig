@@ -518,6 +518,7 @@ pub fn main(init: std.process.Init) !void {
         var canvas_override: ?usize = null;
         var step_cap: u32 = 1;
         var entropy_threshold: ?f32 = null;
+        var eval_temperature: f32 = 1.0;
         var out_json_path: ?[]const u8 = null;
         var use_cuda = false;
         var arg_i: usize = 4;
@@ -536,6 +537,23 @@ pub fn main(init: std.process.Init) !void {
                     try stdout_writer.flush();
                     return;
                 };
+            } else if (std.mem.eql(u8, args[arg_i], "--temperature")) {
+                if (arg_i + 1 >= args.len) {
+                    try stdout_writer.print("Error: --temperature requires a float argument\n", .{});
+                    try stdout_writer.flush();
+                    return;
+                }
+                arg_i += 1;
+                eval_temperature = std.fmt.parseFloat(f32, args[arg_i]) catch {
+                    try stdout_writer.print("Error: Invalid temperature '{s}'\n", .{args[arg_i]});
+                    try stdout_writer.flush();
+                    return;
+                };
+                if (!std.math.isFinite(eval_temperature) or eval_temperature <= 0.0) {
+                    try stdout_writer.print("Error: Temperature must be a positive finite float\n", .{});
+                    try stdout_writer.flush();
+                    return;
+                }
             } else if (std.mem.eql(u8, args[arg_i], "--threshold")) {
                 if (arg_i + 1 >= args.len) {
                     try stdout_writer.print("Error: --threshold requires a float argument\n", .{});
@@ -616,7 +634,7 @@ pub fn main(init: std.process.Init) !void {
                 .schema_type = parseSchemaType(first.schema_type) catch .boolean,
                 .candidates = warmup_cands,
                 .step_cap = step_cap,
-                .temperature = 1.0,
+                .temperature = eval_temperature,
                 .entropy_threshold = entropy_threshold,
                 .canvas_length = canvas_override,
             };
@@ -649,7 +667,7 @@ pub fn main(init: std.process.Init) !void {
                 .schema_type = schema_t,
                 .candidates = cands,
                 .step_cap = step_cap,
-                .temperature = 1.0,
+                .temperature = eval_temperature,
                 .entropy_threshold = entropy_threshold,
                 .canvas_length = canvas_override,
             };
@@ -783,6 +801,7 @@ pub fn main(init: std.process.Init) !void {
                 if (use_cuda) "cuda" else "cpu",
                 step_cap,
                 entropy_threshold,
+                eval_temperature,
                 eff_canvas,
                 results,
                 summary,
@@ -1045,7 +1064,7 @@ pub fn main(init: std.process.Init) !void {
         try stdout_writer.print("  zeno [info] <path/to/model.gguf>\n", .{});
         try stdout_writer.print("  zeno decide <path/to/model.gguf> \"<query>\" [--cuda] [--canvas <N>] [cand1] [cand2] ...\n", .{});
         try stdout_writer.print("  zeno decide-fixture <path/to/model.gguf> <fixture.json> [--cuda] [--canvas <N>] [out.json]\n", .{});
-        try stdout_writer.print("  zeno evaluate-dataset <path/to/model.gguf> <dataset.json> [--cuda] [--steps <N>] [--threshold <tau>] [--canvas <N>] [--out <results.json>]\n", .{});
+        try stdout_writer.print("  zeno evaluate-dataset <path/to/model.gguf> <dataset.json> [--cuda] [--steps <N>] [--threshold <tau>] [--temperature <T>] [--canvas <N>] [--out <results.json>]\n", .{});
         try stdout_writer.print("  zeno benchmark <path/to/model.gguf> [--cuda] [fixture.json]\n", .{});
         try stdout_writer.print("  zeno serve <path/to/model.gguf> [--cuda] [--host <ip>] [--port <port>]\n", .{});
         try stdout_writer.print("  zeno cuda-info\n", .{});
