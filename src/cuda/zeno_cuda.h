@@ -88,6 +88,17 @@ int zeno_cuda_rms_norm(
     int device_id,
     void *stream
 );
+int zeno_cuda_fused_post_attn_norm_residual(
+    const float *attn_out,
+    const float *post_attention_norm,
+    const float *residual,
+    float *out,
+    int num_rows,
+    int dim,
+    float eps,
+    int device_id,
+    void *stream
+);
 int zeno_cuda_geglu(
     const float *gate,
     const float *up,
@@ -152,6 +163,22 @@ int zeno_cuda_gemv_q4k_fused_qk(
     float *out_v,
     int q_dim,
     int k_dim,
+    int in_dim,
+    int batch_size,
+    int device_id,
+    void *stream
+);
+int zeno_cuda_gemv_q4k_fused_qkv(
+    const void *W_q,
+    const void *W_k,
+    const void *W_v,
+    const float *x,
+    float *out_q,
+    float *out_k,
+    float *out_v,
+    int q_dim,
+    int k_dim,
+    int v_dim,
     int in_dim,
     int batch_size,
     int device_id,

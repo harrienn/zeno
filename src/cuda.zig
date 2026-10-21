@@ -120,6 +120,17 @@ pub const c = if (is_enabled) struct {
         device_id: c_int,
         stream: ?*anyopaque,
     ) c_int;
+    pub extern "c" fn zeno_cuda_fused_post_attn_norm_residual(
+        attn_out: [*]const f32,
+        post_attention_norm: ?[*]const f32,
+        residual: ?[*]const f32,
+        out: [*]f32,
+        num_rows: c_int,
+        dim: c_int,
+        eps: f32,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
     pub extern "c" fn zeno_cuda_geglu(
         gate: [*]const f32,
         up: [*]const f32,
@@ -184,6 +195,22 @@ pub const c = if (is_enabled) struct {
         out_v: ?[*]f32,
         q_dim: c_int,
         k_dim: c_int,
+        in_dim: c_int,
+        batch_size: c_int,
+        device_id: c_int,
+        stream: ?*anyopaque,
+    ) c_int;
+    pub extern "c" fn zeno_cuda_gemv_q4k_fused_qkv(
+        W_q: *const anyopaque,
+        W_k: *const anyopaque,
+        W_v: ?*const anyopaque,
+        x: [*]const f32,
+        out_q: [*]f32,
+        out_k: [*]f32,
+        out_v: [*]f32,
+        q_dim: c_int,
+        k_dim: c_int,
+        v_dim: c_int,
         in_dim: c_int,
         batch_size: c_int,
         device_id: c_int,

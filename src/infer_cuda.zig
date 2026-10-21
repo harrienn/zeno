@@ -1020,22 +1020,39 @@ pub fn runLayerCuda(
     const k_slice = try ws.k_buf.slice().subslice(0, num_tokens * k_dim);
     const v_slice = try ws.v_buf.slice().subslice(0, num_tokens * k_dim);
 
-    if (layer.q_weight_type == GGML_TYPE_Q4_K and layer.k_weight_type == GGML_TYPE_Q4_K) {
+    if (layer.q_weight_type == GGML_TYPE_Q4_K and layer.k_weight_type == GGML_TYPE_Q4_K and (is_global or (layer.v_weight != null and layer.v_weight_type == GGML_TYPE_Q4_K))) {
+        const wv_slice = if (!is_global and layer.v_weight != null) layer.v_weight.?.slice() else null;
+        try cuda_mem.gemvQ4_K_FusedQKV(
+            layer.q_weight.slice(),
+            layer.k_weight.slice(),
+            wv_slice,
+            nx_slice,
+            q_slice,
+            k_slice,
+            v_slice,
+            q_dim,
+            k_dim,
+            k_dim,
+            ModelConfig.embedding_dim,
+            num_tokens,
+            stream,
+        );
+    } else if (layer.q_weight_type == GGML_TYPE_Q4_K and layer.k_weight_type == GGML_TYPE_Q4_K) {
         try cuda_mem.gemvQ4_K_FusedQK(
             layer.q_weight.slice(),
             layer.k_weight.slice(),
             nx_slice,
             q_slice,
             k_slice,
-            if (is_global) v_slice else null,
+            null,
             q_dim,
             k_dim,
             ModelConfig.embedding_dim,
             num_tokens,
             stream,
         );
-        if (!is_global) {
-            try gemvTensorCuda(layer.v_weight_type, layer.v_weight.?.slice(), nx_slice, v_slice, k_dim, ModelConfig.embedding_dim, num_tokens, stream);
+        if (layer.v_weight) |vw| {
+            try gemvTensorCuda(layer.v_weight_type, vw.slice(), nx_slice, v_slice, k_dim, ModelConfig.embedding_dim, num_tokens, stream);
         }
     } else {
         try gemvTensorCuda(layer.q_weight_type, layer.q_weight.slice(), nx_slice, q_slice, q_dim, ModelConfig.embedding_dim, num_tokens, stream);
@@ -1084,8 +1101,7 @@ pub fn runLayerCuda(
     // 6. Attention output projection & post norm & residual connection
     const a_out_slice = try ws.attn_out.slice().subslice(0, emb_elements);
     try gemvTensorCuda(layer.o_weight_type, layer.o_weight.slice(), head_out_slice, a_out_slice, ModelConfig.embedding_dim, q_dim, num_tokens, stream);
-    try cuda_mem.rmsNorm(a_out_slice, layer.post_attention_norm.slice(), a_out_slice, num_tokens, ModelConfig.embedding_dim, 1e-6, stream);
-    try cuda_mem.addResidual(a_out_slice, curr_slice, stream);
+    try cuda_mem.fusedPostAttnNormResidual(a_out_slice, layer.post_attention_norm.slice(), curr_slice, a_out_slice, num_tokens, ModelConfig.embedding_dim, 1e-6, stream);
 
     // x_mid is a_out_slice
     const x_mid = a_out_slice;
@@ -1247,22 +1263,39 @@ pub fn runLayerCanvasCuda(
     const k_slice = try ws.k_buf.slice().subslice(0, canvas_len * k_dim);
     const v_slice = try ws.v_buf.slice().subslice(0, canvas_len * k_dim);
 
-    if (layer.q_weight_type == GGML_TYPE_Q4_K and layer.k_weight_type == GGML_TYPE_Q4_K) {
+    if (layer.q_weight_type == GGML_TYPE_Q4_K and layer.k_weight_type == GGML_TYPE_Q4_K and (is_global or (layer.v_weight != null and layer.v_weight_type == GGML_TYPE_Q4_K))) {
+        const wv_slice = if (!is_global and layer.v_weight != null) layer.v_weight.?.slice() else null;
+        try cuda_mem.gemvQ4_K_FusedQKV(
+            layer.q_weight.slice(),
+            layer.k_weight.slice(),
+            wv_slice,
+            nx_slice,
+            q_slice,
+            k_slice,
+            v_slice,
+            q_dim,
+            k_dim,
+            k_dim,
+            ModelConfig.embedding_dim,
+            canvas_len,
+            stream,
+        );
+    } else if (layer.q_weight_type == GGML_TYPE_Q4_K and layer.k_weight_type == GGML_TYPE_Q4_K) {
         try cuda_mem.gemvQ4_K_FusedQK(
             layer.q_weight.slice(),
             layer.k_weight.slice(),
             nx_slice,
             q_slice,
             k_slice,
-            if (is_global) v_slice else null,
+            null,
             q_dim,
             k_dim,
             ModelConfig.embedding_dim,
             canvas_len,
             stream,
         );
-        if (!is_global) {
-            try gemvTensorCuda(layer.v_weight_type, layer.v_weight.?.slice(), nx_slice, v_slice, k_dim, ModelConfig.embedding_dim, canvas_len, stream);
+        if (layer.v_weight) |vw| {
+            try gemvTensorCuda(layer.v_weight_type, vw.slice(), nx_slice, v_slice, k_dim, ModelConfig.embedding_dim, canvas_len, stream);
         }
     } else {
         try gemvTensorCuda(layer.q_weight_type, layer.q_weight.slice(), nx_slice, q_slice, q_dim, ModelConfig.embedding_dim, canvas_len, stream);
@@ -1308,8 +1341,7 @@ pub fn runLayerCanvasCuda(
     // 6. Attention output projection & post norm & residual connection
     const a_out_slice = try ws.attn_out.slice().subslice(0, emb_elements);
     try gemvTensorCuda(layer.o_weight_type, layer.o_weight.slice(), head_out_slice, a_out_slice, ModelConfig.embedding_dim, q_dim, canvas_len, stream);
-    try cuda_mem.rmsNorm(a_out_slice, layer.post_attention_norm.slice(), a_out_slice, canvas_len, ModelConfig.embedding_dim, 1e-6, stream);
-    try cuda_mem.addResidual(a_out_slice, curr_slice, stream);
+    try cuda_mem.fusedPostAttnNormResidual(a_out_slice, layer.post_attention_norm.slice(), curr_slice, a_out_slice, canvas_len, ModelConfig.embedding_dim, 1e-6, stream);
 
     const x_mid = a_out_slice;
 
@@ -1810,7 +1842,6 @@ pub fn executeStructuredReadCuda(
 
         const d0_emb_slice = try ws.dev0.current_emb.slice().subslice(0, C * ModelConfig.embedding_dim);
         try d0_emb_slice.copyFromHost(host_emb);
-        try ws.dev0.stream.synchronize();
 
         // Phase 9: If self-conditioning is enabled (steps t >= 2), apply device-resident SC MLP at answer position
         if (candidate_probs) |sc_probs| {
@@ -2062,12 +2093,10 @@ pub fn executeStructuredReadCuda(
                 }
             }
 
-            try dev1.stream.synchronize();
-            try ws.dev0.stream.synchronize();
-
-            // Copy normalized hidden state to host
+            // Copy normalized hidden state to host asynchronously on dev1.stream, then wait for completion
             try dev1.norm_hidden.copyToHost(ws.host_norm_hidden);
             try dev1.stream.synchronize();
+            try ws.dev0.stream.synchronize();
         }
 
         // Project candidate logits on host using Q6_K dot products

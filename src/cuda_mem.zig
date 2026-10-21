@@ -532,6 +532,56 @@ pub fn rmsNorm(
     if (rc != 0) return cuda.mapCudaErrorCode(rc);
 }
 
+/// Fused Post-Attention RMSNorm + Residual addition:
+/// out[row, i] = RMSNorm(attn_out[row, i], post_attention_norm[i]) + residual[row, i]
+pub fn fusedPostAttnNormResidual(
+    attn_out: DeviceSlice(f32),
+    post_attention_norm: ?DeviceSlice(f32),
+    residual: ?DeviceSlice(f32),
+    out: DeviceSlice(f32),
+    num_rows: usize,
+    dim: usize,
+    eps: f32,
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (num_rows > 65535 or dim < 1 or dim > 8192 or eps <= 0.0) return error.InvalidParam;
+    const total = std.math.mul(usize, num_rows, dim) catch return error.InvalidParam;
+    if (attn_out.len != total or out.len != total) return error.InvalidParam;
+    if (attn_out.device_id != out.device_id) return error.DeviceMismatch;
+    if (post_attention_norm) |w| {
+        if (w.len != dim) return error.InvalidParam;
+        if (w.device_id != attn_out.device_id) return error.DeviceMismatch;
+    }
+    if (residual) |r| {
+        if (r.len != total) return error.InvalidParam;
+        if (r.device_id != attn_out.device_id) return error.DeviceMismatch;
+    }
+    if (stream) |s| {
+        if (s.device_id != attn_out.device_id) return error.DeviceMismatch;
+    }
+    if (num_rows == 0) return;
+
+    const a_ptr = attn_out.ptr orelse return error.InvalidParam;
+    const out_ptr = out.ptr orelse return error.InvalidParam;
+    const w_ptr = if (post_attention_norm) |w| (w.ptr orelse return error.InvalidParam) else null;
+    const r_ptr = if (residual) |r| (r.ptr orelse return error.InvalidParam) else null;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_fused_post_attn_norm_residual(
+        a_ptr,
+        w_ptr,
+        r_ptr,
+        out_ptr,
+        @intCast(num_rows),
+        @intCast(dim),
+        eps,
+        attn_out.device_id,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
 /// Computes GeGLU activation branch:
 /// out[i] = gelu_tanh(gate[i]) * up[i]
 pub fn geglu(
@@ -839,6 +889,83 @@ pub fn gemvQ4_K_FusedQK(
         out_v_ptr,
         @intCast(q_dim),
         @intCast(k_dim),
+        @intCast(in_dim),
+        @intCast(batch_size),
+        w_q.device_id,
+        s_handle,
+    );
+    if (rc != 0) return cuda.mapCudaErrorCode(rc);
+}
+
+/// Computes out_q = W_q * x, out_k = W_k * x, and out_v = W_v * x in a single unified grid pass.
+/// If w_v is null, out_v receives the unnormalized K values directly from registers (for Global layers).
+pub fn gemvQ4_K_FusedQKV(
+    w_q: DeviceSlice(u8),
+    w_k: DeviceSlice(u8),
+    w_v: ?DeviceSlice(u8),
+    x: DeviceSlice(f32),
+    out_q: DeviceSlice(f32),
+    out_k: DeviceSlice(f32),
+    out_v: DeviceSlice(f32),
+    q_dim: usize,
+    k_dim: usize,
+    v_dim: usize,
+    in_dim: usize,
+    batch_size: usize,
+    stream: ?*const CudaStream,
+) cuda.CudaError!void {
+    if (!cuda.is_enabled) return error.CudaDisabledAtBuild;
+    if (q_dim == 0 or k_dim == 0 or in_dim == 0 or batch_size == 0) return error.InvalidParam;
+    if (in_dim % quant.QK_K != 0) return error.InvalidParam;
+    if (q_dim > std.math.maxInt(c_int) or k_dim > std.math.maxInt(c_int) or in_dim > std.math.maxInt(c_int) or batch_size > 65535) {
+        return error.InvalidParam;
+    }
+    if (w_v != null and (v_dim == 0 or v_dim > std.math.maxInt(c_int))) return error.InvalidParam;
+
+    const blocks_per_row = in_dim / quant.QK_K;
+    const bytes_per_row = blocks_per_row * @sizeOf(quant.BlockQ4_K);
+    const expected_wq_bytes = std.math.mul(usize, q_dim, bytes_per_row) catch return error.InvalidParam;
+    const expected_wk_bytes = std.math.mul(usize, k_dim, bytes_per_row) catch return error.InvalidParam;
+    const expected_x_len = std.math.mul(usize, batch_size, in_dim) catch return error.InvalidParam;
+    const expected_outq_len = std.math.mul(usize, batch_size, q_dim) catch return error.InvalidParam;
+    const expected_outk_len = std.math.mul(usize, batch_size, k_dim) catch return error.InvalidParam;
+    const expected_outv_len = std.math.mul(usize, batch_size, if (w_v != null) v_dim else k_dim) catch return error.InvalidParam;
+
+    if (w_q.len != expected_wq_bytes or w_k.len != expected_wk_bytes or x.len != expected_x_len or out_q.len != expected_outq_len or out_k.len != expected_outk_len or out_v.len != expected_outv_len) {
+        return error.InvalidParam;
+    }
+    if (w_q.device_id != w_k.device_id or w_q.device_id != x.device_id or w_q.device_id != out_q.device_id or w_q.device_id != out_k.device_id or w_q.device_id != out_v.device_id) {
+        return error.DeviceMismatch;
+    }
+    if (w_v) |wv| {
+        const expected_wv_bytes = std.math.mul(usize, v_dim, bytes_per_row) catch return error.InvalidParam;
+        if (wv.len != expected_wv_bytes) return error.InvalidParam;
+        if (wv.device_id != w_q.device_id) return error.DeviceMismatch;
+    }
+    if (stream) |s| {
+        if (s.device_id != w_q.device_id) return error.DeviceMismatch;
+    }
+
+    const w_q_ptr = w_q.ptr orelse return error.InvalidParam;
+    const w_k_ptr = w_k.ptr orelse return error.InvalidParam;
+    const w_v_ptr = if (w_v) |wv| (wv.ptr orelse return error.InvalidParam) else null;
+    const x_ptr = x.ptr orelse return error.InvalidParam;
+    const out_q_ptr = out_q.ptr orelse return error.InvalidParam;
+    const out_k_ptr = out_k.ptr orelse return error.InvalidParam;
+    const out_v_ptr = out_v.ptr orelse return error.InvalidParam;
+    const s_handle = if (stream) |s| s.handle else null;
+
+    const rc = cuda.c.zeno_cuda_gemv_q4k_fused_qkv(
+        w_q_ptr,
+        w_k_ptr,
+        w_v_ptr,
+        x_ptr,
+        out_q_ptr,
+        out_k_ptr,
+        out_v_ptr,
+        @intCast(q_dim),
+        @intCast(k_dim),
+        @intCast(v_dim),
         @intCast(in_dim),
         @intCast(batch_size),
         w_q.device_id,
@@ -4678,6 +4805,243 @@ test "CUDA gemvQ4_K_FusedQK numerical parity with CPU reference" {
             }
         }
         std.debug.print("[parity] gemvQ4_K_FusedQK (batch={d}): max_diff_q = {e:.4}, max_diff_k = {e:.4}\n", .{ batch_size, max_diff_q, max_diff_k });
+    }
+}
+
+test "CUDA Phase 18: gemvQ4_K_FusedQKV numerical parity with CPU reference" {
+    if (!cuda.is_enabled) return;
+    const dev = requireHardwareDevice() catch |err| switch (err) {
+        error.SkipZigTest => return,
+        else => return err,
+    };
+
+    const allocator = std.testing.allocator;
+    var prng = std.Random.DefaultPrng.init(0x181818);
+    const rand = prng.random();
+
+    const q_dim: usize = 32;
+    const k_dim: usize = 16;
+    const v_dim: usize = 16;
+    const in_dim: usize = 512;
+    const blocks_per_row = in_dim / quant.QK_K; // 2
+
+    const q_blocks = q_dim * blocks_per_row;
+    const host_wq = try allocator.alloc(quant.BlockQ4_K, q_blocks);
+    defer allocator.free(host_wq);
+    for (host_wq) |*blk| {
+        blk.d = @floatCast((rand.float(f32) * 0.3) + 0.1);
+        blk.dmin = @floatCast((rand.float(f32) * 0.15) + 0.05);
+        for (&blk.scales) |*sc| sc.* = rand.int(u8);
+        for (&blk.qs) |*q| q.* = rand.int(u8);
+    }
+
+    const k_blocks = k_dim * blocks_per_row;
+    const host_wk = try allocator.alloc(quant.BlockQ4_K, k_blocks);
+    defer allocator.free(host_wk);
+    for (host_wk) |*blk| {
+        blk.d = @floatCast((rand.float(f32) * 0.3) + 0.1);
+        blk.dmin = @floatCast((rand.float(f32) * 0.15) + 0.05);
+        for (&blk.scales) |*sc| sc.* = rand.int(u8);
+        for (&blk.qs) |*q| q.* = rand.int(u8);
+    }
+
+    const v_blocks = v_dim * blocks_per_row;
+    const host_wv = try allocator.alloc(quant.BlockQ4_K, v_blocks);
+    defer allocator.free(host_wv);
+    for (host_wv) |*blk| {
+        blk.d = @floatCast((rand.float(f32) * 0.3) + 0.1);
+        blk.dmin = @floatCast((rand.float(f32) * 0.15) + 0.05);
+        for (&blk.scales) |*sc| sc.* = rand.int(u8);
+        for (&blk.qs) |*q| q.* = rand.int(u8);
+    }
+
+    var d_wq = try DeviceBuffer(u8).init(dev, std.mem.sliceAsBytes(host_wq).len);
+    defer d_wq.deinit();
+    try d_wq.copyFromHost(std.mem.sliceAsBytes(host_wq));
+
+    var d_wk = try DeviceBuffer(u8).init(dev, std.mem.sliceAsBytes(host_wk).len);
+    defer d_wk.deinit();
+    try d_wk.copyFromHost(std.mem.sliceAsBytes(host_wk));
+
+    var d_wv = try DeviceBuffer(u8).init(dev, std.mem.sliceAsBytes(host_wv).len);
+    defer d_wv.deinit();
+    try d_wv.copyFromHost(std.mem.sliceAsBytes(host_wv));
+
+    const batch_size: usize = 16;
+    const host_x = try allocator.alloc(f32, batch_size * in_dim);
+    defer allocator.free(host_x);
+    for (host_x) |*x| x.* = (rand.float(f32) * 2.0) - 1.0;
+
+    var d_x = try DeviceBuffer(f32).init(dev, host_x.len);
+    defer d_x.deinit();
+    try d_x.copyFromHost(host_x);
+
+    var d_out_q = try DeviceBuffer(f32).init(dev, batch_size * q_dim);
+    defer d_out_q.deinit();
+    var d_out_k = try DeviceBuffer(f32).init(dev, batch_size * k_dim);
+    defer d_out_k.deinit();
+    var d_out_v = try DeviceBuffer(f32).init(dev, batch_size * v_dim);
+    defer d_out_v.deinit();
+
+    try gemvQ4_K_FusedQKV(
+        d_wq.slice(),
+        d_wk.slice(),
+        d_wv.slice(),
+        d_x.slice(),
+        d_out_q.slice(),
+        d_out_k.slice(),
+        d_out_v.slice(),
+        q_dim,
+        k_dim,
+        v_dim,
+        in_dim,
+        batch_size,
+        null,
+    );
+
+    const gpu_out_q = try allocator.alloc(f32, batch_size * q_dim);
+    defer allocator.free(gpu_out_q);
+    try d_out_q.copyToHost(gpu_out_q);
+
+    const gpu_out_k = try allocator.alloc(f32, batch_size * k_dim);
+    defer allocator.free(gpu_out_k);
+    try d_out_k.copyToHost(gpu_out_k);
+
+    const gpu_out_v = try allocator.alloc(f32, batch_size * v_dim);
+    defer allocator.free(gpu_out_v);
+    try d_out_v.copyToHost(gpu_out_v);
+
+    var max_diff_q: f32 = 0.0;
+    var max_diff_k: f32 = 0.0;
+    var max_diff_v: f32 = 0.0;
+
+    for (0..batch_size) |b| {
+        const x_sub = host_x[b * in_dim .. (b + 1) * in_dim];
+
+        var cpu_q: [32]f32 = undefined;
+        infer.gemvQ4_K(host_wq.ptr, x_sub, &cpu_q, q_dim, in_dim);
+        for (cpu_q, gpu_out_q[b * q_dim .. (b + 1) * q_dim]) |c, g| {
+            const diff = @abs(c - g);
+            if (diff > max_diff_q) max_diff_q = diff;
+            try std.testing.expect(diff <= 1e-3 + 1e-4 * @abs(c));
+        }
+
+        var cpu_k: [16]f32 = undefined;
+        infer.gemvQ4_K(host_wk.ptr, x_sub, &cpu_k, k_dim, in_dim);
+        for (cpu_k, gpu_out_k[b * k_dim .. (b + 1) * k_dim]) |c, g| {
+            const diff = @abs(c - g);
+            if (diff > max_diff_k) max_diff_k = diff;
+            try std.testing.expect(diff <= 1e-3 + 1e-4 * @abs(c));
+        }
+
+        var cpu_v: [16]f32 = undefined;
+        infer.gemvQ4_K(host_wv.ptr, x_sub, &cpu_v, v_dim, in_dim);
+        for (cpu_v, gpu_out_v[b * v_dim .. (b + 1) * v_dim]) |c, g| {
+            const diff = @abs(c - g);
+            if (diff > max_diff_v) max_diff_v = diff;
+            try std.testing.expect(diff <= 1e-3 + 1e-4 * @abs(c));
+        }
+    }
+    std.debug.print("[parity] gemvQ4_K_FusedQKV (batch={d}): max_diff_q = {e:.4}, max_diff_k = {e:.4}, max_diff_v = {e:.4}\n", .{ batch_size, max_diff_q, max_diff_k, max_diff_v });
+}
+
+test "CUDA Phase 18: fusedPostAttnNormResidual numerical parity with CPU reference" {
+    if (!cuda.is_enabled) return;
+    const dev = requireHardwareDevice() catch |err| switch (err) {
+        error.SkipZigTest => return,
+        else => return err,
+    };
+
+    const allocator = std.testing.allocator;
+    var prng = std.Random.DefaultPrng.init(0x181819);
+    const rand = prng.random();
+
+    const num_rows: usize = 16;
+    const dim: usize = 2816;
+    const total = num_rows * dim;
+
+    const host_a = try allocator.alloc(f32, total);
+    defer allocator.free(host_a);
+    const host_res = try allocator.alloc(f32, total);
+    defer allocator.free(host_res);
+    const host_norm = try allocator.alloc(f32, dim);
+    defer allocator.free(host_norm);
+
+    for (host_a) |*v| v.* = (rand.float(f32) * 2.0) - 1.0;
+    for (host_res) |*v| v.* = (rand.float(f32) * 2.0) - 1.0;
+    for (host_norm) |*v| v.* = (rand.float(f32) * 0.5) + 0.8;
+
+    // CPU reference computation
+    const cpu_ref = try allocator.alloc(f32, total);
+    defer allocator.free(cpu_ref);
+    for (0..num_rows) |r| {
+        const row_a = host_a[r * dim .. (r + 1) * dim];
+        const row_res = host_res[r * dim .. (r + 1) * dim];
+        const row_out = cpu_ref[r * dim .. (r + 1) * dim];
+
+        var sum_sq: f32 = 0.0;
+        for (row_a) |v| sum_sq += v * v;
+        const inv_rms = 1.0 / @sqrt((sum_sq / @as(f32, @floatFromInt(dim))) + 1e-6);
+
+        for (0..dim) |i| {
+            row_out[i] = (row_a[i] * inv_rms * host_norm[i]) + row_res[i];
+        }
+    }
+
+    var d_a = try DeviceBuffer(f32).init(dev, total);
+    defer d_a.deinit();
+    try d_a.copyFromHost(host_a);
+
+    var d_res = try DeviceBuffer(f32).init(dev, total);
+    defer d_res.deinit();
+    try d_res.copyFromHost(host_res);
+
+    var d_norm = try DeviceBuffer(f32).init(dev, dim);
+    defer d_norm.deinit();
+    try d_norm.copyFromHost(host_norm);
+
+    var d_out = try DeviceBuffer(f32).init(dev, total);
+    defer d_out.deinit();
+
+    // Out-of-place test
+    try fusedPostAttnNormResidual(
+        d_a.slice(),
+        d_norm.slice(),
+        d_res.slice(),
+        d_out.slice(),
+        num_rows,
+        dim,
+        1e-6,
+        null,
+    );
+
+    const gpu_out = try allocator.alloc(f32, total);
+    defer allocator.free(gpu_out);
+    try d_out.copyToHost(gpu_out);
+
+    var max_diff: f32 = 0.0;
+    for (cpu_ref, gpu_out) |c, g| {
+        const diff = @abs(c - g);
+        if (diff > max_diff) max_diff = diff;
+        try std.testing.expect(diff <= 1e-4 + 1e-4 * @abs(c));
+    }
+    std.debug.print("[parity] fusedPostAttnNormResidual: max_diff = {e:.4}\n", .{max_diff});
+
+    // In-place test (d_a == d_out)
+    try fusedPostAttnNormResidual(
+        d_a.slice(),
+        d_norm.slice(),
+        d_res.slice(),
+        d_a.slice(),
+        num_rows,
+        dim,
+        1e-6,
+        null,
+    );
+    try d_a.copyToHost(gpu_out);
+    for (cpu_ref, gpu_out) |c, g| {
+        const diff = @abs(c - g);
+        try std.testing.expect(diff <= 1e-4 + 1e-4 * @abs(c));
     }
 }
 

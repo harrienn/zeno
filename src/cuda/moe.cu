@@ -589,7 +589,7 @@ __global__ void moe_gemv_gate_up_sorted_kernel(
     }
 }
 
-__launch_bounds__(256, 3)
+__launch_bounds__(256, 4)
 __global__ void moe_gemv_gate_up_geglu_sorted_kernel(
     const uint8_t *__restrict__ all_expert_weights,
     const float *__restrict__ tokens_in,
@@ -611,7 +611,10 @@ __global__ void moe_gemv_gate_up_geglu_sorted_kernel(
     int tid = threadIdx.x;
     int warp_id = tid >> 5;
     int lane_id = tid & 31;
-    int row = blockIdx.x * 8 + warp_id;
+    int row0 = (blockIdx.x * 8 + warp_id) * 2;
+    int row1 = row0 + 1;
+    bool active_row0 = (row0 < half_dim);
+    bool active_row1 = (row1 < half_dim);
     int offset = expert_offsets[exp_id];
 
     const BlockQ4_K *exp_W = (const BlockQ4_K *)(all_expert_weights + (size_t)exp_id * expert_bytes);
@@ -620,96 +623,115 @@ __global__ void moe_gemv_gate_up_geglu_sorted_kernel(
         int batch = count - m_base;
         if (batch > 4) batch = 4;
 
-        const float *tok_ptrs[4];
-        float *out_ptrs[4];
-        #pragma unroll
-        for (int m = 0; m < 4; ++m) {
-            if (m < batch) {
-                int sorted_slot = offset + m_base + m;
-                int inst = sorted_instances[sorted_slot];
-                int tok_idx = inst / 8;
-                tok_ptrs[m] = tokens_in + (size_t)tok_idx * in_dim;
-                out_ptrs[m] = out_act + (size_t)sorted_slot * half_dim;
-            } else {
-                tok_ptrs[m] = NULL;
-                out_ptrs[m] = NULL;
-            }
-        }
+        const BlockQ4_K *gate_row_w0 = active_row0 ? (exp_W + (size_t)row0 * blocks_per_row) : NULL;
+        const BlockQ4_K *up_row_w0   = active_row0 ? (exp_W + (size_t)(row0 + half_dim) * blocks_per_row) : NULL;
+        const BlockQ4_K *gate_row_w1 = active_row1 ? (exp_W + (size_t)row1 * blocks_per_row) : NULL;
+        const BlockQ4_K *up_row_w1   = active_row1 ? (exp_W + (size_t)(row1 + half_dim) * blocks_per_row) : NULL;
 
-        const BlockQ4_K *gate_row_w = exp_W + (size_t)row * blocks_per_row;
-        const BlockQ4_K *up_row_w   = exp_W + (size_t)(row + half_dim) * blocks_per_row;
-        float gate_thread_sum[4] = {0.0f};
-        float up_thread_sum[4] = {0.0f};
+        float gate_thread_sum0[4] = {0.0f}, up_thread_sum0[4] = {0.0f};
+        float gate_thread_sum1[4] = {0.0f}, up_thread_sum1[4] = {0.0f};
 
         for (int b = 0; b < blocks_per_row; b++) {
             size_t base_x = (size_t)b * 256;
 
-            // Collaborative 128-bit float4 loading of s_x[4][256] across 256 threads (WP1)
+            // Collaborative 128-bit float4 loading of s_x[4][256] across 256 threads (WP3 stackless)
             int m_load = tid >> 6;
             int elem = (tid & 63) * 4;
             float4 loaded_val = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
-            if (m_load < batch) {
-                switch (m_load) {
-                    case 0: loaded_val = *(const float4*)&tok_ptrs[0][base_x + elem]; break;
-                    case 1: loaded_val = *(const float4*)&tok_ptrs[1][base_x + elem]; break;
-                    case 2: loaded_val = *(const float4*)&tok_ptrs[2][base_x + elem]; break;
-                    case 3: loaded_val = *(const float4*)&tok_ptrs[3][base_x + elem]; break;
-                }
+            if (m_base + m_load < count) {
+                int sorted_slot = offset + m_base + m_load;
+                int inst = sorted_instances[sorted_slot];
+                int tok_idx = inst / 8;
+                loaded_val = *(const float4*)&tokens_in[(size_t)tok_idx * in_dim + base_x + elem];
             }
-            switch (m_load) {
-                case 0: *(float4*)&s_x[0][elem] = loaded_val; break;
-                case 1: *(float4*)&s_x[1][elem] = loaded_val; break;
-                case 2: *(float4*)&s_x[2][elem] = loaded_val; break;
-                case 3: *(float4*)&s_x[3][elem] = loaded_val; break;
-            }
+            *(float4*)&s_x[m_load][elem] = loaded_val;
             __syncthreads();
 
-            if (row < half_dim) {
-                const BlockQ4_K *blk_gate = gate_row_w + b;
-                const BlockQ4_K *blk_up   = up_row_w   + b;
+            const BlockQ4_K *blk_gate0 = active_row0 ? (gate_row_w0 + b) : NULL;
+            const BlockQ4_K *blk_up0   = active_row0 ? (up_row_w0 + b)   : NULL;
+            const BlockQ4_K *blk_gate1 = active_row1 ? (gate_row_w1 + b) : NULL;
+            const BlockQ4_K *blk_up1   = active_row1 ? (up_row_w1 + b)   : NULL;
 
-                float my_d_g, my_m_g;
-                precompute_q4k_scales(blk_gate, lane_id, &my_d_g, &my_m_g);
+            float my_d_g0 = 0.0f, my_m_g0 = 0.0f;
+            float my_d_u0 = 0.0f, my_m_u0 = 0.0f;
+            float my_d_g1 = 0.0f, my_m_g1 = 0.0f;
+            float my_d_u1 = 0.0f, my_m_u1 = 0.0f;
 
-                float my_d_u, my_m_u;
-                precompute_q4k_scales(blk_up, lane_id, &my_d_u, &my_m_u);
+            if (active_row0) {
+                precompute_q4k_scales(blk_gate0, lane_id, &my_d_g0, &my_m_g0);
+                precompute_q4k_scales(blk_up0, lane_id, &my_d_u0, &my_m_u0);
+            }
+            if (active_row1) {
+                precompute_q4k_scales(blk_gate1, lane_id, &my_d_g1, &my_m_g1);
+                precompute_q4k_scales(blk_up1, lane_id, &my_d_u1, &my_m_u1);
+            }
 
+            #pragma unroll
+            for (int chunk = 0; chunk < 4; chunk++) {
+                int off1 = chunk * 64 + lane_id;
+                int off2 = chunk * 64 + 32 + lane_id;
+
+                float x1[4], x2[4];
                 #pragma unroll
-                for (int chunk = 0; chunk < 4; chunk++) {
-                    float d1_g = __shfl_sync(0xffffffff, my_d_g, chunk * 2 + 0);
-                    float m1_g = __shfl_sync(0xffffffff, my_m_g, chunk * 2 + 0);
-                    float d2_g = __shfl_sync(0xffffffff, my_d_g, chunk * 2 + 1);
-                    float m2_g = __shfl_sync(0xffffffff, my_m_g, chunk * 2 + 1);
+                for (int m = 0; m < 4; ++m) {
+                    if (m < batch) {
+                        x1[m] = s_x[m][off1];
+                        x2[m] = s_x[m][off2];
+                    }
+                }
 
-                    float d1_u = __shfl_sync(0xffffffff, my_d_u, chunk * 2 + 0);
-                    float m1_u = __shfl_sync(0xffffffff, my_m_u, chunk * 2 + 0);
-                    float d2_u = __shfl_sync(0xffffffff, my_d_u, chunk * 2 + 1);
-                    float m2_u = __shfl_sync(0xffffffff, my_m_u, chunk * 2 + 1);
+                if (active_row0) {
+                    float d1_g0 = __shfl_sync(0xffffffff, my_d_g0, chunk * 2 + 0);
+                    float m1_g0 = __shfl_sync(0xffffffff, my_m_g0, chunk * 2 + 0);
+                    float d2_g0 = __shfl_sync(0xffffffff, my_d_g0, chunk * 2 + 1);
+                    float m2_g0 = __shfl_sync(0xffffffff, my_m_g0, chunk * 2 + 1);
 
-                    const uint8_t *q_slice_g = blk_gate->qs + chunk * 32;
-                    uint8_t q_byte_g = q_slice_g[lane_id];
-                    float q1_g = (float)(q_byte_g & 0x0F);
-                    float q2_g = (float)(q_byte_g >> 4);
-                    float w1_g = d1_g * q1_g - m1_g;
-                    float w2_g = d2_g * q2_g - m2_g;
+                    float d1_u0 = __shfl_sync(0xffffffff, my_d_u0, chunk * 2 + 0);
+                    float m1_u0 = __shfl_sync(0xffffffff, my_m_u0, chunk * 2 + 0);
+                    float d2_u0 = __shfl_sync(0xffffffff, my_d_u0, chunk * 2 + 1);
+                    float m2_u0 = __shfl_sync(0xffffffff, my_m_u0, chunk * 2 + 1);
 
-                    const uint8_t *q_slice_u = blk_up->qs + chunk * 32;
-                    uint8_t q_byte_u = q_slice_u[lane_id];
-                    float q1_u = (float)(q_byte_u & 0x0F);
-                    float q2_u = (float)(q_byte_u >> 4);
-                    float w1_u = d1_u * q1_u - m1_u;
-                    float w2_u = d2_u * q2_u - m2_u;
+                    uint8_t q_byte_g0 = blk_gate0->qs[chunk * 32 + lane_id];
+                    float w1_g0 = d1_g0 * (float)(q_byte_g0 & 0x0F) - m1_g0;
+                    float w2_g0 = d2_g0 * (float)(q_byte_g0 >> 4) - m2_g0;
 
-                    int off1 = chunk * 64 + lane_id;
-                    int off2 = chunk * 64 + 32 + lane_id;
+                    uint8_t q_byte_u0 = blk_up0->qs[chunk * 32 + lane_id];
+                    float w1_u0 = d1_u0 * (float)(q_byte_u0 & 0x0F) - m1_u0;
+                    float w2_u0 = d2_u0 * (float)(q_byte_u0 >> 4) - m2_u0;
 
                     #pragma unroll
                     for (int m = 0; m < 4; ++m) {
                         if (m < batch) {
-                            float x1 = s_x[m][off1];
-                            float x2 = s_x[m][off2];
-                            gate_thread_sum[m] += w1_g * x1 + w2_g * x2;
-                            up_thread_sum[m]   += w1_u * x1 + w2_u * x2;
+                            gate_thread_sum0[m] += w1_g0 * x1[m] + w2_g0 * x2[m];
+                            up_thread_sum0[m]   += w1_u0 * x1[m] + w2_u0 * x2[m];
+                        }
+                    }
+                }
+
+                if (active_row1) {
+                    float d1_g1 = __shfl_sync(0xffffffff, my_d_g1, chunk * 2 + 0);
+                    float m1_g1 = __shfl_sync(0xffffffff, my_m_g1, chunk * 2 + 0);
+                    float d2_g1 = __shfl_sync(0xffffffff, my_d_g1, chunk * 2 + 1);
+                    float m2_g1 = __shfl_sync(0xffffffff, my_m_g1, chunk * 2 + 1);
+
+                    float d1_u1 = __shfl_sync(0xffffffff, my_d_u1, chunk * 2 + 0);
+                    float m1_u1 = __shfl_sync(0xffffffff, my_m_u1, chunk * 2 + 0);
+                    float d2_u1 = __shfl_sync(0xffffffff, my_d_u1, chunk * 2 + 1);
+                    float m2_u1 = __shfl_sync(0xffffffff, my_m_u1, chunk * 2 + 1);
+
+                    uint8_t q_byte_g1 = blk_gate1->qs[chunk * 32 + lane_id];
+                    float w1_g1 = d1_g1 * (float)(q_byte_g1 & 0x0F) - m1_g1;
+                    float w2_g1 = d2_g1 * (float)(q_byte_g1 >> 4) - m2_g1;
+
+                    uint8_t q_byte_u1 = blk_up1->qs[chunk * 32 + lane_id];
+                    float w1_u1 = d1_u1 * (float)(q_byte_u1 & 0x0F) - m1_u1;
+                    float w2_u1 = d2_u1 * (float)(q_byte_u1 >> 4) - m2_u1;
+
+                    #pragma unroll
+                    for (int m = 0; m < 4; ++m) {
+                        if (m < batch) {
+                            gate_thread_sum1[m] += w1_g1 * x1[m] + w2_g1 * x2[m];
+                            up_thread_sum1[m]   += w1_u1 * x1[m] + w2_u1 * x2[m];
                         }
                     }
                 }
@@ -720,14 +742,29 @@ __global__ void moe_gemv_gate_up_geglu_sorted_kernel(
             }
         }
 
-        if (row < half_dim) {
+        if (active_row0) {
             #pragma unroll
             for (int m = 0; m < 4; ++m) {
                 if (m < batch) {
-                    float g = warp_reduce_sum(gate_thread_sum[m]);
-                    float u = warp_reduce_sum(up_thread_sum[m]);
+                    float g0 = warp_reduce_sum(gate_thread_sum0[m]);
+                    float u0 = warp_reduce_sum(up_thread_sum0[m]);
                     if (lane_id == 0) {
-                        out_ptrs[m][row] = gelu_tanh_scalar(g) * u;
+                        int sorted_slot = offset + m_base + m;
+                        out_act[(size_t)sorted_slot * half_dim + row0] = gelu_tanh_scalar(g0) * u0;
+                    }
+                }
+            }
+        }
+
+        if (active_row1) {
+            #pragma unroll
+            for (int m = 0; m < 4; ++m) {
+                if (m < batch) {
+                    float g1 = warp_reduce_sum(gate_thread_sum1[m]);
+                    float u1 = warp_reduce_sum(up_thread_sum1[m]);
+                    if (lane_id == 0) {
+                        int sorted_slot = offset + m_base + m;
+                        out_act[(size_t)sorted_slot * half_dim + row1] = gelu_tanh_scalar(g1) * u1;
                     }
                 }
             }
@@ -1076,7 +1113,7 @@ __global__ void moe_accumulate_scaled_sorted_kernel(
 // Phase 13 WP1: Fused MoE Down-Projection & Accumulation
 // Directly accumulates down-projected activations multiplied by routing top_weights into moe_accum
 // using hardware atomicAdd. Eliminates intermediate exp_down_buf DRAM roundtrip and saves 30 kernel dispatches per step.
-__launch_bounds__(256, 3)
+__launch_bounds__(256, 4)
 __global__ void moe_gemv_down_accum_sorted_kernel(
     const uint8_t *__restrict__ all_expert_weights,
     int expert_type,
@@ -1129,112 +1166,321 @@ __global__ void moe_gemv_down_accum_sorted_kernel(
 
         if (expert_type == 8) { // Q8_0
             const BlockQ8_0 *exp_W = (const BlockQ8_0 *)(all_expert_weights + (size_t)exp_id * expert_bytes);
-            #pragma unroll
-            for (int r = 0; r < 4; ++r) {
-                int row = row_base + r;
-                if (row >= out_dim) continue;
 
-                const BlockQ8_0 *row_w = exp_W + (size_t)row * blocks_per_row;
-                float sum[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            int row0 = row_base + 0;
+            int row1 = row_base + 1;
+            int row2 = row_base + 2;
+            int row3 = row_base + 3;
+            bool active_r0 = (row0 < out_dim);
+            bool active_r1 = (row1 < out_dim);
+            bool active_r2 = (row2 < out_dim);
+            bool active_r3 = (row3 < out_dim);
 
-                int b = 0;
-                for (; b + 1 < blocks_per_row; b += 2) {
-                    const BlockQ8_0 *blk0 = row_w + b;
-                    const BlockQ8_0 *blk1 = row_w + b + 1;
-                    float w0 = __half2float(blk0->d) * (float)blk0->qs[lane_id];
-                    float w1 = __half2float(blk1->d) * (float)blk1->qs[lane_id];
+            const BlockQ8_0 *row_w0 = active_r0 ? (exp_W + (size_t)row0 * blocks_per_row) : NULL;
+            const BlockQ8_0 *row_w1 = active_r1 ? (exp_W + (size_t)row1 * blocks_per_row) : NULL;
+            const BlockQ8_0 *row_w2 = active_r2 ? (exp_W + (size_t)row2 * blocks_per_row) : NULL;
+            const BlockQ8_0 *row_w3 = active_r3 ? (exp_W + (size_t)row3 * blocks_per_row) : NULL;
 
-                    int act_off0 = b * 32 + lane_id;
-                    int act_off1 = (b + 1) * 32 + lane_id;
+            float sum0[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            float sum1[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            float sum2[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            float sum3[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 
-                    #pragma unroll
-                    for (int m = 0; m < 4; ++m) {
-                        if (m < batch) {
-                            float xv0 = s_acts[m][act_off0];
-                            float xv1 = s_acts[m][act_off1];
-                            sum[m] += w0 * xv0 + w1 * xv1;
-                        }
-                    }
-                }
-                for (; b < blocks_per_row; b++) {
-                    const BlockQ8_0 *blk = row_w + b;
-                    float w = __half2float(blk->d) * (float)blk->qs[lane_id];
-                    int act_off = b * 32 + lane_id;
-                    #pragma unroll
-                    for (int m = 0; m < 4; ++m) {
-                        if (m < batch) {
-                            sum[m] += w * s_acts[m][act_off];
-                        }
-                    }
-                }
+            int b = 0;
+            for (; b + 1 < blocks_per_row; b += 2) {
+                int act_off0 = b * 32 + lane_id;
+                int act_off1 = (b + 1) * 32 + lane_id;
 
+                float xv0[4], xv1[4];
                 #pragma unroll
                 for (int m = 0; m < 4; ++m) {
                     if (m < batch) {
-                        float rsum = warp_reduce_sum(sum[m]);
+                        xv0[m] = s_acts[m][act_off0];
+                        xv1[m] = s_acts[m][act_off1];
+                    }
+                }
+
+                if (active_r0) {
+                    const BlockQ8_0 *blk0 = row_w0 + b;
+                    const BlockQ8_0 *blk1 = row_w0 + b + 1;
+                    float w0 = __half2float(blk0->d) * (float)blk0->qs[lane_id];
+                    float w1 = __half2float(blk1->d) * (float)blk1->qs[lane_id];
+                    #pragma unroll
+                    for (int m = 0; m < 4; ++m) {
+                        if (m < batch) sum0[m] += w0 * xv0[m] + w1 * xv1[m];
+                    }
+                }
+
+                if (active_r1) {
+                    const BlockQ8_0 *blk0 = row_w1 + b;
+                    const BlockQ8_0 *blk1 = row_w1 + b + 1;
+                    float w0 = __half2float(blk0->d) * (float)blk0->qs[lane_id];
+                    float w1 = __half2float(blk1->d) * (float)blk1->qs[lane_id];
+                    #pragma unroll
+                    for (int m = 0; m < 4; ++m) {
+                        if (m < batch) sum1[m] += w0 * xv0[m] + w1 * xv1[m];
+                    }
+                }
+
+                if (active_r2) {
+                    const BlockQ8_0 *blk0 = row_w2 + b;
+                    const BlockQ8_0 *blk1 = row_w2 + b + 1;
+                    float w0 = __half2float(blk0->d) * (float)blk0->qs[lane_id];
+                    float w1 = __half2float(blk1->d) * (float)blk1->qs[lane_id];
+                    #pragma unroll
+                    for (int m = 0; m < 4; ++m) {
+                        if (m < batch) sum2[m] += w0 * xv0[m] + w1 * xv1[m];
+                    }
+                }
+
+                if (active_r3) {
+                    const BlockQ8_0 *blk0 = row_w3 + b;
+                    const BlockQ8_0 *blk1 = row_w3 + b + 1;
+                    float w0 = __half2float(blk0->d) * (float)blk0->qs[lane_id];
+                    float w1 = __half2float(blk1->d) * (float)blk1->qs[lane_id];
+                    #pragma unroll
+                    for (int m = 0; m < 4; ++m) {
+                        if (m < batch) sum3[m] += w0 * xv0[m] + w1 * xv1[m];
+                    }
+                }
+            }
+
+            for (; b < blocks_per_row; b++) {
+                int act_off = b * 32 + lane_id;
+                float xv[4];
+                #pragma unroll
+                for (int m = 0; m < 4; ++m) {
+                    if (m < batch) {
+                        xv[m] = s_acts[m][act_off];
+                    }
+                }
+
+                if (active_r0) {
+                    const BlockQ8_0 *blk = row_w0 + b;
+                    float w = __half2float(blk->d) * (float)blk->qs[lane_id];
+                    #pragma unroll
+                    for (int m = 0; m < 4; ++m) {
+                        if (m < batch) sum0[m] += w * xv[m];
+                    }
+                }
+
+                if (active_r1) {
+                    const BlockQ8_0 *blk = row_w1 + b;
+                    float w = __half2float(blk->d) * (float)blk->qs[lane_id];
+                    #pragma unroll
+                    for (int m = 0; m < 4; ++m) {
+                        if (m < batch) sum1[m] += w * xv[m];
+                    }
+                }
+
+                if (active_r2) {
+                    const BlockQ8_0 *blk = row_w2 + b;
+                    float w = __half2float(blk->d) * (float)blk->qs[lane_id];
+                    #pragma unroll
+                    for (int m = 0; m < 4; ++m) {
+                        if (m < batch) sum2[m] += w * xv[m];
+                    }
+                }
+
+                if (active_r3) {
+                    const BlockQ8_0 *blk = row_w3 + b;
+                    float w = __half2float(blk->d) * (float)blk->qs[lane_id];
+                    #pragma unroll
+                    for (int m = 0; m < 4; ++m) {
+                        if (m < batch) sum3[m] += w * xv[m];
+                    }
+                }
+            }
+
+            if (active_r0) {
+                #pragma unroll
+                for (int m = 0; m < 4; ++m) {
+                    if (m < batch) {
+                        float rsum = warp_reduce_sum(sum0[m]);
                         if (lane_id == 0) {
-                            atomicAdd(&moe_accum[(size_t)tok_indices[m] * out_dim + row], rsum * weights[m]);
+                            atomicAdd(&moe_accum[(size_t)tok_indices[m] * out_dim + row0], rsum * weights[m]);
+                        }
+                    }
+                }
+            }
+
+            if (active_r1) {
+                #pragma unroll
+                for (int m = 0; m < 4; ++m) {
+                    if (m < batch) {
+                        float rsum = warp_reduce_sum(sum1[m]);
+                        if (lane_id == 0) {
+                            atomicAdd(&moe_accum[(size_t)tok_indices[m] * out_dim + row1], rsum * weights[m]);
+                        }
+                    }
+                }
+            }
+
+            if (active_r2) {
+                #pragma unroll
+                for (int m = 0; m < 4; ++m) {
+                    if (m < batch) {
+                        float rsum = warp_reduce_sum(sum2[m]);
+                        if (lane_id == 0) {
+                            atomicAdd(&moe_accum[(size_t)tok_indices[m] * out_dim + row2], rsum * weights[m]);
+                        }
+                    }
+                }
+            }
+
+            if (active_r3) {
+                #pragma unroll
+                for (int m = 0; m < 4; ++m) {
+                    if (m < batch) {
+                        float rsum = warp_reduce_sum(sum3[m]);
+                        if (lane_id == 0) {
+                            atomicAdd(&moe_accum[(size_t)tok_indices[m] * out_dim + row3], rsum * weights[m]);
                         }
                     }
                 }
             }
         } else { // Q5_0
             const BlockQ5_0 *exp_W = (const BlockQ5_0 *)(all_expert_weights + (size_t)exp_id * expert_bytes);
-            #pragma unroll
-            for (int r = 0; r < 4; ++r) {
-                int row = row_base + r;
-                if (row >= out_dim) continue;
-                const BlockQ5_0 *row_w = exp_W + (size_t)row * blocks_per_row;
-                float thread_sum[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 
-                for (int b = 0; b < blocks_per_row; b++) {
-                    const BlockQ5_0 *blk = row_w + b;
-                    float d = 0.0f;
-                    uint32_t qh = 0;
-                    if (lane_id == 0) {
-                        d = __half2float(blk->d);
-                        uint16_t qh_lo = *(const uint16_t*)(blk->qh + 0);
-                        uint16_t qh_hi = *(const uint16_t*)(blk->qh + 2);
-                        qh = (uint32_t)qh_lo | ((uint32_t)qh_hi << 16);
-                    }
-                    d = __shfl_sync(0xffffffff, d, 0);
-                    qh = __shfl_sync(0xffffffff, qh, 0);
-                    uint16_t qs_pair = 0;
-                    if (lane_id < 8) {
-                        qs_pair = *(const uint16_t*)(blk->qs + lane_id * 2);
-                    }
-                    int sub_lane = (lane_id < 16) ? lane_id : (lane_id - 16);
-                    uint16_t fetched_pair = __shfl_sync(0xffffffff, qs_pair, sub_lane >> 1);
-                    uint8_t q_byte = (uint8_t)((sub_lane & 1) == 0 ? (fetched_pair & 0xFF) : (fetched_pair >> 8));
+            int row0 = row_base + 0;
+            int row1 = row_base + 1;
+            int row2 = row_base + 2;
+            int row3 = row_base + 3;
+            bool active_r0 = (row0 < out_dim);
+            bool active_r1 = (row1 < out_dim);
+            bool active_r2 = (row2 < out_dim);
+            bool active_r3 = (row3 < out_dim);
 
-                    size_t base_x = (size_t)b * 32;
-                    float w;
-                    if (lane_id < 16) {
-                        uint8_t bit = (uint8_t)((qh >> lane_id) & 1);
-                        int q = (int)((q_byte & 0x0F) | (bit << 4)) - 16;
-                        w = d * (float)q;
-                    } else {
-                        int j = lane_id - 16;
-                        uint8_t bit = (uint8_t)((qh >> (j + 16)) & 1);
-                        int q = (int)((q_byte >> 4) | (bit << 4)) - 16;
-                        w = d * (float)q;
-                    }
+            const BlockQ5_0 *row_w0 = active_r0 ? (exp_W + (size_t)row0 * blocks_per_row) : NULL;
+            const BlockQ5_0 *row_w1 = active_r1 ? (exp_W + (size_t)row1 * blocks_per_row) : NULL;
+            const BlockQ5_0 *row_w2 = active_r2 ? (exp_W + (size_t)row2 * blocks_per_row) : NULL;
+            const BlockQ5_0 *row_w3 = active_r3 ? (exp_W + (size_t)row3 * blocks_per_row) : NULL;
 
-                    #pragma unroll
-                    for (int m = 0; m < 4; ++m) {
-                        if (m < batch) {
-                            float xv = s_acts[m][base_x + lane_id];
-                            thread_sum[m] += w * xv;
-                        }
-                    }
-                }
+            float sum0[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            float sum1[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            float sum2[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            float sum3[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 
+            int byte_idx = (lane_id < 16) ? lane_id : (lane_id - 16);
+
+            for (int b = 0; b < blocks_per_row; b++) {
+                int act_off = b * 32 + lane_id;
+                float xv[4];
                 #pragma unroll
                 for (int m = 0; m < 4; ++m) {
                     if (m < batch) {
-                        float row_sum = warp_reduce_sum(thread_sum[m]);
+                        xv[m] = s_acts[m][act_off];
+                    }
+                }
+
+                if (active_r0) {
+                    const BlockQ5_0 *blk = row_w0 + b;
+                    float d = __half2float(blk->d);
+                    uint16_t qh_lo = *(const uint16_t*)(blk->qh + 0);
+                    uint16_t qh_hi = *(const uint16_t*)(blk->qh + 2);
+                    uint32_t qh = (uint32_t)qh_lo | ((uint32_t)qh_hi << 16);
+                    uint8_t q_byte = blk->qs[byte_idx];
+                    int q_nibble = (lane_id < 16) ? (q_byte & 0x0F) : (q_byte >> 4);
+                    uint8_t bit = (uint8_t)((qh >> lane_id) & 1);
+                    float w = d * (float)((q_nibble | (bit << 4)) - 16);
+                    #pragma unroll
+                    for (int m = 0; m < 4; ++m) {
+                        if (m < batch) sum0[m] += w * xv[m];
+                    }
+                }
+
+                if (active_r1) {
+                    const BlockQ5_0 *blk = row_w1 + b;
+                    float d = __half2float(blk->d);
+                    uint16_t qh_lo = *(const uint16_t*)(blk->qh + 0);
+                    uint16_t qh_hi = *(const uint16_t*)(blk->qh + 2);
+                    uint32_t qh = (uint32_t)qh_lo | ((uint32_t)qh_hi << 16);
+                    uint8_t q_byte = blk->qs[byte_idx];
+                    int q_nibble = (lane_id < 16) ? (q_byte & 0x0F) : (q_byte >> 4);
+                    uint8_t bit = (uint8_t)((qh >> lane_id) & 1);
+                    float w = d * (float)((q_nibble | (bit << 4)) - 16);
+                    #pragma unroll
+                    for (int m = 0; m < 4; ++m) {
+                        if (m < batch) sum1[m] += w * xv[m];
+                    }
+                }
+
+                if (active_r2) {
+                    const BlockQ5_0 *blk = row_w2 + b;
+                    float d = __half2float(blk->d);
+                    uint16_t qh_lo = *(const uint16_t*)(blk->qh + 0);
+                    uint16_t qh_hi = *(const uint16_t*)(blk->qh + 2);
+                    uint32_t qh = (uint32_t)qh_lo | ((uint32_t)qh_hi << 16);
+                    uint8_t q_byte = blk->qs[byte_idx];
+                    int q_nibble = (lane_id < 16) ? (q_byte & 0x0F) : (q_byte >> 4);
+                    uint8_t bit = (uint8_t)((qh >> lane_id) & 1);
+                    float w = d * (float)((q_nibble | (bit << 4)) - 16);
+                    #pragma unroll
+                    for (int m = 0; m < 4; ++m) {
+                        if (m < batch) sum2[m] += w * xv[m];
+                    }
+                }
+
+                if (active_r3) {
+                    const BlockQ5_0 *blk = row_w3 + b;
+                    float d = __half2float(blk->d);
+                    uint16_t qh_lo = *(const uint16_t*)(blk->qh + 0);
+                    uint16_t qh_hi = *(const uint16_t*)(blk->qh + 2);
+                    uint32_t qh = (uint32_t)qh_lo | ((uint32_t)qh_hi << 16);
+                    uint8_t q_byte = blk->qs[byte_idx];
+                    int q_nibble = (lane_id < 16) ? (q_byte & 0x0F) : (q_byte >> 4);
+                    uint8_t bit = (uint8_t)((qh >> lane_id) & 1);
+                    float w = d * (float)((q_nibble | (bit << 4)) - 16);
+                    #pragma unroll
+                    for (int m = 0; m < 4; ++m) {
+                        if (m < batch) sum3[m] += w * xv[m];
+                    }
+                }
+            }
+
+            if (active_r0) {
+                #pragma unroll
+                for (int m = 0; m < 4; ++m) {
+                    if (m < batch) {
+                        float rsum = warp_reduce_sum(sum0[m]);
                         if (lane_id == 0) {
-                            atomicAdd(&moe_accum[(size_t)tok_indices[m] * out_dim + row], row_sum * weights[m]);
+                            atomicAdd(&moe_accum[(size_t)tok_indices[m] * out_dim + row0], rsum * weights[m]);
+                        }
+                    }
+                }
+            }
+
+            if (active_r1) {
+                #pragma unroll
+                for (int m = 0; m < 4; ++m) {
+                    if (m < batch) {
+                        float rsum = warp_reduce_sum(sum1[m]);
+                        if (lane_id == 0) {
+                            atomicAdd(&moe_accum[(size_t)tok_indices[m] * out_dim + row1], rsum * weights[m]);
+                        }
+                    }
+                }
+            }
+
+            if (active_r2) {
+                #pragma unroll
+                for (int m = 0; m < 4; ++m) {
+                    if (m < batch) {
+                        float rsum = warp_reduce_sum(sum2[m]);
+                        if (lane_id == 0) {
+                            atomicAdd(&moe_accum[(size_t)tok_indices[m] * out_dim + row2], rsum * weights[m]);
+                        }
+                    }
+                }
+            }
+
+            if (active_r3) {
+                #pragma unroll
+                for (int m = 0; m < 4; ++m) {
+                    if (m < batch) {
+                        float rsum = warp_reduce_sum(sum3[m]);
+                        if (lane_id == 0) {
+                            atomicAdd(&moe_accum[(size_t)tok_indices[m] * out_dim + row3], rsum * weights[m]);
                         }
                     }
                 }
@@ -1809,7 +2055,7 @@ int zeno_cuda_moe_gemv_gate_up_geglu_sorted(
     size_t expert_bytes = (size_t)(half_dim * 2) * (size_t)blocks_per_row * sizeof(BlockQ4_K);
 
     const int block_size = 256;
-    unsigned int grid_x = (unsigned int)((half_dim + 7) / 8);
+    unsigned int grid_x = (unsigned int)((half_dim + 15) / 16);
     unsigned int grid_y = 128;
     dim3 grid(grid_x, grid_y);
     cudaStream_t custream = (cudaStream_t)stream;

@@ -131,6 +131,71 @@ __global__ void rms_norm_kernel(
     }
 }
 
+__global__ void fused_post_attn_norm_residual_kernel(
+    const float *attn_out,
+    const float *post_attention_norm,
+    const float *residual,
+    float *out,
+    int num_rows,
+    int dim,
+    float eps
+) {
+    int row = blockIdx.x;
+    if (row >= num_rows) return;
+
+    int tid = threadIdx.x;
+    int lane_id = tid & 31;
+    int warp_id = tid >> 5;
+    int num_warps = blockDim.x >> 5;
+
+    const float *row_a = attn_out + (size_t)row * (size_t)dim;
+    const float *row_res = residual ? (residual + (size_t)row * (size_t)dim) : NULL;
+    float *row_out = out + (size_t)row * (size_t)dim;
+
+    float sum_sq = 0.0f;
+    for (int i = tid; i < dim; i += blockDim.x) {
+        float v = row_a[i];
+        sum_sq += v * v;
+    }
+
+    #pragma unroll
+    for (int offset = 16; offset > 0; offset >>= 1) {
+        sum_sq += __shfl_down_sync(0xffffffff, sum_sq, offset);
+    }
+
+    __shared__ float s_warp_sums[32];
+    __shared__ float s_inv_rms;
+
+    if (lane_id == 0) {
+        s_warp_sums[warp_id] = sum_sq;
+    }
+    __syncthreads();
+
+    if (warp_id == 0) {
+        float block_sum = (lane_id < num_warps) ? s_warp_sums[lane_id] : 0.0f;
+        #pragma unroll
+        for (int offset = 16; offset > 0; offset >>= 1) {
+            block_sum += __shfl_down_sync(0xffffffff, block_sum, offset);
+        }
+        if (lane_id == 0) {
+            s_inv_rms = rsqrtf(block_sum / (float)dim + eps);
+        }
+    }
+    __syncthreads();
+
+    float inv_rms = s_inv_rms;
+    for (int i = tid; i < dim; i += blockDim.x) {
+        float val = row_a[i] * inv_rms;
+        if (post_attention_norm) {
+            val *= post_attention_norm[i];
+        }
+        if (row_res) {
+            val += row_res[i];
+        }
+        row_out[i] = val;
+    }
+}
+
 __global__ void geglu_kernel(
     const float *gate,
     const float *up,
@@ -755,6 +820,56 @@ int zeno_cuda_rms_norm(
     cudaStream_t custream = (cudaStream_t)stream;
 
     rms_norm_kernel<<<grid, block, 0, custream>>>(x, weight, out, num_rows, dim, eps);
+    cudaError_t err = cudaGetLastError();
+    int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED : ZENO_CUDA_SUCCESS;
+
+    return restore_cuda_device(orig, op_rc);
+}
+
+int zeno_cuda_fused_post_attn_norm_residual(
+    const float *attn_out,
+    const float *post_attention_norm,
+    const float *residual,
+    float *out,
+    int num_rows,
+    int dim,
+    float eps,
+    int device_id,
+    void *stream
+) {
+    if (!attn_out || !out) return ZENO_CUDA_ERR_INVALID_PARAM;
+    if (num_rows < 0 || num_rows > 65535) return ZENO_CUDA_ERR_INVALID_PARAM;
+    if (dim < 1 || dim > 8192) return ZENO_CUDA_ERR_INVALID_PARAM;
+    if (eps <= 0.0f) return ZENO_CUDA_ERR_INVALID_PARAM;
+    if (num_rows == 0) return ZENO_CUDA_SUCCESS;
+
+    size_t total_bytes = (size_t)num_rows * (size_t)dim * sizeof(float);
+    if (partial_overlap(out, total_bytes, attn_out, total_bytes)) return ZENO_CUDA_ERR_INVALID_PARAM;
+    if (residual && partial_overlap(out, total_bytes, residual, total_bytes)) return ZENO_CUDA_ERR_INVALID_PARAM;
+    if (post_attention_norm) {
+        size_t dim_bytes = (size_t)dim * sizeof(float);
+        if (partial_overlap(out, total_bytes, post_attention_norm, dim_bytes)) return ZENO_CUDA_ERR_INVALID_PARAM;
+        if (partial_overlap(attn_out, total_bytes, post_attention_norm, dim_bytes)) return ZENO_CUDA_ERR_INVALID_PARAM;
+    }
+
+    int orig = 0;
+    int rc = set_cuda_device(device_id, &orig);
+    if (rc != ZENO_CUDA_SUCCESS) return rc;
+
+    int block_size = calc_rms_norm_block_size(dim);
+    dim3 grid(num_rows);
+    dim3 block(block_size);
+    cudaStream_t custream = (cudaStream_t)stream;
+
+    fused_post_attn_norm_residual_kernel<<<grid, block, 0, custream>>>(
+        attn_out,
+        post_attention_norm,
+        residual,
+        out,
+        num_rows,
+        dim,
+        eps
+    );
     cudaError_t err = cudaGetLastError();
     int op_rc = (err != cudaSuccess) ? ZENO_CUDA_ERR_KERNEL_LAUNCH_FAILED : ZENO_CUDA_SUCCESS;
 
