@@ -33,6 +33,8 @@ The API may compare normalized candidate entropy with a caller-supplied threshol
 ### 2.1 API Policy & Stepping Bounds
 The default API policy executes a single read (`step_cap: 1`, bypasses self-conditioning). If the caller supplies an entropy threshold and normalized candidate entropy meets or exceeds it, set `uncertain: true`; otherwise return the result. When `step_cap` is configured in $[2, 4]$, the engine activates experimental candidate-restricted multi-step adaptive denoising (§6), iteratively applying self-conditioning until the query is decisive or the step cap is reached. Values outside $[1, 4]$ are rejected with `UnsupportedStepCap`.
 
+Intermediate stepping and self-conditioning are evaluated strictly at native training temperature $T_{\text{internal}} = 1.0$, while post-hoc `options.temperature` is applied to the final output projection to compute client-facing probabilities, entropy, and the `uncertain` flag (see §6.2 and [`decision-api.md`](decision-api.md) §3.2).
+
 ---
 
 ## 3. Ambiguity Resolution Strategies (Research Protocol)
@@ -99,11 +101,17 @@ In multi-step structured reads ($T \in [2, 4]$), subsequent forward passes injec
 
 The decision engine loops over steps $t \in [1, \text{step\_cap}]$:
 1. Execute structured read forward pass for step $t$.
-2. Compute candidate-restricted softmax distribution $P_t$, Shannon entropy $H(P_t)$, and normalized entropy $H_{\text{norm}}(P_t) = \frac{H(P_t)}{\ln(|C|)}$.
+2. Compute candidate-restricted softmax distribution $P_t$ strictly at native training temperature $T_{\text{internal}} = 1.0$:
+   $$P_t(c) = \frac{\exp(\tilde{z}_c / 1.0)}{\sum_{j=1}^{|C|} \exp(\tilde{z}_j / 1.0)}$$
+   and compute intermediate Shannon entropy $H(P_t)$ and normalized entropy $H_{\text{norm, internal}}(P_t) = \frac{H(P_t)}{\ln(|C|)}$.
 3. **Early Termination Check**:
-   - If `entropy_threshold` $\tau$ is configured and $H_{\text{norm}}(P_t) < \tau$: terminate loop immediately with `uncertain: false` and `steps_executed: t`.
-   - If $t = \text{step\_cap}$ and $H_{\text{norm}}(P_t) \ge \tau$: terminate loop with `uncertain: true` and `steps_executed: step_cap`.
-4. If $t < \text{step\_cap}$ and $H_{\text{norm}}(P_t) \ge \tau$: compute $D_{\text{sc}}$ from $P_t$ and propagate to step $t+1$.
+   - If `entropy_threshold` $\tau$ is configured and $H_{\text{norm, internal}}(P_t) < \tau$: terminate loop immediately with `steps_executed: t`.
+   - If $t = \text{step\_cap}$ and $H_{\text{norm, internal}}(P_t) \ge \tau$: terminate loop with `steps_executed: step_cap`.
+4. If $t < \text{step\_cap}$ and $H_{\text{norm, internal}}(P_t) \ge \tau$: compute soft embedding $E_{\text{sc}}$ from unscaled $P_t$ ($T=1.0$), evaluate $D_{\text{sc}}$, and propagate to step $t+1$.
+5. **Final Output Response Scaling**:
+   Upon loop termination, if `options.temperature` $T \ne 1.0$, re-evaluate the candidate softmax at temperature $T$, recompute response entropy $H_{\text{response}}$, and set the client-facing `uncertain` boolean flag:
+   $$\text{uncertain} = (H_{\text{norm, response}} \ge \tau)$$
+   This decouples physical denoiser dynamics from client calibration: intermediate self-conditioning remains uncorrupted by temperature dilation, while client outputs reflect calibrated probabilities. Under $T > 1.0$, it is entirely expected and valid for a query to halt early at step 1 (`steps_executed: 1`) while reporting `uncertain: true`.
 
 ### 6.3 CPU/CUDA Backend Comparison (`maintenance_priority_uncertain.json`)
 

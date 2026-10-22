@@ -56,8 +56,8 @@ The decision engine strictly validates that all candidate choices resolve to sin
 | `schema.candidates` | object[] | **Yes** | Each item has a `token` string that resolves to one token and a user-facing `label`. Require 2–32 candidates with distinct token IDs. |
 | `options.step_cap` | `integer` | No | Maximum forward/adaptation steps, in `[1, 4]` (default: `1`). Single-step reads bypass self-conditioning. Multi-step reads apply experimental candidate-restricted self-conditioning and require all four `self_cond_*` tensors; if they are missing or incomplete, execution fails with an internal error. This is not full DiffusionGemma sampler parity. |
 | `options.canvas_length` | `integer` | No | Evaluated canvas width, in `[16, 256]` and divisible by 16 (default: `256`). This selects the evaluated prefix of the GGUF's 256-token default canvas. Record the selected width in fixtures and use the same width for reference comparisons. |
-| `options.temperature` | `float` | No | Positive, finite logit scaling factor before candidate normalization (default: `1.0`). It does not control diffusion sampling in a one-step read. |
-| `options.entropy_threshold` | `float` | No | Optional threshold on normalized entropy, in `[0, 1]`. If omitted, `uncertain` is `false`. |
+| `options.temperature` | `float` | No | Positive, finite logit scaling factor applied strictly to final candidate probabilities and response entropy (default: `1.0`). Intermediate multi-step self-conditioning and adaptive stopping are evaluated strictly at native $T_{\text{internal}} = 1.0$ to preserve model training distribution semantics. |
+| `options.entropy_threshold` | `float` | No | Optional threshold on normalized entropy, in `[0, 1]`. Governs intermediate early stopping under native $T=1.0$, and sets the client-facing `uncertain` flag on the final response distribution. If omitted, `uncertain` is `false`. |
 
 ### 3.2 Response Payload
 
@@ -101,14 +101,20 @@ The decision engine strictly validates that all candidate choices resolve to sin
 
 * **`decision`**: The candidate label with the highest normalized candidate score ($p_{\text{max}}$).
   **Tie rule (normative)**: when two or more candidates share the maximum score exactly, the **lowest candidate index** in request order wins. This guarantees determinism for a System One engine and must not be left to floating-point comparison order. Note that ties are *reachable* in practice — logit softcapping (§3.2 of [`structured-reads.md`](structured-reads.md)) saturates distinct raw logits to an identical value, which is a numerical degenerate case rather than a genuine model judgement. See [`UNRESOLVED.md`](UNRESOLVED.md) U-19.
-* **`decision_probability`**: Candidate-normalized softmax score for the selected label. It is not an empirically calibrated probability:
+* **`decision_probability`**: Candidate-normalized softmax score for the selected label under the configured `options.temperature`:
   $$p_i = \frac{\exp(z_i / T)}{\sum_{j=1}^N \exp(z_j / T)}$$
-  *(Empirical calibration requires separate labeled evaluation.)*
-* **`entropy_nats`**: Shannon entropy over the candidate distribution, in nats:
+  *(Empirical calibration requires separate labeled evaluation; see [`calibration-analysis.md`](calibration-analysis.md).)*
+* **`entropy_nats`**: Shannon entropy over the candidate response distribution, in nats:
   $$H(P) = -\sum_{i=1}^N p_i \ln(p_i)$$
-* **`normalized_entropy`**: $H(P) / \ln(N)$, in $[0,1]$ for $N \ge 2$.
-* **`uncertain`**: Set to `true` **only when `options.entropy_threshold` was supplied** and `normalized_entropy >= entropy_threshold`. If the threshold is omitted, `uncertain` is always `false`. Entropy is a dispersion measure, not a correctness estimate. *An earlier revision of this document stated "supplied or defaulted", contradicting the field table in §3.1. The field table is normative, and this reading is corroborated by [`denoising.md`](denoising.md) §2.1. See [`UNRESOLVED.md`](UNRESOLVED.md) U-21.*
-* **`steps_executed`**: Number of forward/adaptation steps executed ($t \in [1, \text{step\_cap}]$). Single-step reads return 1. Multi-step adaptive runs terminate early if $H_{\text{norm}} < \tau_{\text{entropy}}$, returning the number of steps actually executed. These candidate-restricted steps are not a claim of full DiffusionGemma sampler execution.
+* **`normalized_entropy`**: $H(P) / \ln(N)$, in $[0,1]$ for $N \ge 2$, computed over the response distribution.
+* **`uncertain`**: Set to `true` **only when `options.entropy_threshold` was supplied** and the response `normalized_entropy >= entropy_threshold`. If the threshold is omitted, `uncertain` is always `false`. Entropy is a dispersion measure, not a correctness estimate.
+* **`steps_executed`**: Number of forward/adaptation steps executed ($t \in [1, \text{step\_cap}]$). Single-step reads return 1. Multi-step adaptive runs terminate early if intermediate normalized entropy under native training temperature ($T_{\text{internal}} = 1.0$) satisfies $H_{\text{norm, internal}} < \tau_{\text{entropy}}$, returning the number of steps actually executed. These candidate-restricted steps are not a claim of full DiffusionGemma sampler execution.
+
+> [!IMPORTANT]
+> **Split Temperature Contract (Normative)**:
+> 1. **Internal Denoising ($T_{\text{internal}} = 1.0$)**: Intermediate candidate probabilities $P_t$, self-conditioning soft embeddings $E_{\text{sc}}$, and step-to-step early stopping decisions ($H_{\text{norm, internal}} < \tau$) are evaluated strictly at native temperature $T = 1.0$. This prevents artificial logit dilation from distorting soft embeddings fed into subsequent denoising passes.
+> 2. **Client Response Distribution ($T = \text{options.temperature}$)**: Once execution completes (via early stopping or step cap exhaustion), caller-specified temperature scaling is applied to the final logits. The returned `candidates[].probability`, `decision_probability`, `entropy_nats`, and `normalized_entropy` represent this post-hoc scaled distribution.
+> 3. **Decoupled Outcomes**: Because `steps_executed` is evaluated at $T=1.0$ and `uncertain` is evaluated at $T = \text{options.temperature}$, a non-default temperature can yield divergent threshold results. For example, with $T = 2.0$ and $\tau = 0.30$, a query with $H_{\text{norm, internal}} = 0.27 < 0.30$ halts at step 1 (`steps_executed: 1`), but temperature scaling expands response dispersion to `normalized_entropy: 0.68 >= 0.30`, returning `uncertain: true`. Conversely, sharpening temperatures ($T < 1.0$) contract dispersion.
 * **`canvas_tokens_used`**: The number of prompt and answer positions, i.e. `answer_pos + 1`. It excludes the `TURN_CLOSE` and padded tail positions specified by U-02 in [`UNRESOLVED.md`](UNRESOLVED.md).
 * **`timings`**: Optional device-synchronized stage-level timing breakdown in milliseconds (emitted for CUDA backend requests; omitted/null on CPU backend requests where multi-stage GPU hardware timers are not measured):
   * `prompt_prefill_ms`: Cold prompt prefill latency across all transformer layers (0.0 ms when prompt KV cache is reused).
