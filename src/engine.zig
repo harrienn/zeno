@@ -137,7 +137,7 @@ pub const DecisionEngine = struct {
         var cuda_ws: ?*infer_cuda.CudaWorkspace = null;
 
         errdefer {
-            if (cuda_ws) |ws| ws.deinit();
+            if (cuda_ws) |ws| ws.deinit() catch {};
             if (cuda_model) |cm| cm.deinit();
             if (cpu_ws) |ws| ws.deinit();
         }
@@ -170,7 +170,11 @@ pub const DecisionEngine = struct {
 
     /// Releases workspace, tokenizer vocabulary, model mapping, and memory.
     pub fn deinit(self: *DecisionEngine) void {
-        if (self.cuda_workspace) |ws| ws.deinit();
+        if (self.cuda_workspace) |ws| {
+            ws.deinit() catch |err| {
+                std.log.err("DecisionEngine.deinit: cuda_workspace teardown failed with {s}; workspace retained", .{@errorName(err)});
+            };
+        }
         if (self.cuda_model) |cm| cm.deinit();
         if (self.cpu_workspace) |ws| ws.deinit();
         self.tokenizer.deinit(self.allocator);

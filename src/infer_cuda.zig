@@ -1207,7 +1207,7 @@ pub const CudaWorkspace = struct {
         self.cached_graph_step2_answer_pos = 0;
     }
 
-    pub fn deinit(self: *CudaWorkspace) void {
+    pub fn deinit(self: *CudaWorkspace) !void {
         if (comptime !cuda.is_enabled) return;
         // R40-01 / R41-01: Independently drain each referencing device stream before teardown
         var sync_failed = false;
@@ -1215,10 +1215,18 @@ pub const CudaWorkspace = struct {
             sync_failed = true;
             std.log.warn("CudaWorkspace.deinit: stream synchronization failed with {s}", .{@errorName(err)});
         }
-        if (self.graph0_step2) |*g| g.deinit();
-        if (self.graph1) |*g1| g1.deinit();
-        if (self.graph0) |*g0| g0.deinit();
-        self.allocator.free(self.host_norm_hidden);
+        if (self.graph0_step2) |*g| {
+            g.deinit();
+            self.graph0_step2 = null;
+        }
+        if (self.graph1) |*g1| {
+            g1.deinit();
+            self.graph1 = null;
+        }
+        if (self.graph0) |*g0| {
+            g0.deinit();
+            self.graph0 = null;
+        }
 
         // R41-01: Explicit teardown policy for failed stream synchronization:
         // Freeing pinned host memory while GPU DMA may still be in flight risks host memory corruption.
@@ -1302,7 +1310,8 @@ pub const CudaWorkspace = struct {
                         self.host_staging_pinned.deinit();
                         drainQuarantinedPinnedBuffers() catch {};
                     } else {
-                        std.log.err("CudaWorkspace.deinit: fatal: device quiescence could not be established and all retention storage is exhausted; buffer {*} cannot be freed safely", .{self.host_staging_pinned.ptr.?});
+                        std.log.warn("CudaWorkspace.deinit: fatal: device quiescence could not be established and all retention storage is exhausted; buffer {*} cannot be freed safely", .{self.host_staging_pinned.ptr.?});
+                        return error.DeviceNotQuiescent;
                     }
                 }
             }
@@ -1311,6 +1320,7 @@ pub const CudaWorkspace = struct {
         if (self.boundary_event) |*ev| ev.deinit();
         if (self.dev1) |*d1| d1.deinit();
         self.dev0.deinit();
+        self.allocator.free(self.host_norm_hidden);
         self.allocator.destroy(self);
     }
 };
@@ -2987,13 +2997,13 @@ test "CudaDeviceWorkspace and CudaWorkspace allocation lifecycle" {
     try std.testing.expectEqual(@as(usize, 32 * ModelConfig.embedding_dim), dev_ws.current_emb.len);
 
     var ws = try CudaWorkspace.init(allocator, .single_gpu, [_]i32{ dev0, dev0 }, 32);
-    defer ws.deinit();
+    defer ws.deinit() catch {};
     try std.testing.expect(ws.dev1 == null);
 
     if (topo.reported_devices >= 2) {
         const dev1 = topo.devices[1].device_id;
         var ws_multi = try CudaWorkspace.init(allocator, .dual_gpu_split, [_]i32{ dev0, dev1 }, 32);
-        defer ws_multi.deinit();
+        defer ws_multi.deinit() catch {};
         try std.testing.expect(ws_multi.dev1 != null);
     }
 }
@@ -3354,7 +3364,7 @@ test "executeStructuredReadCuda full 30-layer forward pass on local model if pre
     const max_len: usize = 32;
     std.debug.print("test: Initializing CudaWorkspace...\n", .{});
     var ws = try CudaWorkspace.init(allocator, cuda_model.topology, cuda_model.devices, max_len);
-    defer ws.deinit();
+    defer ws.deinit() catch {};
     std.debug.print("test: CudaWorkspace initialized!\n", .{});
 
     const prompt_tokens = [_]u32{ root.SpecialTokens.bos, 100, 200 };
@@ -3739,7 +3749,7 @@ test "R40-01: CudaWorkspace independent stream synchronization and safe pinned m
     try transferHiddenState(buf_src0.slice(), buf_dst1.slice(), &ws.dev0.stream, &ws.dev1.?.stream, &ev, ws.host_staging_buf, ws.peer_access_enabled);
 
     // Verify that workspace deinit successfully drains active transfers on both streams without memory corruption
-    ws.deinit();
+    try ws.deinit();
 }
 
 test "R41-01: CudaWorkspace quarantine policy and failed stream synchronization" {
@@ -3760,7 +3770,7 @@ test "R41-01: CudaWorkspace quarantine policy and failed stream synchronization"
         defer inject_dev0_sync_failure = false;
         try std.testing.expectError(error.StreamSyncFailed, ws.synchronize());
         inject_dev0_sync_failure = false;
-        ws.deinit();
+        try ws.deinit();
     }
 
     // Test 2: R41-01 / R42-01 / R42-02: Active transfer before sync failure, quarantine retention on quiescence failure, and slot reuse
@@ -3780,7 +3790,7 @@ test "R41-01: CudaWorkspace quarantine policy and failed stream synchronization"
         // Inject Device 1 synchronization failure during deinit: triggers quarantine policy
         inject_dev1_sync_failure = true;
         defer inject_dev1_sync_failure = false;
-        ws.deinit();
+        try ws.deinit();
         inject_dev1_sync_failure = false;
 
         try std.testing.expectEqual(prev_quarantine_count + 1, quarantined_buffers_count);
@@ -3801,7 +3811,7 @@ test "R41-01: CudaWorkspace quarantine policy and failed stream synchronization"
         // R42-02: Verify that slot 0 is reused on subsequent quarantine
         const ws2 = try CudaWorkspace.init(allocator, .dual_gpu_split, devices, 256);
         inject_dev1_sync_failure = true;
-        ws2.deinit();
+        try ws2.deinit();
         inject_dev1_sync_failure = false;
 
         try std.testing.expectEqual(prev_quarantine_count + 1, quarantined_buffers_count);
@@ -3915,7 +3925,7 @@ test "R41-01: CudaWorkspace quarantine policy and failed stream synchronization"
 
             // Inject stream synchronization failure during deinit
             inject_stream_sync_failure = true;
-            ws.deinit();
+            try ws.deinit();
             inject_stream_sync_failure = false;
 
             // Workspace is destroyed; verify its pinned allocation was retained in dynamic quarantine
@@ -3969,7 +3979,7 @@ test "R41-01: CudaWorkspace quarantine policy and failed stream synchronization"
             const ws_pinned_ptr = ws.host_staging_pinned.ptr.?;
 
             inject_stream_sync_failure = true;
-            ws.deinit();
+            try ws.deinit();
             inject_stream_sync_failure = false;
 
             // Assert workspace was destroyed, dynamic allocation was skipped/failed,
@@ -4047,7 +4057,7 @@ test "R41-01: CudaWorkspace quarantine policy and failed stream synchronization"
             ws_pinned_ptr = ws.host_staging_pinned.ptr.?;
 
             inject_stream_sync_failure = true;
-            ws.deinit();
+            try ws.deinit();
             inject_stream_sync_failure = false;
 
             // Verify pinned buffer was preserved in static storage guaranteed to outlive arena
@@ -4152,7 +4162,7 @@ test "R41-01: CudaWorkspace quarantine policy and failed stream synchronization"
             ws17_pinned_ptr = ws17.host_staging_pinned.ptr.?;
 
             inject_stream_sync_failure = true;
-            ws17.deinit();
+            try ws17.deinit();
             inject_stream_sync_failure = false;
 
             // Verify the 17th workspace allocation was successfully captured in a dynamic process-lifetime record
@@ -4173,6 +4183,106 @@ test "R41-01: CudaWorkspace quarantine policy and failed stream synchronization"
         inject_device_sync_failure = false;
         inject_quarantine_allocator_failure = false;
         inject_retained_allocator_failure = false;
+
+        try drainQuarantinedPinnedBuffers();
+        try std.testing.expectEqual(@as(usize, 0), quarantined_buffers_count);
+        try std.testing.expectEqual(@as(usize, 0), overflow_quarantined_buffers_count);
+        try std.testing.expectEqual(@as(usize, 0), dynamic_quarantined_count);
+        try std.testing.expectEqual(@as(usize, 0), emergency_reserve_buffers_count);
+        try std.testing.expectEqual(@as(usize, 0), retained_workspaces_count);
+        try std.testing.expect(retained_workspaces_head == null);
+    }
+
+    // Test 9: R50-01: Terminal policy under double failure:
+    // When all quarantine tiers and static retained records are full (112 buffers), AND
+    // dynamic retention allocation fails (inject_retained_allocator_failure = true), AND
+    // whole-device synchronization fails (inject_device_sync_failure = true),
+    // CudaWorkspace.deinit must NOT destroy the workspace or abandon the buffer.
+    // Instead, it returns error.DeviceNotQuiescent, preserving ownership and the tracking reference.
+    // Once device synchronization is restored, teardown succeeds and safely frees the buffer.
+    {
+        try drainQuarantinedPinnedBuffers();
+        try std.testing.expectEqual(@as(usize, 0), quarantined_buffers_count);
+        try std.testing.expectEqual(@as(usize, 0), overflow_quarantined_buffers_count);
+        try std.testing.expectEqual(@as(usize, 0), dynamic_quarantined_count);
+        try std.testing.expectEqual(@as(usize, 0), emergency_reserve_buffers_count);
+        try std.testing.expectEqual(@as(usize, 0), retained_workspaces_count);
+        try std.testing.expect(retained_workspaces_head == null);
+
+        inject_device_sync_failure = true;
+        inject_quarantine_allocator_failure = true;
+
+        // 1. Fill 16 primary slots
+        var primary_mock: [MAX_QUARANTINED_BUFFERS]cuda_mem.PinnedBuffer(f32) = undefined;
+        for (0..MAX_QUARANTINED_BUFFERS) |i| {
+            primary_mock[i] = try cuda_mem.PinnedBuffer(f32).init(64);
+            quarantinePinnedBuffer(&primary_mock[i]);
+            try std.testing.expect(primary_mock[i].ptr == null);
+        }
+        try std.testing.expectEqual(@as(usize, MAX_QUARANTINED_BUFFERS), quarantined_buffers_count);
+
+        // 2. Fill 64 overflow slots
+        var overflow_mock: [MAX_OVERFLOW_BUFFERS]cuda_mem.PinnedBuffer(f32) = undefined;
+        for (0..MAX_OVERFLOW_BUFFERS) |i| {
+            overflow_mock[i] = try cuda_mem.PinnedBuffer(f32).init(64);
+            quarantinePinnedBuffer(&overflow_mock[i]);
+            try std.testing.expect(overflow_mock[i].ptr == null);
+        }
+        try std.testing.expectEqual(@as(usize, MAX_OVERFLOW_BUFFERS), overflow_quarantined_buffers_count);
+
+        // 3. Fill 16 emergency reserve slots
+        var reserve_mock: [MAX_EMERGENCY_RESERVE_BUFFERS]cuda_mem.PinnedBuffer(f32) = undefined;
+        for (0..MAX_EMERGENCY_RESERVE_BUFFERS) |i| {
+            reserve_mock[i] = try cuda_mem.PinnedBuffer(f32).init(64);
+            quarantinePinnedBuffer(&reserve_mock[i]);
+            try std.testing.expect(reserve_mock[i].ptr == null);
+        }
+        try std.testing.expectEqual(@as(usize, MAX_EMERGENCY_RESERVE_BUFFERS), emergency_reserve_buffers_count);
+
+        // 4. Fill all 16 static records in retained_workspace_pool
+        var pool_mock: [MAX_RETAINED_WORKSPACES]cuda_mem.PinnedBuffer(f32) = undefined;
+        for (0..MAX_RETAINED_WORKSPACES) |i| {
+            pool_mock[i] = try cuda_mem.PinnedBuffer(f32).init(64);
+            retained_workspace_pool_used[i] = true;
+            retained_workspace_pool[i] = .{
+                .pinned_ptr = pool_mock[i].ptr.?,
+                .pinned_len = pool_mock[i].len,
+                .next = retained_workspaces_head,
+                .is_dynamic = false,
+            };
+            retained_workspaces_head = &retained_workspace_pool[i];
+            retained_workspaces_count += 1;
+            _ = pool_mock[i].move();
+        }
+        try std.testing.expectEqual(@as(usize, MAX_RETAINED_WORKSPACES), retained_workspaces_count);
+
+        // 5. Create a workspace: all quarantine tiers and retained pool are 100% full.
+        var ws = try CudaWorkspace.init(std.testing.allocator, .single_gpu, [_]i32{ 0, 0 }, 32);
+        const original_pinned_ptr = ws.host_staging_pinned.ptr.?;
+
+        // Force both dynamic retention allocation failure AND whole-device sync failure
+        inject_retained_allocator_failure = true;
+        inject_device_sync_failure = true;
+        inject_stream_sync_failure = true;
+
+        // 6. Attempt teardown: must fail with error.DeviceNotQuiescent and preserve ownership!
+        try std.testing.expectError(error.DeviceNotQuiescent, ws.deinit());
+
+        // Verify that the workspace was NOT destroyed and the tracking reference was NOT dropped
+        try std.testing.expect(ws.host_staging_pinned.ptr != null);
+        try std.testing.expectEqual(original_pinned_ptr, ws.host_staging_pinned.ptr.?);
+        try std.testing.expectEqual(@as(usize, MAX_RETAINED_WORKSPACES), retained_workspaces_count);
+
+        // 7. Restore device synchronization and dynamic allocation
+        inject_device_sync_failure = false;
+        inject_retained_allocator_failure = false;
+        inject_stream_sync_failure = false;
+
+        // Now teardown succeeds cleanly, establishing device quiescence and freeing the buffer
+        try ws.deinit();
+
+        // 8. Restore quarantine failure flag and drain all 112 quarantined buffers cleanly
+        inject_quarantine_allocator_failure = false;
 
         try drainQuarantinedPinnedBuffers();
         try std.testing.expectEqual(@as(usize, 0), quarantined_buffers_count);
