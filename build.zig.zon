@@ -1,6 +1,6 @@
 .{
     .name = .zeno,
-    .version = "0.1.0",
+    .version = "0.2.0",
     .fingerprint = 0x4da9accff810a9fb, // Changing this has security and trust implications.
     .minimum_zig_version = "0.17.0-dev.2234+80fe9b2b7",
     .dependencies = .{},

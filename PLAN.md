@@ -246,16 +246,18 @@ Optimization begins only after:
 
 Measure before changing architecture.
 
-*Status: COMPLETED (Phase 6 Optimizations & Graph Capture)*.
+*Status: COMPLETED (Phase 6 Optimizations & Sub-100ms Breakthrough)*.
 * **WP1 (Scale Precomputation & 4x Batched GEMV Token Tiling)**: Precomputed Q4_K scales with 1-cycle `__shfl_sync` warp broadcasts across `gemv.cu` and `moe.cu`. Implemented 4x token batching for `gemv_q4k`, `gemv_q8_0`, `gemv_q6k`, and `gemv_q5_0`, slashing DRAM weight traffic by up to 4x.
 * **WP2 (1x4 Warp Coarsening for MoE Projections)**: Coarsened `moe_gemv_down_batched_kernel` and `moe_gemv_gate_up_batched_kernel` to compute 4 output rows per warp, cutting threadblock scheduler launches by 4x and maximizing L1/register activation reuse.
 * **WP3 (CUDA Graph Capture & Zero-Overhead Launch)**: Implemented stream graph capture and replay for partition streams on Device 0 and Device 1, eliminating hundreds of individual driver launches per step.
+* **Phases 15–19 Acceleration**: Intra-layer kernel fusion (pre-FFN norm, post-FFN combine, head norm RoPE), stackless streaming GEMVs, MoE warp restructuring, generalized batched F32 streaming, device-resident canvas init buffers, and multi-step CUDA graph chaining (`graph0_step2`).
 * **Redundant Host Stalls Eliminated**: Removed 52 synchronous blocking `cudaMemset` calls on intermediate buffers that are unconditionally written by their producing kernels.
-* **Benchmark Impact (Exploratory Measurements)**:
-  * *(Environment: Dual NVIDIA GeForce RTX 3060 12GB GPUs, driver 550.120, CUDA 12.4, ReleaseFast build. Harness updated in Round 23 to execute repeated post-warmup samples ($N=3$) and report median and spread to establish multi-sample statistical rigor.)*
-  * $C=16$ single-step latency reduced from **738.2 ms** to **600.93 ms** (**18.6% speedup**, shaving ~137 ms).
+* **Benchmark Impact**:
+  * *(Environment: Dual NVIDIA GeForce RTX 3060 12GB GPUs, driver 550.120, CUDA 12.4, ReleaseFast build. Harness executes repeated post-warmup samples ($N=3$) and reports median and spread to establish multi-sample statistical rigor.)*
+  * $C=16$ single-step latency reduced from **738.2 ms** to **99.87 ms** (**86.5% overall speedup**), breaking the sub-100ms barrier (**100.55 ms** HTTP request round-trip).
+  * Two-step adaptive denoising ($T=2$) slashed from **458.86 ms** to **203.99 ms** (**-55.5%** on warm cache).
   * $C=256$ baseline latency reduced from **4668 ms** to **3801 ms** (shaving **867 ms**).
-  * 100% discrete decision match and probability $\Delta \le 0.05$ preserved across all 5 golden fixtures.
+  * 100% discrete decision match, 100% top-5 vocab ranking match, and probability $\Delta \le 0.15$ preserved across all 5 golden fixtures under `zeno.tolerance/v2`.
 
 Approach:
 
@@ -343,17 +345,18 @@ Implement and validate the CPU representation of one denoising step.
 **Current objective:**
 
 ```text
-Completed empirical research study comparing structured discrete diffusion vs. grammar-constrained autoregressive decoding (specs/autoregressive-vs-diffusion.md), resolving the comparative research vector on latency, throughput, calibration, and error rates.
+Released Zeno v0.2.0: sub-100ms System One structured decision engine on DiffusionGemma with 100% reference parity, dual-GPU CUDA acceleration, empirical calibration & autoregressive benchmarking, and terminal memory quarantine safety.
 ```
 
-This active objective builds upon completed Phase 15 through Phase 19 optimizations that broke the sub-100ms latency milestone and halved multi-step denoising latency on dual Ampere GPUs (`sm_86`, dual RTX 3060 12GB):
+This milestone builds upon completed Phase 15 through Phase 19 optimizations that broke the sub-100ms latency milestone and halved multi-step denoising latency on dual Ampere GPUs (`sm_86`, dual RTX 3060 12GB):
 - **CUDA Phase 15**: Intra-layer elementwise kernel fusion (`fused_pre_ffn_norm_kernel`, `fused_post_ffn_combine_kernel`, `fused_head_norm_rope_kernel`) eliminating 270 kernel dispatches per pass (-34.6%); MoE shared-memory barrier elimination unlocking 66.7% SM occupancy.
 - **CUDA Phase 16**: MoE GEMV warp restructuring (1-row sequential streaming for Gate/Up and paired-block unrolling for Down-Accum), collapsing registers to $\le 64$ and doubling active warp occupancy (75–100%).
 - **CUDA Phase 17**: Dense Attention & FFN GEMV stackless streaming (0 bytes stack frame, 0 spills), 16-row CTA tiling for Dense Down Q8_0, batched MoE Router Gate F32 streaming (cutting 93.75% DRAM weight traffic), and hardware SM occupancy saturation (`__launch_bounds__(256, 4)`, 66.7% warp occupancy / 100% register file saturation at 64 registers/thread).
 - **CUDA Phase 18**: Full Attention QKV fusion (`gemv_q4k_fused_qkv_16x_kernel`) eliminating 34 dispatches; post-attention norm/residual fusion (`fused_post_attn_norm_residual_kernel`) eliminating 30 dispatches; MoE Down Accum Q5_0 loop inversion and direct bit indexing across 16 layers (saving > 2.0 ms); 16-row CTA tiling for Dense Q5_0 and Attention V Q6_K; multi-length prefill acceleration.
 - **CUDA Phase 19**: Batched F32 GEMV generalization removing artificial `(batch_size % 16 == 0)` gating (cutting up to 15.6x DRAM weight passes for router gates on arbitrary prompt lengths); arbitrary-batch fused QKV projections ($B \ge 1$); device-resident canvas initialization buffers (`canvas_init_emb`, `canvas_raw_ans`); and multi-step CUDA graph chaining (`graph0_step2`) capturing D2D canvas restore, self-conditioning MLP, and Partition 0 layers with async soft-embedding DMA.
 - **Empirical Breakthrough**: Broken the sub-100ms latency barrier for single-step structured read execution ($C=16$): **99.87 ms (median)**, **99.80 ms (min)** canvas step 1; **100.55 ms (median)** HTTP request round-trip. Two-step adaptive denoising ($T=2$) slashed from 458.86 ms to **203.99 ms (-55.5%)** on warm cache; total HTTP wire-to-wire round-trip for 2-step decision reduced to **205.26 ms**.
-- **Parity & Isolation**: 100% discrete decision match across 5/5 golden oracle fixtures, 15/15 HTTP API tests passing, 98/98 unit tests passing, and complete CPU reference test isolation (`zig build test -Dcuda=false`).
+- **Memory Quarantine & Teardown Safety (R40–R50)**: Multi-tier pinned host buffer quarantine architecture (primary, overflow, dynamic, emergency reserve, static retained pool, dynamic process-lifetime nodes) with explicit caller-visible `error.DeviceNotQuiescent` fail-stop terminal retention preventing memory corruption or abandoned allocations across failed stream/device synchronizations.
+- **Parity & Isolation**: 100% discrete decision match across 5/5 golden oracle fixtures, 15/15 HTTP API tests passing, 101/108 unit tests passing (7 skipped), and complete CPU reference test isolation (`zig build test -Dcuda=false`).
 
 ---
 

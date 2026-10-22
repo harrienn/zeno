@@ -50,7 +50,7 @@ pub const CudaStream = cuda_mem.CudaStream;
 /// Semantic version of the Zeno runtime.
 pub const version = std.SemanticVersion{
     .major = 0,
-    .minor = 1,
+    .minor = 2,
     .patch = 0,
 };
 

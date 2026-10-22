@@ -77,15 +77,15 @@ Typed Decision Output (Boolean, Categorical, or Ordinal Score)
 
 ---
 
-## 6. Status & Development
+## 6. Status & Development (v0.2.0)
 
-The repository includes a complete CPU reference implementation for DiffusionGemma structured decision-making, including GGUF parsing, BPE tokenizer, multi-threaded CPU inference engine, and a native zero-dependency HTTP decision API server (`POST /v1/systemone` and `GET /health`).
+The repository provides a complete, production-grade CPU reference implementation and an accelerated dual-GPU CUDA runtime for DiffusionGemma structured decision-making, including GGUF parsing, BPE tokenizer, multi-threaded CPU inference engine, and a native zero-dependency HTTP decision API server (`POST /v1/systemone` and `GET /health`).
 
-Five golden fixtures are tracked with independently captured reference records (`zeno.fixture/v1`) from llama.cpp PR #24423 (`llama-diffusion-gemma-eval`), verifying 100% discrete decision parity and identical top-5 vocabulary predictions across all test cases. The artifact's chat template is recorded verbatim in `chat_template.jinja` (U-05 resolved).
-
-High-performance dual-GPU CUDA execution (`sm_86`, dual RTX 3060 12GB) has achieved the **sub-100ms structured decision milestone** ($C=16$: **99.87 ms** canvas step latency, **100.55 ms** HTTP round-trip) and accelerated multi-step adaptive denoising ($T=2$: slashed by -55.5% from 458.86 ms down to **203.99 ms**) via intra-layer kernel fusion, stackless streaming GEMVs, MoE warp restructuring, generalized batched F32 streaming, device-resident canvas restoration buffers, and multi-step CUDA graph chaining (`graph0_step2`).
-
-All specification gates (U-01 through U-23) in [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) are fully resolved. Reference parity across all 5 golden oracle fixtures is officially established under policy `zeno.tolerance/v2`: discrete decisions match 100% (5/5), top-5 vocabulary tokens match 100% (5/5), uncertainty matches 100% (5/5), and cross-engine numerical drift is bounded within empirical tolerances. Empirical probability calibration is documented in [`specs/calibration-analysis.md`](specs/calibration-analysis.md), and head-to-head evaluation against grammar-constrained autoregressive decoding is documented in [`specs/autoregressive-vs-diffusion.md`](specs/autoregressive-vs-diffusion.md). See [`PLAN.md`](PLAN.md) and [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) for full gate records and history.
+Key milestones in **Zeno v0.2.0**:
+- **100% Reference Parity**: Five golden fixtures are tracked with independently captured reference records (`zeno.fixture/v1`) from llama.cpp PR #24423 (`llama-diffusion-gemma-eval`), verifying 100% discrete decision parity, 100% top-5 vocabulary ranking across all 262,144 tokens, and 100% uncertainty match under policy `zeno.tolerance/v2`.
+- **Sub-100ms Latency**: High-performance dual-GPU CUDA execution (`sm_86`, dual RTX 3060 12GB) achieves the **sub-100ms structured decision milestone** ($C=16$: **99.87 ms** median canvas step latency, **100.55 ms** HTTP round-trip) and accelerated multi-step adaptive denoising ($T=2$: slashed by -55.5% from 458.86 ms down to **203.99 ms**) via intra-layer kernel fusion, stackless streaming GEMVs, MoE warp restructuring, generalized batched F32 streaming, device-resident canvas restoration buffers, and multi-step CUDA graph chaining (`graph0_step2`).
+- **Memory Quarantine & Teardown Safety**: Robust multi-tier pinned host buffer quarantine architecture (primary, overflow, dynamic, emergency reserve, static retained pool, dynamic process-lifetime nodes) with explicit caller-visible `error.DeviceNotQuiescent` terminal retention policy, preventing memory leaks, use-after-free, or buffer abandonment under synchronization failures.
+- **Empirical Research Validated**: All specification gates (U-01 through U-23) in [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) are fully resolved. Empirical probability calibration and optimal operating temperatures are documented in [`specs/calibration-analysis.md`](specs/calibration-analysis.md), optimal canvas answer positioning in [`specs/canvas-geometry.md`](specs/canvas-geometry.md), and head-to-head evaluation against grammar-constrained autoregressive decoding in [`specs/autoregressive-vs-diffusion.md`](specs/autoregressive-vs-diffusion.md). See [`PLAN.md`](PLAN.md) and [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) for complete provenance records.
 
 ### Prerequisites
 
