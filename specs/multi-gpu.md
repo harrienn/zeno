@@ -22,6 +22,30 @@ Zeno implements a hybrid CPU/GPU architecture: input token embedding lookups and
   - Both devices comfortably fit within 12 GB VRAM with >4.3 GB headroom for OS desktop and CUDA driver allocations.
 * **Single-GPU Topology**:
   - When running on a device with $\ge 24$ GB VRAM (e.g., RTX 3090, RTX 4090, A100), all 30 layers reside on Device 0 (~15.0 GB VRAM).
+
+### 2.1 Hardware Support & Verification Matrix
+
+| Support Tier | Target GPU & Architecture | Compute Capability | Memory Requirement | Verified Environment / Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **Tested & Verified** | Dual NVIDIA GeForce RTX 3060 (12GB) | `sm_86` (Ampere) | $\ge 8.0$ GB free per GPU | Dual RTX 3060 12GB, Linux x86_64, Driver 550+/595+, CUDA Toolkit 12.4/13.3, Zig 0.17.0. Verified end-to-end across all 5 reference fixtures. |
+| **Build-Tested Only** | NVIDIA RTX 3090 / 4090 / A100 / H100 | `sm_80`, `sm_89`, `sm_90` | $\ge 16.0$ GB free (Single-GPU) | Supported via `-Dcuda-arch=<arch>`. Compiles cleanly; end-to-end numerical parity and latency on these architectures remain unverified on hardware. |
+| **Untested / Unsupported** | Arbitrary $N > 2$ GPU topologies | Any | Heterogeneous | Not supported in v0.2.0. Dynamic $N$-way heterogeneous layer sharding remains an open research question. |
+
+### 2.2 VRAM Admission & Topology Selection Contract
+
+To prevent partial allocation aborts or runtime memory corruption, `src/infer_cuda.zig` (`selectAndValidateDevices`) executes automated preflight admission checks before loading model layers:
+1. **`dual_gpu_split` Mode**:
+   - Requires two visible devices with at least **7.8 GiB (8.18 GB)** free VRAM each.
+   - If visible devices exceed 2, the engine searches for the first compatible device pair meeting the threshold.
+   - If no dual-GPU pair qualifies, but a high-capacity GPU ($\ge 15.5$ GiB free) is present, the engine automatically logs a diagnostic and falls back to `single_gpu`.
+2. **`single_gpu` Mode**:
+   - Requires one device with at least **15.5 GiB (16.25 GB)** free VRAM.
+   - Can be explicitly requested via `--single-gpu` CLI flag or forced via `force_single_gpu = true`.
+3. **Explicit Device Placement**:
+   - Standard `CUDA_VISIBLE_DEVICES` (e.g., `CUDA_VISIBLE_DEVICES=0,1` or `CUDA_VISIBLE_DEVICES=1`) governs device visibility.
+4. **Admission Failure**:
+   - If memory requirements cannot be met, the engine emits detailed logs with device IDs, names, and memory statistics, and returns `error.InsufficientDeviceMemory`.
+
 * **Canvas Activation Workspace**:
   - Sequence limit $N \le 512$ is strictly enforced at the CUDA entry point.
   - Per-device workspace requires **462,661,888 bytes (~462.66 MB / 441.23 MiB)** at $N=512$, calculated explicitly via `CudaDeviceWorkspace.activationWorkspaceBytes(512)`:

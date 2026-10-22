@@ -53,7 +53,7 @@ pub const Mutex = struct {
     }
 };
 
-/// Production stepping and output temperature scaling state for decision execution (R44-05, R45-01, R46-02).
+/// Nominal stepping and output temperature scaling state for decision execution (R44-05, R45-01, R46-02).
 pub const StepDecisionState = struct {
     steps_executed: u32 = 0,
     entropy_nats: f32 = 0.0,
@@ -137,7 +137,9 @@ pub const DecisionEngine = struct {
         var cuda_ws: ?*infer_cuda.CudaWorkspace = null;
 
         errdefer {
-            if (cuda_ws) |ws| ws.deinit() catch {};
+            if (cuda_ws) |ws| ws.deinit() catch |err| {
+                std.log.err("cuda workspace deinitialization failed during engine init abort: {s}", .{@errorName(err)});
+            };
             if (cuda_model) |cm| cm.deinit();
             if (cpu_ws) |ws| ws.deinit();
         }

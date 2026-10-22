@@ -31,7 +31,7 @@ pub fn main(init: std.process.Init) !void {
         return;
     } else if (args.len > 1 and std.mem.eql(u8, args[1], "serve")) {
         if (args.len < 3) {
-            try stdout_writer.print("Usage: zeno serve <path/to/model.gguf> [--cuda] [--host <ip>] [--port <port>]\n", .{});
+            try stdout_writer.print("Usage: zeno serve <path/to/model.gguf> [--cuda] [--single-gpu] [--host <ip>] [--port <port>]\n", .{});
             try stdout_writer.flush();
             return;
         }
@@ -40,11 +40,15 @@ pub fn main(init: std.process.Init) !void {
         var host: []const u8 = "127.0.0.1";
         var port: u16 = 8000;
         var use_cuda = false;
+        var force_single_gpu = false;
 
         var i: usize = 3;
         while (i < args.len) : (i += 1) {
             if (std.mem.eql(u8, args[i], "--cuda")) {
                 use_cuda = true;
+            } else if (std.mem.eql(u8, args[i], "--single-gpu")) {
+                use_cuda = true;
+                force_single_gpu = true;
             } else if (std.mem.eql(u8, args[i], "--host")) {
                 if (i + 1 >= args.len) {
                     try stdout_writer.print("Error: --host requires an IP address argument\n", .{});
@@ -84,9 +88,9 @@ pub fn main(init: std.process.Init) !void {
                 try stdout_writer.flush();
                 return;
             };
-            try stdout_writer.print("Backend: CUDA ({d} device(s) detected, topology: {s})\n", .{
+            try stdout_writer.print("Backend: CUDA ({d} device(s) detected, requested topology: {s})\n", .{
                 topo.reported_devices,
-                if (topo.reported_devices >= 2) "dual_gpu_split" else "single_gpu",
+                if (topo.reported_devices >= 2 and !force_single_gpu) "dual_gpu_split" else "single_gpu",
             });
         } else {
             try stdout_writer.print("Backend: CPU\n", .{});
@@ -95,6 +99,7 @@ pub fn main(init: std.process.Init) !void {
 
         var engine = zeno.DecisionEngine.initWithOptions(arena, model_path, .{
             .backend = if (use_cuda) .cuda else .cpu,
+            .force_single_gpu = force_single_gpu,
         }) catch |err| {
             try stdout_writer.print("Error initializing engine: {}\n", .{err});
             try stdout_writer.flush();
@@ -122,7 +127,7 @@ pub fn main(init: std.process.Init) !void {
         return;
     } else if (args.len > 1 and std.mem.eql(u8, args[1], "decide")) {
         if (args.len < 4) {
-            try stdout_writer.print("Usage: zeno decide <path/to/model.gguf> <query> [--cuda] [--canvas <N>] [cand1] [cand2] ...\n", .{});
+            try stdout_writer.print("Usage: zeno decide <path/to/model.gguf> <query> [--cuda] [--single-gpu] [--canvas <N>] [cand1] [cand2] ...\n", .{});
             try stdout_writer.flush();
             return;
         }
@@ -133,12 +138,16 @@ pub fn main(init: std.process.Init) !void {
         var canvas_override: ?usize = null;
         var answer_pos: usize = 0;
         var use_cuda = false;
+        var force_single_gpu = false;
         var step_cap: u32 = 1;
         var raw_candidates: std.ArrayList([]const u8) = .empty;
         var arg_i: usize = 4;
         while (arg_i < args.len) : (arg_i += 1) {
             if (std.mem.eql(u8, args[arg_i], "--cuda")) {
                 use_cuda = true;
+            } else if (std.mem.eql(u8, args[arg_i], "--single-gpu")) {
+                use_cuda = true;
+                force_single_gpu = true;
             } else if (std.mem.eql(u8, args[arg_i], "--steps")) {
                 if (arg_i + 1 >= args.len) {
                     try stdout_writer.print("Error: --steps requires an integer argument\n", .{});
@@ -194,9 +203,9 @@ pub fn main(init: std.process.Init) !void {
                 try stdout_writer.flush();
                 return;
             };
-            try stdout_writer.print("Backend: CUDA ({d} device(s) detected, topology: {s})\n", .{
+            try stdout_writer.print("Backend: CUDA ({d} device(s) detected, requested topology: {s})\n", .{
                 topo.reported_devices,
-                if (topo.reported_devices >= 2) "dual_gpu_split" else "single_gpu",
+                if (topo.reported_devices >= 2 and !force_single_gpu) "dual_gpu_split" else "single_gpu",
             });
         } else {
             try stdout_writer.print("Backend: CPU\n", .{});
@@ -205,6 +214,7 @@ pub fn main(init: std.process.Init) !void {
 
         var engine = zeno.DecisionEngine.initWithOptions(arena, model_path, .{
             .backend = if (use_cuda) .cuda else .cpu,
+            .force_single_gpu = force_single_gpu,
         }) catch |err| {
             try stdout_writer.print("Error initializing engine: {}\n", .{err});
             try stdout_writer.flush();
@@ -1121,11 +1131,11 @@ pub fn main(init: std.process.Init) !void {
         });
         try stdout_writer.print("\nUsage:\n", .{});
         try stdout_writer.print("  zeno [info] <path/to/model.gguf>\n", .{});
-        try stdout_writer.print("  zeno decide <path/to/model.gguf> \"<query>\" [--cuda] [--canvas <N>] [cand1] [cand2] ...\n", .{});
+        try stdout_writer.print("  zeno decide <path/to/model.gguf> \"<query>\" [--cuda] [--single-gpu] [--canvas <N>] [cand1] [cand2] ...\n", .{});
         try stdout_writer.print("  zeno decide-fixture <path/to/model.gguf> <fixture.json> [--cuda] [--canvas <N>] [out.json]\n", .{});
         try stdout_writer.print("  zeno evaluate-dataset <path/to/model.gguf> <dataset.json> [--cuda] [--steps <N>] [--threshold <tau>] [--temperature <T>] [--canvas <N>] [--out <results.json>]\n", .{});
         try stdout_writer.print("  zeno benchmark <path/to/model.gguf> [--cuda] [fixture.json]\n", .{});
-        try stdout_writer.print("  zeno serve <path/to/model.gguf> [--cuda] [--host <ip>] [--port <port>]\n", .{});
+        try stdout_writer.print("  zeno serve <path/to/model.gguf> [--cuda] [--single-gpu] [--host <ip>] [--port <port>]\n", .{});
         try stdout_writer.print("  zeno cuda-info\n", .{});
     }
 

@@ -14,7 +14,10 @@
 2. **Exact Semantic Preservation**: CUDA execution must preserve the exact mathematical contracts established by the CPU reference implementation ([`AGENTS.md`](../AGENTS.md) §5).
 3. **Explicit Memory Ownership**: Host memory and GPU VRAM allocations must have identifiable owners, deterministic lifetimes, and explicit transfer boundaries ([`AGENTS.md`](../AGENTS.md) §6).
 4. **Standalone Native Deployment**: Maintain Zeno as a single standalone executable compiled by `zig build`, with zero dynamic interpreter or heavyweight framework dependencies.
-5. **General CUDA Platform Scalability**: While the current local development environment is dual RTX 3060 (12GB each), the backend must support both **Single-GPU mode** (for cards with $\ge 24$ GB VRAM such as RTX 3090, RTX 4090, A100, H100) and **Multi-GPU mode** (pipeline layer splitting across $N \ge 2$ devices). Device partitioning must be configurable and topology-aware rather than hardcoded to a fixed 2-GPU layout.
+5. **Implemented CUDA Platform Support**: The backend supports two concrete execution topologies with automated VRAM preflight admission checks:
+   - **Dual-GPU Pipeline Split (`dual_gpu_split`)**: Fixed 15/15 layer pipeline across two compatible GPUs (requiring $\ge 7.8$ GiB / 8.0 GB free VRAM per device; verified on dual RTX 3060 12GB).
+   - **Single-GPU Topology (`single_gpu`)**: Full 30 layers on a single GPU (requiring $\ge 15.5$ GiB / 16.0 GB free VRAM, e.g. RTX 3090, RTX 4090, A100).
+   General dynamic $N$-device ($N > 2$) heterogeneous partitioning remains an unverified research goal outside the v0.2.0 specification scope.
 
 ### 1.2 Non-Goals
 * General-purpose text generation or conversational autoregressive decoding loops.
@@ -31,8 +34,8 @@ When running on a single GPU with sufficient memory:
 * **Transfers**: Zero inter-device transfers; only initial prompt tokens sent to GPU and final candidate logits read back to host.
 * **VRAM footprint**: ~17.5 GB total VRAM.
 
-### 2.2 Multi-GPU Topology (e.g. Dual RTX 3060 12GB)
-When running on devices where individual VRAM is under 24 GB, Zeno partitions layers across $N$ devices using Pipeline Layer Splitting:
+### 2.2 Dual-GPU Split Topology (e.g. Dual RTX 3060 12GB)
+When running on devices where individual VRAM is under 24 GB, Zeno partitions layers across two devices using Pipeline Layer Splitting (`dual_gpu_split`):
 
 ```text
 [Host: Zig Engine]

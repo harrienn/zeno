@@ -6,7 +6,7 @@ A research project exploring a lightweight Zig-based, **Jev-style structured dec
 
 ## 1. Overview
 
-Zeno is a research and systems-engineering project building a Zig runtime for reproducible, low-latency **"System One" decisions**—inspired by TypeSafe AI's Jev architecture and powered by Google DeepMind's DiffusionGemma discrete diffusion model. The repository provides a complete CPU reference implementation and an accelerated dual-GPU CUDA runtime achieving sub-100ms decision latency on commodity hardware.
+Zeno is a research and systems-engineering project building an experimental Zig runtime for reproducible, low-latency **"System One" decisions**—inspired by TypeSafe AI's Jev architecture and powered by Google DeepMind's DiffusionGemma discrete diffusion model. The repository provides a standalone CPU reference implementation and an accelerated dual-GPU CUDA runtime achieving sub-100ms decision latency on commodity hardware.
 
 Agentic workflows and software pipelines can use low-latency, schema-constrained evaluations for routing, intent classification, safety checks, and scoring. Zeno investigates whether discrete diffusion can serve these workloads effectively; comparisons with autoregressive approaches remain an active area of empirical evaluation.
 
@@ -92,15 +92,29 @@ If you are exploring the codebase or integrating Zeno, here is the recommended r
 ### 6.1 Prerequisites
 
 - **Zig**: `0.17.0` (or compatible version).
-- **Model**: Local reference artifact `models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf`. Download the 4-bit quantized GGUF (`diffusiongemma-26B-A4B-it-Q4_K_M.gguf`) from [unsloth/diffusiongemma-26B-A4B-it-GGUF](https://huggingface.co/unsloth/diffusiongemma-26B-A4B-it-GGUF) on Hugging Face:
+- **Model**: Local reference artifact `models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf` (SHA-256 `24523b6c...`). Download the 4-bit quantized GGUF (`diffusiongemma-26B-A4B-it-Q4_K_M.gguf`) from [unsloth/diffusiongemma-26B-A4B-it-GGUF](https://huggingface.co/unsloth/diffusiongemma-26B-A4B-it-GGUF) on Hugging Face:
   ```bash
   mkdir -p models
   wget -O models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf \
     https://huggingface.co/unsloth/diffusiongemma-26B-A4B-it-GGUF/resolve/main/diffusiongemma-26B-A4B-it-Q4_K_M.gguf
   ```
-- **GPU (Optional)**: NVIDIA GPU with CUDA 12.0+ compute capability (e.g., dual RTX 3060 12GB for accelerated dual-GPU execution).
+- **CUDA Toolkit (Optional)**: CUDA Toolkit 12.0+ (tested on CUDA 12.4 and 13.3) with NVIDIA driver 550+ / 595+.
+- **GPU Hardware & Compute Capability (Optional)**:
+  - *Verified in Hardware*: NVIDIA Ampere with Compute Capability 8.6 (`sm_86`, dual RTX 3060 12GB).
+  - *Build-Supported*: Other architectures selectable via `zig build -Dcuda-arch=<arch>` (e.g. `sm_80`, `sm_89`, `sm_90`), but unverified on hardware.
 
-### 6.2 CLI Direct Decision
+### 6.2 Hardware & Platform Compatibility Matrix
+
+| Support Tier | Target GPU & Architecture | Compute Capability | Memory Requirement | Verified Environment / Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **Tested & Verified** | Dual NVIDIA GeForce RTX 3060 (12GB) | `sm_86` (Ampere) | $\ge 8.0$ GB free per GPU | Dual RTX 3060 12GB, Linux x86_64, Driver 550+/595+, CUDA Toolkit 12.4/13.3, Zig 0.17.0. Verified end-to-end across all 5 reference fixtures. |
+| **Build-Tested Only** | NVIDIA RTX 3090 / 4090 / A100 / H100 | `sm_80`, `sm_89`, `sm_90` | $\ge 16.0$ GB free (Single-GPU) | Supported via `-Dcuda-arch=<arch>`. Compiles cleanly; runtime numerical parity and latency on these architectures remain unverified on hardware. |
+| **Untested / Unsupported** | Arbitrary $N > 2$ GPU topologies | Any | Heterogeneous | Not supported in v0.2.0. Dynamic $N$-way heterogeneous layer sharding remains an open research question. |
+
+> [!NOTE]
+> **VRAM Preflight Admission**: Before loading weights, Zeno checks available free VRAM. The dual-GPU split requires $\ge 7.8$ GiB free on two devices; single-GPU requires $\ge 15.5$ GiB free on one device. If insufficient VRAM is detected, the engine aborts with clear diagnostics rather than crashing during allocation. Use standard `CUDA_VISIBLE_DEVICES` (e.g. `CUDA_VISIBLE_DEVICES=0,1`) to select specific physical GPUs, or pass `--single-gpu` to force single-device execution.
+
+### 6.3 CLI Direct Decision
 
 Evaluate a decision directly from the command line:
 
@@ -129,7 +143,7 @@ Candidates:
   - No (ID 2360): prob=0.0016, raw_logit=12.0140
 ```
 
-### 6.3 HTTP Decision API Server
+### 6.4 HTTP Decision API Server
 
 Start the zero-dependency native HTTP server:
 
@@ -202,7 +216,7 @@ Sample JSON response:
 
 ## 7. Status & Development (v0.2.0)
 
-The repository provides a complete, production-grade CPU reference implementation and an accelerated dual-GPU CUDA runtime for DiffusionGemma structured decision-making, including GGUF parsing, BPE tokenizer, multi-threaded CPU inference engine, and a native zero-dependency HTTP decision API server (`POST /v1/systemone` and `GET /health`).
+The repository provides a standalone CPU reference implementation and an accelerated dual-GPU CUDA runtime for DiffusionGemma structured decision research, including GGUF parsing, BPE tokenizer, multi-threaded CPU inference engine, and a native zero-dependency HTTP decision API server (`POST /v1/systemone` and `GET /health`).
 
 Key milestones in **Zeno v0.2.0**:
 - **100% Reference Parity**: Five golden fixtures are tracked with independently captured reference records (`zeno.fixture/v1`) from llama.cpp PR #24423 (`llama-diffusion-gemma-eval`), verifying 100% discrete decision parity, 100% top-5 vocabulary ranking across all 262,144 tokens, and 100% uncertainty match under policy `zeno.tolerance/v2`.

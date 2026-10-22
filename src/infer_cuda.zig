@@ -346,15 +346,103 @@ pub const CudaModel = struct {
             self.sc_down != null;
     }
 
+    pub const SelectedTopology = struct {
+        topology: ExecutionTopology,
+        devices: [2]i32,
+    };
+
+    /// Evaluates visible GPU topology, verifies VRAM admission requirements,
+    /// and selects an eligible device pair (dual_gpu_split) or single device (single_gpu).
+    pub fn selectAndValidateDevices(topo: cuda.Topology, force_single_gpu: bool) !SelectedTopology {
+        const min_dual_split_free_bytes: usize = 7_800 * 1024 * 1024; // 7.8 GiB required per GPU
+        const min_single_gpu_free_bytes: usize = 15_500 * 1024 * 1024; // 15.5 GiB required for single GPU
+
+        if (topo.reported_devices == 0) return error.NoDevice;
+
+        if (!force_single_gpu and topo.reported_devices >= 2) {
+            // Check primary device pair (0, 1)
+            if (topo.devices[0].free_memory_bytes >= min_dual_split_free_bytes and
+                topo.devices[1].free_memory_bytes >= min_dual_split_free_bytes)
+            {
+                return SelectedTopology{
+                    .topology = .dual_gpu_split,
+                    .devices = [_]i32{ topo.devices[0].device_id, topo.devices[1].device_id },
+                };
+            }
+
+            // If primary pair is insufficient, search for any eligible pair
+            for (0..topo.reported_devices) |i| {
+                for ((i + 1)..topo.reported_devices) |j| {
+                    if (topo.devices[i].free_memory_bytes >= min_dual_split_free_bytes and
+                        topo.devices[j].free_memory_bytes >= min_dual_split_free_bytes)
+                    {
+                        return SelectedTopology{
+                            .topology = .dual_gpu_split,
+                            .devices = [_]i32{ topo.devices[i].device_id, topo.devices[j].device_id },
+                        };
+                    }
+                }
+            }
+
+            // Fallback: Check if any single visible device has sufficient VRAM for single_gpu mode
+            for (0..topo.reported_devices) |i| {
+                if (topo.devices[i].free_memory_bytes >= min_single_gpu_free_bytes) {
+                    std.log.info("CUDA preflight: dual_gpu_split insufficient free VRAM; falling back to single_gpu on Device {d} ({s}, {d} MiB free)", .{
+                        topo.devices[i].device_id,
+                        topo.devices[i].name(),
+                        topo.devices[i].free_memory_bytes / (1024 * 1024),
+                    });
+                    const dev_id = topo.devices[i].device_id;
+                    return SelectedTopology{
+                        .topology = .single_gpu,
+                        .devices = [_]i32{ dev_id, dev_id },
+                    };
+                }
+            }
+
+            std.log.err("CUDA preflight failed: insufficient VRAM for dual_gpu_split (requires >= 7.8 GiB free on 2 devices) or single_gpu (requires >= 15.5 GiB free on 1 device).", .{});
+            for (0..topo.reported_devices) |i| {
+                std.log.err("  Device {d} ({s}): {d} MiB free / {d} MiB total", .{
+                    topo.devices[i].device_id,
+                    topo.devices[i].name(),
+                    topo.devices[i].free_memory_bytes / (1024 * 1024),
+                    topo.devices[i].total_memory_bytes / (1024 * 1024),
+                });
+            }
+            return error.InsufficientDeviceMemory;
+        }
+
+        // Single-GPU mode (forced or single reported device)
+        for (0..topo.reported_devices) |i| {
+            if (topo.devices[i].free_memory_bytes >= min_single_gpu_free_bytes) {
+                const dev_id = topo.devices[i].device_id;
+                return SelectedTopology{
+                    .topology = .single_gpu,
+                    .devices = [_]i32{ dev_id, dev_id },
+                };
+            }
+        }
+
+        std.log.err("CUDA preflight failed: single_gpu topology requires at least 15.5 GiB free VRAM on one device.", .{});
+        for (0..topo.reported_devices) |i| {
+            std.log.err("  Device {d} ({s}): {d} MiB free / {d} MiB total", .{
+                topo.devices[i].device_id,
+                topo.devices[i].name(),
+                topo.devices[i].free_memory_bytes / (1024 * 1024),
+                topo.devices[i].total_memory_bytes / (1024 * 1024),
+            });
+        }
+        return error.InsufficientDeviceMemory;
+    }
+
     pub fn initFromCpuModel(allocator: std.mem.Allocator, cpu_model: DiffusionGemmaModel, force_single_gpu: bool) !*CudaModel {
         if (!is_enabled) return error.CudaDisabledAtBuild;
         const topo = try cuda.getTopology();
-        if (topo.reported_devices == 0) return error.NoDevice;
-
-        const use_multi_gpu = (topo.reported_devices >= 2 and !force_single_gpu);
-        const topology: ExecutionTopology = if (use_multi_gpu) .dual_gpu_split else .single_gpu;
-        const dev0 = topo.devices[0].device_id;
-        const dev1 = if (use_multi_gpu) topo.devices[1].device_id else dev0;
+        const selected = try selectAndValidateDevices(topo, force_single_gpu);
+        const topology = selected.topology;
+        const dev0 = selected.devices[0];
+        const dev1 = selected.devices[1];
+        const use_multi_gpu = (topology == .dual_gpu_split);
 
         const model_ptr = try allocator.create(CudaModel);
         errdefer allocator.destroy(model_ptr);

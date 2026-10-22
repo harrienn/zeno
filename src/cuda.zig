@@ -32,6 +32,7 @@ pub const CudaError = error{
     DeviceMismatch,
     PeerUnsupported,
     PeerEnableFailed,
+    InsufficientDeviceMemory,
     UnknownError,
     CudaDisabledAtBuild,
 };
