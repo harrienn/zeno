@@ -777,8 +777,19 @@ pub const MAX_EMERGENCY_RESERVE_BUFFERS: usize = 16;
 pub var emergency_reserve_buffers: [MAX_EMERGENCY_RESERVE_BUFFERS]?QuarantinedPinnedBuffer = @splat(null);
 pub var emergency_reserve_buffers_count: usize = 0;
 
+/// R47-01: Terminal teardown tracking for workspaces retained when all quarantine tiers
+/// (primary 16 + overflow 64 + dynamic heap + emergency reserve 16) are exhausted and
+/// stream/device synchronization fails. This preserves the owning workspace rather than
+/// destroying it and leaving the pinned allocation untracked.
+pub var retained_workspaces_head: ?*CudaWorkspace = null;
+pub var retained_workspaces_count: usize = 0;
+
 pub fn hasQuarantinedBuffers() bool {
-    return quarantined_buffers_count > 0 or overflow_quarantined_buffers_count > 0 or dynamic_quarantined_count > 0 or emergency_reserve_buffers_count > 0;
+    return quarantined_buffers_count > 0 or
+        overflow_quarantined_buffers_count > 0 or
+        dynamic_quarantined_count > 0 or
+        emergency_reserve_buffers_count > 0 or
+        retained_workspaces_count > 0;
 }
 
 pub fn quarantinePinnedBuffer(buf: *cuda_mem.PinnedBuffer(f32)) void {
@@ -1005,6 +1016,41 @@ pub fn drainQuarantinedPinnedBuffers() !void {
             }
         }
     }
+
+    // R47-01: Also release any workspaces retained when all quarantine tiers were exhausted.
+    var curr_ws = retained_workspaces_head;
+    var prev_ws: ?*CudaWorkspace = null;
+    while (curr_ws) |ws| {
+        const next_ws = ws.next_retained;
+        const p = ws.host_staging_pinned.ptr;
+        if (p) |ptr| {
+            const rc = cuda.c.zeno_cuda_host_free(ptr);
+            if (rc == cuda.c.ZENO_CUDA_SUCCESS) {
+                ws.host_staging_pinned.ptr = null;
+                const alloc = ws.allocator;
+                alloc.destroy(ws);
+                if (prev_ws) |p_ws| {
+                    p_ws.next_retained = next_ws;
+                } else {
+                    retained_workspaces_head = next_ws;
+                }
+                if (retained_workspaces_count > 0) retained_workspaces_count -= 1;
+            } else {
+                std.log.warn("drainQuarantinedPinnedBuffers: failed to free retained workspace host buffer {*} (rc={d}); retaining workspace", .{ ptr, rc });
+                prev_ws = ws;
+            }
+        } else {
+            const alloc = ws.allocator;
+            alloc.destroy(ws);
+            if (prev_ws) |p_ws| {
+                p_ws.next_retained = next_ws;
+            } else {
+                retained_workspaces_head = next_ws;
+            }
+            if (retained_workspaces_count > 0) retained_workspaces_count -= 1;
+        }
+        curr_ws = next_ws;
+    }
 }
 
 /// High-level multi-device execution workspace coordinating device workspaces and inter-device transfers.
@@ -1036,6 +1082,9 @@ pub const CudaWorkspace = struct {
     // Stage-level profiling timings (Review Round 34 Option 1)
     last_stage_timings: decision.StageTimings,
     last_canvas_ms: f32,
+
+    // R47-01: Terminal teardown fallback link for workspaces retained when all quarantine tiers are exhausted
+    next_retained: ?*CudaWorkspace = null,
 
     pub fn synchronize(self: *CudaWorkspace) !void {
         if (inject_stream_sync_failure) return error.StreamSyncFailed;
@@ -1125,6 +1174,7 @@ pub const CudaWorkspace = struct {
         ws_ptr.prompt_cache_valid = false;
         ws_ptr.last_stage_timings = .{};
         ws_ptr.last_canvas_ms = 0.0;
+        ws_ptr.next_retained = null;
 
         return ws_ptr;
     }
@@ -1182,6 +1232,21 @@ pub const CudaWorkspace = struct {
                 self.host_staging_pinned.len,
             });
             quarantinePinnedBuffer(&self.host_staging_pinned);
+
+            if (self.host_staging_pinned.ptr != null) {
+                // R47-01: Terminal fallback: all quarantine tables, dynamic allocations, and emergency
+                // reserves are exhausted. The pinned buffer could not be transferred to a quarantine slot.
+                // Rather than destroying `self` and leaving the allocation untracked/unowned, preserve
+                // the owning workspace in `retained_workspaces_head` until device quiescence is confirmed.
+                std.log.warn("CudaWorkspace.deinit: all quarantine tiers exhausted; preserving owning workspace {*} in retained_workspaces_head", .{self});
+                if (self.boundary_event) |*ev| ev.deinit();
+                if (self.dev1) |*d1| d1.deinit();
+                self.dev0.deinit();
+                self.next_retained = retained_workspaces_head;
+                retained_workspaces_head = self;
+                retained_workspaces_count += 1;
+                return;
+            }
         }
 
         if (self.boundary_event) |*ev| ev.deinit();
@@ -3866,6 +3931,74 @@ test "R41-01: CudaWorkspace quarantine policy and failed stream synchronization"
         try std.testing.expectEqual(@as(usize, 0), dynamic_quarantined_count);
         try std.testing.expectEqual(@as(usize, 0), emergency_reserve_buffers_count);
         try std.testing.expect(emergency_reserve_buffers[0] == null);
+    }
+
+    // Test 7: R47-01: Terminal fallback: all quarantine tiers (16 primary + 64 overflow + 16 emergency reserve)
+    // saturated + sync failure + dynamic allocator failure preserves owning workspace in retained_workspaces_head
+    {
+        try drainQuarantinedPinnedBuffers();
+        try std.testing.expectEqual(@as(usize, 0), quarantined_buffers_count);
+        try std.testing.expectEqual(@as(usize, 0), overflow_quarantined_buffers_count);
+        try std.testing.expectEqual(@as(usize, 0), dynamic_quarantined_count);
+        try std.testing.expectEqual(@as(usize, 0), emergency_reserve_buffers_count);
+        try std.testing.expectEqual(@as(usize, 0), retained_workspaces_count);
+        try std.testing.expect(retained_workspaces_head == null);
+
+        inject_device_sync_failure = true;
+        inject_quarantine_allocator_failure = true;
+
+        // 1. Fill 16 primary slots
+        var primary_mock: [MAX_QUARANTINED_BUFFERS]cuda_mem.PinnedBuffer(f32) = undefined;
+        for (0..MAX_QUARANTINED_BUFFERS) |i| {
+            primary_mock[i] = try cuda_mem.PinnedBuffer(f32).init(64);
+            quarantinePinnedBuffer(&primary_mock[i]);
+            try std.testing.expect(primary_mock[i].ptr == null);
+        }
+        try std.testing.expectEqual(@as(usize, MAX_QUARANTINED_BUFFERS), quarantined_buffers_count);
+
+        // 2. Fill 64 overflow slots
+        var overflow_mock: [MAX_OVERFLOW_BUFFERS]cuda_mem.PinnedBuffer(f32) = undefined;
+        for (0..MAX_OVERFLOW_BUFFERS) |i| {
+            overflow_mock[i] = try cuda_mem.PinnedBuffer(f32).init(64);
+            quarantinePinnedBuffer(&overflow_mock[i]);
+            try std.testing.expect(overflow_mock[i].ptr == null);
+        }
+        try std.testing.expectEqual(@as(usize, MAX_OVERFLOW_BUFFERS), overflow_quarantined_buffers_count);
+
+        // 3. Fill 16 emergency reserve slots
+        var reserve_mock: [MAX_EMERGENCY_RESERVE_BUFFERS]cuda_mem.PinnedBuffer(f32) = undefined;
+        for (0..MAX_EMERGENCY_RESERVE_BUFFERS) |i| {
+            reserve_mock[i] = try cuda_mem.PinnedBuffer(f32).init(64);
+            quarantinePinnedBuffer(&reserve_mock[i]);
+            try std.testing.expect(reserve_mock[i].ptr == null);
+        }
+        try std.testing.expectEqual(@as(usize, MAX_EMERGENCY_RESERVE_BUFFERS), emergency_reserve_buffers_count);
+
+        // 4. Deinit a CudaWorkspace: all 96 quarantine slots full, dynamic allocator fails
+        var ws = try CudaWorkspace.init(std.testing.allocator, .single_gpu, [_]i32{ 0, 0 }, 32);
+        const ws_pinned_ptr = ws.host_staging_pinned.ptr.?;
+
+        inject_stream_sync_failure = true;
+        ws.deinit();
+        inject_stream_sync_failure = false;
+
+        // Verify workspace itself was preserved in retained_workspaces_head
+        try std.testing.expectEqual(@as(usize, 1), retained_workspaces_count);
+        try std.testing.expect(retained_workspaces_head != null);
+        try std.testing.expectEqual(ws, retained_workspaces_head.?);
+        try std.testing.expectEqual(ws_pinned_ptr, retained_workspaces_head.?.host_staging_pinned.ptr.?);
+
+        // 5. Restore sync and allocator, and drain all 97 buffers cleanly
+        inject_device_sync_failure = false;
+        inject_quarantine_allocator_failure = false;
+
+        try drainQuarantinedPinnedBuffers();
+        try std.testing.expectEqual(@as(usize, 0), quarantined_buffers_count);
+        try std.testing.expectEqual(@as(usize, 0), overflow_quarantined_buffers_count);
+        try std.testing.expectEqual(@as(usize, 0), dynamic_quarantined_count);
+        try std.testing.expectEqual(@as(usize, 0), emergency_reserve_buffers_count);
+        try std.testing.expectEqual(@as(usize, 0), retained_workspaces_count);
+        try std.testing.expect(retained_workspaces_head == null);
     }
 }
 
