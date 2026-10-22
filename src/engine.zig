@@ -169,14 +169,21 @@ pub const DecisionEngine = struct {
     }
 
     /// Releases workspace, tokenizer vocabulary, model mapping, and memory.
-    pub fn deinit(self: *DecisionEngine) void {
+    /// Propagates any teardown error (e.g. error.DeviceNotQuiescent) and halts cleanup immediately,
+    /// preserving model buffers and workspace ownership until device quiescence is established (R51-01).
+    pub fn deinit(self: *DecisionEngine) !void {
         if (self.cuda_workspace) |ws| {
-            ws.deinit() catch |err| {
-                std.log.err("DecisionEngine.deinit: cuda_workspace teardown failed with {s}; workspace retained", .{@errorName(err)});
-            };
+            try ws.deinit();
+            self.cuda_workspace = null;
         }
-        if (self.cuda_model) |cm| cm.deinit();
-        if (self.cpu_workspace) |ws| ws.deinit();
+        if (self.cuda_model) |cm| {
+            cm.deinit();
+            self.cuda_model = null;
+        }
+        if (self.cpu_workspace) |ws| {
+            ws.deinit();
+            self.cpu_workspace = null;
+        }
         self.tokenizer.deinit(self.allocator);
         self.model.deinit();
     }
@@ -398,7 +405,7 @@ test "DecisionEngine: end-to-end boolean decision execution on local model if pr
         if (err == error.FileNotFound) return;
         return err;
     };
-    defer engine.deinit();
+    defer engine.deinit() catch {};
 
     const candidates = [_]decision.CandidateSpec{
         .{ .token = "Yes", .label = "Yes" },
@@ -454,7 +461,7 @@ test "DecisionEngine: end-to-end boolean decision execution on CUDA if present" 
         if (err == error.FileNotFound or err == error.NoDevice) return;
         return err;
     };
-    defer engine.deinit();
+    defer engine.deinit() catch {};
 
     const candidates = [_]decision.CandidateSpec{
         .{ .token = "Yes", .label = "Yes" },
@@ -554,7 +561,7 @@ test "DecisionEngine: multi-step decision execution on CUDA if present (Phase 9 
         if (err == error.FileNotFound or err == error.NoDevice) return;
         return err;
     };
-    defer engine.deinit();
+    defer engine.deinit() catch {};
 
     // Use ambiguous maintenance fixture: step 1 produces H_norm ~ 0.596 (uncertain), step 2 produces H_norm ~ 0.140 (decisive)
     const candidates = [_]decision.CandidateSpec{
@@ -752,4 +759,129 @@ test "DecisionEngine: split temperature semantics for internal stopping vs respo
         try std.testing.expectEqual(@as(u32, 2), step_state.steps_executed);
         try std.testing.expect(!step_state.uncertain);
     }
+}
+
+test "DecisionEngine: R51-01 error propagation and resource preservation under terminal quarantine failure" {
+    if (!root.cuda.is_enabled) return error.SkipZigTest;
+
+    const allocator = std.testing.allocator;
+    const model_path = "models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf";
+
+    // 1. Initialize a full DecisionEngine with the CUDA backend
+    var engine = DecisionEngine.initWithOptions(allocator, model_path, .{ .backend = .cuda }) catch |err| switch (err) {
+        error.FileNotFound, error.NoDevice => return error.SkipZigTest,
+        else => return err,
+    };
+    // Ensure cleanup safety even if an intermediate assertion fails
+    defer {
+        infer_cuda.inject_device_sync_failure = false;
+        infer_cuda.inject_retained_allocator_failure = false;
+        infer_cuda.inject_quarantine_allocator_failure = false;
+        infer_cuda.inject_stream_sync_failure = false;
+        engine.deinit() catch {};
+        infer_cuda.drainQuarantinedPinnedBuffers() catch {};
+    }
+
+    try std.testing.expect(engine.cuda_workspace != null);
+    try std.testing.expect(engine.cuda_model != null);
+    const initial_ws = engine.cuda_workspace.?;
+    const initial_model = engine.cuda_model.?;
+    const original_pinned_ptr = initial_ws.host_staging_pinned.ptr.?;
+
+    // 2. Clear slate: drain any existing quarantine
+    try infer_cuda.drainQuarantinedPinnedBuffers();
+    try std.testing.expectEqual(@as(usize, 0), infer_cuda.quarantined_buffers_count);
+    try std.testing.expectEqual(@as(usize, 0), infer_cuda.overflow_quarantined_buffers_count);
+    try std.testing.expectEqual(@as(usize, 0), infer_cuda.dynamic_quarantined_count);
+    try std.testing.expectEqual(@as(usize, 0), infer_cuda.emergency_reserve_buffers_count);
+    try std.testing.expectEqual(@as(usize, 0), infer_cuda.retained_workspaces_count);
+    try std.testing.expect(infer_cuda.retained_workspaces_head == null);
+
+    // 3. Fill all quarantine tiers (112 buffers total) to force terminal retention path
+    infer_cuda.inject_device_sync_failure = true;
+    infer_cuda.inject_quarantine_allocator_failure = true;
+
+    // Fill 16 primary slots
+    var primary_mock: [infer_cuda.MAX_QUARANTINED_BUFFERS]root.cuda_mem.PinnedBuffer(f32) = undefined;
+    for (0..infer_cuda.MAX_QUARANTINED_BUFFERS) |i| {
+        primary_mock[i] = try root.cuda_mem.PinnedBuffer(f32).init(64);
+        infer_cuda.quarantinePinnedBuffer(&primary_mock[i]);
+        try std.testing.expect(primary_mock[i].ptr == null);
+    }
+    try std.testing.expectEqual(@as(usize, infer_cuda.MAX_QUARANTINED_BUFFERS), infer_cuda.quarantined_buffers_count);
+
+    // Fill 64 overflow slots
+    var overflow_mock: [infer_cuda.MAX_OVERFLOW_BUFFERS]root.cuda_mem.PinnedBuffer(f32) = undefined;
+    for (0..infer_cuda.MAX_OVERFLOW_BUFFERS) |i| {
+        overflow_mock[i] = try root.cuda_mem.PinnedBuffer(f32).init(64);
+        infer_cuda.quarantinePinnedBuffer(&overflow_mock[i]);
+        try std.testing.expect(overflow_mock[i].ptr == null);
+    }
+    try std.testing.expectEqual(@as(usize, infer_cuda.MAX_OVERFLOW_BUFFERS), infer_cuda.overflow_quarantined_buffers_count);
+
+    // Fill 16 emergency reserve slots
+    var reserve_mock: [infer_cuda.MAX_EMERGENCY_RESERVE_BUFFERS]root.cuda_mem.PinnedBuffer(f32) = undefined;
+    for (0..infer_cuda.MAX_EMERGENCY_RESERVE_BUFFERS) |i| {
+        reserve_mock[i] = try root.cuda_mem.PinnedBuffer(f32).init(64);
+        infer_cuda.quarantinePinnedBuffer(&reserve_mock[i]);
+        try std.testing.expect(reserve_mock[i].ptr == null);
+    }
+    try std.testing.expectEqual(@as(usize, infer_cuda.MAX_EMERGENCY_RESERVE_BUFFERS), infer_cuda.emergency_reserve_buffers_count);
+
+    // Fill all 16 static records in retained_workspace_pool
+    var pool_mock: [infer_cuda.MAX_RETAINED_WORKSPACES]root.cuda_mem.PinnedBuffer(f32) = undefined;
+    for (0..infer_cuda.MAX_RETAINED_WORKSPACES) |i| {
+        pool_mock[i] = try root.cuda_mem.PinnedBuffer(f32).init(64);
+        infer_cuda.retained_workspace_pool_used[i] = true;
+        infer_cuda.retained_workspace_pool[i] = .{
+            .pinned_ptr = pool_mock[i].ptr.?,
+            .pinned_len = pool_mock[i].len,
+            .next = infer_cuda.retained_workspaces_head,
+            .is_dynamic = false,
+        };
+        infer_cuda.retained_workspaces_head = &infer_cuda.retained_workspace_pool[i];
+        infer_cuda.retained_workspaces_count += 1;
+        _ = pool_mock[i].move();
+    }
+    try std.testing.expectEqual(@as(usize, infer_cuda.MAX_RETAINED_WORKSPACES), infer_cuda.retained_workspaces_count);
+
+    // 4. Force both dynamic retention allocation failure AND whole-device sync failure
+    infer_cuda.inject_retained_allocator_failure = true;
+    infer_cuda.inject_device_sync_failure = true;
+    infer_cuda.inject_stream_sync_failure = true;
+
+    // 5. Attempt teardown: DecisionEngine.deinit must propagate error.DeviceNotQuiescent!
+    try std.testing.expectError(error.DeviceNotQuiescent, engine.deinit());
+
+    // 6. Assert R51-01 resource preservation:
+    // Neither cuda_workspace nor cuda_model must have been destroyed or nulled!
+    try std.testing.expect(engine.cuda_workspace != null);
+    try std.testing.expectEqual(initial_ws, engine.cuda_workspace.?);
+    try std.testing.expect(engine.cuda_model != null);
+    try std.testing.expectEqual(initial_model, engine.cuda_model.?);
+    try std.testing.expect(engine.cuda_workspace.?.host_staging_pinned.ptr != null);
+    try std.testing.expectEqual(original_pinned_ptr, engine.cuda_workspace.?.host_staging_pinned.ptr.?);
+
+    // 7. Restore device synchronization and dynamic allocation
+    infer_cuda.inject_device_sync_failure = false;
+    infer_cuda.inject_retained_allocator_failure = false;
+    infer_cuda.inject_stream_sync_failure = false;
+
+    // 8. Retry DecisionEngine.deinit: must now succeed cleanly and destroy all resources!
+    try engine.deinit();
+
+    // Verify all engine resources are nulled out
+    try std.testing.expect(engine.cuda_workspace == null);
+    try std.testing.expect(engine.cuda_model == null);
+
+    // 9. Restore quarantine allocator and drain all 112 quarantined buffers cleanly
+    infer_cuda.inject_quarantine_allocator_failure = false;
+
+    try infer_cuda.drainQuarantinedPinnedBuffers();
+    try std.testing.expectEqual(@as(usize, 0), infer_cuda.quarantined_buffers_count);
+    try std.testing.expectEqual(@as(usize, 0), infer_cuda.overflow_quarantined_buffers_count);
+    try std.testing.expectEqual(@as(usize, 0), infer_cuda.dynamic_quarantined_count);
+    try std.testing.expectEqual(@as(usize, 0), infer_cuda.emergency_reserve_buffers_count);
+    try std.testing.expectEqual(@as(usize, 0), infer_cuda.retained_workspaces_count);
+    try std.testing.expect(infer_cuda.retained_workspaces_head == null);
 }

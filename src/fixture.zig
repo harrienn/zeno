@@ -326,7 +326,7 @@ test "validateFixture: compares local model with stored fixture values if presen
         if (err == error.FileNotFound) return;
         return err;
     };
-    defer engine.deinit();
+    defer engine.deinit() catch {};
 
     try validateFixture(allocator, "specs/fixtures/system_health_boolean.json", &engine);
     try validateFixture(allocator, "specs/fixtures/incident_severity_multiclass.json", &engine);
@@ -346,7 +346,7 @@ test "validateFixture: compares CUDA model with stored fixture values if present
         if (err == error.FileNotFound or err == error.NoDevice) return;
         return err;
     };
-    defer engine.deinit();
+    defer engine.deinit() catch {};
 
     try validateFixture(allocator, "specs/fixtures/system_health_boolean.json", &engine);
     try validateFixture(allocator, "specs/fixtures/incident_severity_multiclass.json", &engine);

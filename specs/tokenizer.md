@@ -20,18 +20,14 @@ Parameters and special token IDs are extracted directly from `models/diffusionge
 | `tokenizer.ggml.unknown_token_id` | `3` | Unknown token fallback (`<unk>`) |
 | `tokenizer.ggml.padding_token_id` | `0` | Padding placeholder (`<pad>`) |
 | `tokenizer.ggml.mask_token_id` | `4` | Discrete diffusion mask token (`<mask>`); answer-slot seeding is defined separately |
-| `tokenizer.ggml.add_bos_token` | `true` | BOS behavior must be verified against the pinned tokenizer/template path; see §2.1 and U-05. |
+| `tokenizer.ggml.add_bos_token` | `true` | BOS emitted directly by chat template; see §2.1 and U-05. |
 | `tokenizer.ggml.add_space_prefix` | `false` | Do not prepend space prefix |
 
-### 2.1 BOS Insertion Rule (verification required)
+### 2.1 BOS Insertion Rule
 
-The artifact requests BOS insertion (`add_bos_token = true`) and carries a chat template that may itself emit BOS. The correct behavior is not established until the template and reference tokenizer path are inspected (U-05). Apply this implementation constraint:
+The artifact requests BOS insertion (`add_bos_token = true`) and carries a chat template that itself emits BOS. The interaction was resolved under U-05 in [`specs/UNRESOLVED.md`](UNRESOLVED.md):
 
-> **Do not add or remove BOS independently of the pinned reference behavior.** Inspect whether the captured chat template emits BOS and whether the chosen encoder adds BOS; reproduce the effective sequence exactly once. Record the resulting prompt token IDs in reference fixtures.
-
-This prevents both a duplicated BOS and an omitted BOS. The `add_bos_token` metadata flag alone does not establish whether the chat-template path inserts BOS.
-
-This rule depends on U-05 and U-04 in [`UNRESOLVED.md`](UNRESOLVED.md); capture template text, effective encoder behavior, and prompt token IDs before claiming parity.
+> **BOS Invariant**: The chat template extracted into [`chat_template.jinja`](chat_template.jinja) emits `<bos>` directly as its initial token. The prompt renderer must not prepend a second BOS token, ensuring the effective sequence contains exactly one BOS. Effective prompt token sequences are pinned in reference fixtures and documented in [`specs/canvas-templates.md`](canvas-templates.md) §4.
 
 ### 2.2 First Five Control Tokens
 * `0`: `<pad>`
@@ -53,15 +49,15 @@ In traditional autoregressive models, mask tokens are rarely used during inferen
 
 ---
 
-## 3a. Scope: What This Document Does Not Specify
+## 3a. Scope & Resolution of Prompt Rendering
 
-This document specifies the **vocabulary** contract: token inventory, special IDs, decode, BPE encoding, and single-token candidate validation. The input-side BPE mechanics are implemented and recorded under U-04. The artifact's chat template and its exact interaction with BOS remain unresolved under U-05:
+This document specifies the **vocabulary** contract: token inventory, special IDs, decode, BPE encoding, and single-token candidate validation. Input-side BPE mechanics are recorded as resolved under U-04 in [`specs/UNRESOLVED.md`](UNRESOLVED.md). The artifact's chat template and BOS interaction are resolved under U-05:
 
-* the chat template that supplies the rendered prompt.
+* The chat template is extracted verbatim from GGUF metadata into [`chat_template.jinja`](chat_template.jinja) (17,336 bytes).
+* Prompt rendering, delimiter insertion, and single-BOS handling are specified in [`specs/canvas-templates.md`](canvas-templates.md) §4.
+* Effective prompt token IDs are verified across all 5 golden reference fixtures (`specs/fixtures/*.json`) against llama.cpp PR #24423.
 
-The BPE behavior is tracked as resolved U-04; the template is tracked as open U-05 in [`UNRESOLVED.md`](UNRESOLVED.md).
-
-**Consequence**: candidate validation can use the implemented encoder, but an end-to-end rendered prompt cannot be considered reference-faithful until U-05 is closed.
+End-to-end prompt rendering is fully reference-faithful and parity-validated across all supported schemas.
 
 ## 4. Candidate Validation Contract
 

@@ -276,7 +276,10 @@ pub const DiffusionGemmaModel = struct {
     /// Releases resources, unmapping file memory and closing file descriptors.
     pub fn deinit(self: *DiffusionGemmaModel) void {
         self.gguf_file.deinit();
-        posix.munmap(self.mmap_data);
+        if (self.mmap_data.len > 0) {
+            posix.munmap(self.mmap_data);
+            self.mmap_data = &.{};
+        }
         if (self.file_fd) |fd| {
             _ = linux.close(fd);
             self.file_fd = null;

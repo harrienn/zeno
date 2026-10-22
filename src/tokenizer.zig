@@ -188,10 +188,18 @@ pub const Tokenizer = struct {
 
     /// Releases allocated vocabulary memory, merges, control tokens, and lookup hash map.
     pub fn deinit(self: *Tokenizer, allocator: std.mem.Allocator) void {
-        allocator.free(self.vocab);
+        if (self.vocab.len > 0) {
+            allocator.free(self.vocab);
+            self.vocab = &.{};
+        }
         self.token_to_id.deinit(allocator);
+        self.token_to_id = .{};
         self.merges.deinit(allocator);
-        allocator.free(self.control_tokens);
+        self.merges = .{};
+        if (self.control_tokens.len > 0) {
+            allocator.free(self.control_tokens);
+            self.control_tokens = &.{};
+        }
     }
 
     /// Finds a token ID by exact byte slice match.

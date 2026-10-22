@@ -96,8 +96,14 @@ pub const GgufFile = struct {
     allocator: std.mem.Allocator,
 
     pub fn deinit(self: *GgufFile) void {
-        self.allocator.free(self.metadata);
-        self.allocator.free(self.tensors);
+        if (self.metadata.len > 0) {
+            self.allocator.free(self.metadata);
+            self.metadata = &.{};
+        }
+        if (self.tensors.len > 0) {
+            self.allocator.free(self.tensors);
+            self.tensors = &.{};
+        }
     }
 
     /// Finds a metadata entry by exact key name.
