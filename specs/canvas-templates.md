@@ -72,7 +72,7 @@ Choices:
 Answer: 
 ```
 
-### 4.0 Prototype Formatting Rules (Provisional)
+### 4.0 Verified Prompt Formatting Rules
 1. **Turn Delimiters**:
    - User turn begins with `<|turn>user\n` and closes with `<turn|>\n`.
    - Assistant/model turn begins with `<|turn>model\n` and closes with `<turn|>\n` (or is kept open at the generation prefix).
@@ -123,7 +123,7 @@ For each candidate:
 4. Reject duplicate token IDs with `DuplicateCandidateToken`, even when display labels differ.
 5. Keep the resolved token ID associated with its display label.
 
-The exact continuation procedure must be tested against the model tokenizer and a reference fixture before implementation.
+The continuation procedure is implemented in `src/canvas.zig` (`Canvas.formatDecisionPrompt`) and `src/tokenizer.zig` (`Tokenizer.findTokenId`), and verified across all 5 golden oracle fixtures.
 
 ### Error Conditions
 - **`MultiTokenCandidateNotAllowed`**: Returned if a rendered candidate continuation is not exactly one token.

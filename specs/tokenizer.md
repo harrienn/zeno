@@ -57,7 +57,14 @@ This document specifies the **vocabulary** contract: token inventory, special ID
 * Prompt rendering, delimiter insertion, and single-BOS handling are specified in [`specs/canvas-templates.md`](canvas-templates.md) §4.
 * Effective prompt token IDs are verified across all 5 golden reference fixtures (`specs/fixtures/*.json`) against llama.cpp PR #24423.
 
-End-to-end prompt rendering is fully reference-faithful and parity-validated across all supported schemas.
+End-to-end prompt rendering and single-token candidate resolution are verified with exact token-level parity against the llama.cpp reference oracle across the 5 tracked golden fixture categories:
+1. **Boolean Judgment**: `specs/fixtures/system_health_boolean.json` (binary `"Yes"`/`"No"`)
+2. **Multi-Class Categorization**: `specs/fixtures/incident_severity_multiclass.json` (3-class `"Low"`/`"Medium"`/`"High"`)
+3. **5-Point Ordinal Rating**: `specs/fixtures/satisfaction_score_5class.json` (5-point ordinal score `"1"` through `"5"`)
+4. **High-Entropy Uncertainty Gating**: `specs/fixtures/maintenance_priority_uncertain.json` (normative uncertainty thresholding under $H_{\text{norm}} \ge 0.50$)
+5. **Canvas Boundary Sequence Limits**: `specs/fixtures/boundary_256_incident_triage.json` (224-token long-context prompt packing within the 256-token canvas limit)
+
+Schemas requiring multi-token string generation or open-ended text infilling are deliberately outside Zeno's single-step/few-step System One decision contract.
 
 ## 4. Candidate Validation Contract
 

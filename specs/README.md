@@ -1,20 +1,39 @@
-# Zeno — Specifications
+# Zeno — Specification Index
 
-This directory contains technical specifications for the Zeno runtime, Jev-style decision semantics, and execution formats.
+This directory contains the normative technical specifications, empirical research analyses, and verification ledgers governing the Zeno runtime.
 
-As outlined in [ARCHITECTURE.md](../ARCHITECTURE.md) and [PLAN.md](../PLAN.md), high-level architecture and sequencing belong in the root documents, while precise mathematical, layout, and behavioral specifications belong in `specs/`.
+For high-level system architecture and execution flow, start with [README.md](../README.md) and [ARCHITECTURE.md](../ARCHITECTURE.md).
 
-## Authored Specifications
+---
 
-- [**`UNRESOLVED.md`**](UNRESOLVED.md): **Read this first.** The register of every specification question Zeno has deliberately not answered, with the procedure that closes each one, the golden fixture format, and a resolution log. Any phase whose entry gate cites a `U-nn` identifier depends on it.
+## 1. Normative Implemented Specifications
 
-- [**`decision-api.md`**](decision-api.md): Specification of the Jev-compatible `/v1/systemone` HTTP REST and native Zig library interfaces, query schemas, single-token choice constraints, response formats, and entropy reporting.
-- [**`canvas-templates.md`**](canvas-templates.md): Proposed canvas layout and prompt construction, with answer pinning and padding semantics marked for reference validation.
-- [**`structured-reads.md`**](structured-reads.md): Candidate logit extraction and scoring, including the causal prefill/bidirectional decoder distinction and open parity requirements.
-- [**`transformer.md`**](transformer.md): Detailed layer execution mechanics: bidirectional non-causal attention, dual RoPE frequency bases, global layer $V=K$ sharing, 128-expert MoE top-8 routing, and RMSNorm.
-- [**`tokenizer.md`**](tokenizer.md): Gemma 4 BPE vocabulary format, special token conventions (`bos=2`, `eos=1`, `mask=4`), single-token candidate validation, and native Zig tokenizer contracts.
-- [**`gguf-mapping.md`**](gguf-mapping.md): Concrete mapping of DiffusionGemma GGUF tensor names, shapes, and quantization types (Q4_K_M) verified against the local repository artifact (`models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf`).
-- [**`denoising.md`**](denoising.md): Reference denoising behavior and clearly labeled experiments for follow-up reads; proposed update equations are not implementation requirements until validated.
-- [**`multi-gpu.md`**](multi-gpu.md): Multi-GPU options and verification questions. Hardware budgets and communication counts are hypotheses until measured.
-- [**`cuda-roadmap.md`**](cuda-roadmap.md): Comprehensive implementation roadmap for the CUDA C++ backend, dual-GPU layer sharding (2x RTX 3060), device memory management, quantized GEMV, and sub-100ms decision latency targets.
+These documents define the authoritative contracts for the implemented v0.2.0 runtime:
+
+- [**`decision-api.md`**](decision-api.md) `[IMPLEMENTED]`: Specification of the Jev-compatible `/v1/systemone` HTTP REST and native Zig library interfaces, query schemas, single-token candidate validation, response serialization, wire error codes, and entropy reporting.
+- [**`canvas-templates.md`**](canvas-templates.md) `[IMPLEMENTED]`: Dual-region sequence layout (causal prompt prefix $0 \dots P-1$ and bidirectional canvas $P \dots P+C-1$), verified prompt template construction, answer slot pinning ($p=0$), and configurable canvas prefix widths ($C \in [16, 256]$).
+- [**`structured-reads.md`**](structured-reads.md) `[IMPLEMENTED]`: Single-step candidate logit extraction, single-softcapped unsoftcap transformation, candidate probability normalization, and Shannon entropy calculation.
+- [**`transformer.md`**](transformer.md) `[IMPLEMENTED]`: Full 30-layer Gemma 4 MoE model architecture: bidirectional non-causal attention, dual RoPE frequency bases (10,000 / 1,000,000), sliding-window and global attention head patterns, 128-expert top-8 routing, and unweighted pre-FFN RMSNorm.
+- [**`tokenizer.md`**](tokenizer.md) `[IMPLEMENTED]`: Gemma 4 BPE vocabulary format ($V=262,144$), control token IDs (`bos=2`, `eos=1`, `mask=4`, `pad=0`), verbatim chat template integration, single-BOS invariant, and single-token continuation resolution.
+- [**`gguf-mapping.md`**](gguf-mapping.md) `[IMPLEMENTED]`: Verified mapping of DiffusionGemma 26B-A4B-it Q4_K_M GGUF tensor names, dimensions, quantization formats (Q4_K, Q6_K, Q8_0, Q5_0), and memory offsets.
+- [**`multi-gpu.md`**](multi-gpu.md) `[IMPLEMENTED]`: Dual-GPU pipeline layer splitting (Strategy A: Layers 0..14 on GPU 0, Layers 15..29 on GPU 1), peer-to-peer / host-staged boundary transfer mechanics, and activation workspace memory sizing.
+
+---
+
+## 2. Empirical Research & Evaluation
+
+These documents record verified empirical findings from dedicated experimental studies:
+
+- [**`denoising.md`**](denoising.md) `[IMPLEMENTED / EMPIRICAL]`: Multi-step discrete diffusion mechanics and empirical evaluation of adaptive 2-step denoising with candidate-restricted self-conditioning soft embeddings ($E_{\text{sc}}$), eliminating option-rotation bias while preserving sub-100ms median latency.
+- [**`calibration-analysis.md`**](calibration-analysis.md) `[EMPIRICAL RESEARCH]`: 5-fold cross-validated probability calibration on ARC-Challenge ($N=150$); optimal operating temperatures ($T_{\text{opt}} \approx 1.60$ softcapped, $T_{\text{opt}} \approx 2.40$ raw) reducing ECE by >40%–55%.
+- [**`canvas-geometry.md`**](canvas-geometry.md) `[EMPIRICAL RESEARCH]`: Answer position geometry ($k \in [0, 255]$) and canvas width ($C \in [16, 256]$) sensitivity study; proves that answer placement at $k \in \{0, 1\}$ maximizes prompt cue attention and logit margins.
+- [**`autoregressive-vs-diffusion.md`**](autoregressive-vs-diffusion.md) `[EMPIRICAL RESEARCH]`: Head-to-head empirical comparison of structured discrete diffusion vs. grammar-constrained autoregressive decoding across latency, parameter streaming traffic, calibration, and positional bias.
+
+---
+
+## 3. Verification & Provenance Ledgers
+
+- [**`UNRESOLVED.md`**](UNRESOLVED.md) `[RESOLVED LEDGER]`: The authoritative specification gate register. All 23 original specification questions (U-01 through U-23) are formally resolved with code, commit, and fixture evidence. Contains the `zeno.fixture/v1` schema and the `zeno.tolerance/v2` numerical comparison policy governing reference parity.
+- [**`cuda-roadmap.md`**](cuda-roadmap.md) `[HISTORICAL ROADMAP]`: Original engineering roadmap for the CUDA C++ backend, documenting completed Stage 1 through Stage 6 milestones.
+- [**Phase Optimization RFCs**](cuda-phase15-optimization-rfc.md) `[HISTORICAL RFCs]`: Design RFCs for completed kernel optimizations that achieved the sub-100ms milestone: [Phase 15](cuda-phase15-optimization-rfc.md), [Phase 16](cuda-phase16-moe-gemv-rfc.md), [Phase 17](cuda-phase17-dense-gemv-rfc.md), [Phase 18](cuda-phase18-sub100ms-rfc.md), and [Phase 19](cuda-phase19-prefill-rfc.md).
 

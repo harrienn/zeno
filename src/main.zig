@@ -100,7 +100,9 @@ pub fn main(init: std.process.Init) !void {
             try stdout_writer.flush();
             return;
         };
-        defer engine.deinit() catch {};
+        defer engine.deinit() catch |err| {
+            std.log.err("engine deinitialization failed: {s}", .{@errorName(err)});
+        };
 
         var server_inst = zeno.Server.init(std.heap.page_allocator, &engine, host, port);
         try server_inst.listen();
@@ -208,7 +210,9 @@ pub fn main(init: std.process.Init) !void {
             try stdout_writer.flush();
             return;
         };
-        defer engine.deinit() catch {};
+        defer engine.deinit() catch |err| {
+            std.log.err("engine deinitialization failed: {s}", .{@errorName(err)});
+        };
 
         const req = zeno.DecisionRequest{
             .query = query,
@@ -301,7 +305,9 @@ pub fn main(init: std.process.Init) !void {
         const canvas_path = args[5];
 
         var engine = try zeno.DecisionEngine.init(arena, model_path);
-        defer engine.deinit() catch {};
+        defer engine.deinit() catch |err| {
+            std.log.err("engine deinitialization failed: {s}", .{@errorName(err)});
+        };
 
         const candidate_specs = try parseCandidateSpecs(arena, if (args.len > 6) args[6..] else &.{});
         const formatted = try zeno.Canvas.formatDecisionPrompt(arena, query, null, candidate_specs);
@@ -335,7 +341,9 @@ pub fn main(init: std.process.Init) !void {
         const fix = parsed.value;
 
         var engine = try zeno.DecisionEngine.init(arena, model_path);
-        defer engine.deinit() catch {};
+        defer engine.deinit() catch |err| {
+            std.log.err("engine deinitialization failed: {s}", .{@errorName(err)});
+        };
 
         const candidate_specs = try candidateSpecsFromFixture(arena, fix);
         const formatted = try zeno.Canvas.formatDecisionPrompt(arena, fix.query, fix.context, candidate_specs);
@@ -480,7 +488,9 @@ pub fn main(init: std.process.Init) !void {
         var engine = try zeno.DecisionEngine.initWithOptions(arena, model_path, .{
             .backend = if (use_cuda) .cuda else .cpu,
         });
-        defer engine.deinit() catch {};
+        defer engine.deinit() catch |err| {
+            std.log.err("engine deinitialization failed: {s}", .{@errorName(err)});
+        };
 
         const candidate_specs = try candidateSpecsFromFixture(arena, fix);
         const schema_t = try parseSchemaType(fix.schema_type);
@@ -651,7 +661,9 @@ pub fn main(init: std.process.Init) !void {
         var engine = try zeno.DecisionEngine.initWithOptions(arena, model_path, .{
             .backend = if (use_cuda) .cuda else .cpu,
         });
-        defer engine.deinit() catch {};
+        defer engine.deinit() catch |err| {
+            std.log.err("engine deinitialization failed: {s}", .{@errorName(err)});
+        };
 
         const eff_canvas = canvas_override orelse 256;
         try stdout_writer.print("Evaluating dataset '{s}' ({d} examples, step_cap={d}, canvas={d}, answer_pos={d})\n\n", .{
@@ -948,7 +960,9 @@ pub fn main(init: std.process.Init) !void {
         var engine = try zeno.DecisionEngine.initWithOptions(arena, model_path, .{
             .backend = if (use_cuda) .cuda else .cpu,
         });
-        defer engine.deinit() catch {};
+        defer engine.deinit() catch |err| {
+            std.log.err("engine deinitialization failed: {s}", .{@errorName(err)});
+        };
 
         const canvas_widths = [_]usize{ 16, 32, 64, 128, 256 };
 

@@ -68,16 +68,134 @@ Typed Decision Output (Boolean, Categorical, or Ordinal Score)
 
 ---
 
-## 5. Documentation Map
+## 5. Documentation Map & Reader Guide
 
-- [AGENTS.md](AGENTS.md) — Operational instructions, engineering principles, and coding standards for agents and contributors.
-- [ARCHITECTURE.md](ARCHITECTURE.md) — Architectural layers, structured-reads execution flow, compile-time/runtime boundaries, and component responsibilities.
-- [PLAN.md](PLAN.md) — Implementation roadmap (Phases 0 through 6), current milestones, and research questions.
-- [specs/](specs/) — Authored technical specifications for the proposed API, canvas and tokenizer behavior, model mapping, scoring, denoising research, and multi-GPU questions.
+If you are exploring the codebase or integrating Zeno, here is the recommended reading path:
+
+| Goal | Starting Point | Description |
+| :--- | :--- | :--- |
+| **Understand the Architecture** | [ARCHITECTURE.md (§3.1 System Tour)](ARCHITECTURE.md#31-end-to-end-decision-lifecycle-system-tour) | Visual sequence diagram tracing a query from HTTP wire to CUDA kernel execution and JSON serialization. |
+| **Integrate the API** | [specs/decision-api.md](specs/decision-api.md) | Authoritative wire specification for the `/v1/systemone` and `/health` HTTP endpoints. |
+| **Inspect Specifications** | [specs/README.md](specs/README.md) | Authoritative catalog categorized into Implemented Normative Specs, Empirical Research, and Verification Ledgers. |
+| **Research Findings** | [specs/calibration-analysis.md](specs/calibration-analysis.md) | Empirical analysis of candidate probability calibration, temperature scaling, and entropy gating. |
+| **Canvas Design & Geometry** | [specs/canvas-geometry.md](specs/canvas-geometry.md) | Canvas length ($C=16$), answer placement, and multi-class tokenization rules. |
+| **Diffusion vs Autoregressive** | [specs/autoregressive-vs-diffusion.md](specs/autoregressive-vs-diffusion.md) | Systematic benchmark comparing structured diffusion against grammar-constrained decoding. |
+| **Multi-GPU & Acceleration** | [specs/multi-gpu.md](specs/multi-gpu.md) | Two-GPU split topology, pipelined CUDA streams, graph capture, and memory quarantine design. |
+| **Engineering Standards** | [AGENTS.md](AGENTS.md) | Invariants, comptime boundaries, memory ownership policies, and verification protocols. |
+| **Verification & Gate History** | [specs/UNRESOLVED.md](specs/UNRESOLVED.md) | Ledger of closed specification gates (U-01 through U-23) and oracle tolerance budgets. |
+| **Roadmap & Milestones** | [PLAN.md](PLAN.md) | Comprehensive engineering phases and historical milestone log. |
 
 ---
 
-## 6. Status & Development (v0.2.0)
+## 6. Quick Start & Execution Examples
+
+### 6.1 Prerequisites
+
+- **Zig**: `0.17.0-dev.2234+80fe9b2b7` or a compatible version, as declared in `build.zig.zon`.
+- **Model**: Local reference artifact `models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf`. (GGUF weights are git-ignored and must be supplied locally).
+- **GPU (Optional)**: NVIDIA GPU with CUDA 12.0+ compute capability (e.g., dual RTX 3060 12GB for accelerated dual-GPU execution).
+
+### 6.2 CLI Direct Decision
+
+Evaluate a decision directly from the command line:
+
+```bash
+# Evaluate a boolean decision using the CUDA backend
+zig build run -- decide models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf "Is the sky blue?" Yes No --cuda
+```
+
+Sample CLI output:
+
+```text
+Backend: CUDA (2 device(s) detected, topology: dual_gpu_split)
+Initializing decision engine with model: models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf...
+
+--- Decision Result ---
+Query:               "Is the sky blue?"
+Decision:            Yes
+Decision Prob:       0.9984
+Entropy (nats):      0.0124
+Normalized Entropy:  0.0179
+Uncertain:           false
+Steps:               1
+Canvas Tokens:       28
+Candidates:
+  - Yes (ID 4104): prob=0.9984, raw_logit=18.4210
+  - No (ID 2360): prob=0.0016, raw_logit=12.0140
+```
+
+### 6.3 HTTP Decision API Server
+
+Start the zero-dependency native HTTP server:
+
+```bash
+# Start server listening on http://127.0.0.1:8000
+zig build run -- serve models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf --port 8000 --cuda
+```
+
+Send a Jev-compatible decision request via `curl`:
+
+```bash
+curl -s http://127.0.0.1:8000/v1/systemone \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "Is the sky blue?",
+    "schema": {
+      "type": "boolean",
+      "candidates": [
+        {"token": "Yes", "label": "Yes"},
+        {"token": "No", "label": "No"}
+      ]
+    },
+    "options": {
+      "step_cap": 1,
+      "temperature": 1.0,
+      "entropy_threshold": 0.5
+    }
+  }' | jq
+```
+
+Sample JSON response:
+
+```json
+{
+  "decision": "Yes",
+  "decision_probability": 0.998421,
+  "entropy_nats": 0.012415,
+  "normalized_entropy": 0.017911,
+  "uncertain": false,
+  "steps_executed": 1,
+  "canvas_tokens_used": 28,
+  "candidates": [
+    {
+      "label": "Yes",
+      "token_id": 4104,
+      "probability": 0.998421,
+      "raw_logit": 18.421000
+    },
+    {
+      "label": "No",
+      "token_id": 2360,
+      "probability": 0.001579,
+      "raw_logit": 12.014000
+    }
+  ],
+  "timings": {
+    "prompt_prefill_ms": 2.150,
+    "prompt_p0_ms": 1.100,
+    "prompt_transfer_ms": 0.250,
+    "prompt_p1_ms": 0.800,
+    "canvas_step1_ms": 97.720,
+    "canvas_step2_ms": 0.000,
+    "total_engine_ms": 99.870,
+    "prompt_cache_hit": false
+  }
+}
+```
+
+---
+
+## 7. Status & Development (v0.2.0)
 
 The repository provides a complete, production-grade CPU reference implementation and an accelerated dual-GPU CUDA runtime for DiffusionGemma structured decision-making, including GGUF parsing, BPE tokenizer, multi-threaded CPU inference engine, and a native zero-dependency HTTP decision API server (`POST /v1/systemone` and `GET /health`).
 
@@ -87,26 +205,24 @@ Key milestones in **Zeno v0.2.0**:
 - **Memory Quarantine & Teardown Safety**: Robust multi-tier pinned host buffer quarantine architecture (primary, overflow, dynamic, emergency reserve, static retained pool, dynamic process-lifetime nodes) with explicit caller-visible `error.DeviceNotQuiescent` terminal retention policy, preventing memory leaks, use-after-free, or buffer abandonment under synchronization failures.
 - **Empirical Research Validated**: All specification gates (U-01 through U-23) in [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) are fully resolved. Empirical probability calibration and optimal operating temperatures are documented in [`specs/calibration-analysis.md`](specs/calibration-analysis.md), optimal canvas answer positioning in [`specs/canvas-geometry.md`](specs/canvas-geometry.md), and head-to-head evaluation against grammar-constrained autoregressive decoding in [`specs/autoregressive-vs-diffusion.md`](specs/autoregressive-vs-diffusion.md). See [`PLAN.md`](PLAN.md) and [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md) for complete provenance records.
 
-### Prerequisites
-
-- **Zig**: `0.17.0-dev.2234+80fe9b2b7` or a compatible version, as declared in `build.zig.zon`.
-- **Model**: The local reference artifact is `models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf`; model files are ignored by git and must be obtained separately in a fresh checkout.
-
-### Build & Test
+### Verification Suite
 
 ```bash
-# Run unit tests
-zig build test
+# Run unit tests (CPU reference mode)
+zig build test -Dcuda=false
 
-# Run CLI decision evaluation
-zig build run
+# Run unit tests (CUDA enabled)
+zig build test -Dcuda=true --summary all
 
-# Run HTTP decision API server
-zig build run -- serve models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf --port 8000
+# Verify 100% reference oracle parity across all 5 fixture classes
+./tools/verify_all_oracles.sh --cuda --strict-parity
+
+# Run HTTP server integration test suite (15 tests)
+python3 tools/test_server.py --cuda
 ```
 
 ---
 
-## 7. License
+## 8. License
 
 This project is licensed under the [MIT License](LICENSE).

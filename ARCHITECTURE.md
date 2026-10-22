@@ -38,9 +38,9 @@ Performance matters for System One decisions, but semantic correctness and model
 
 ---
 
-## 3. High-Level Structure
+## 3. High-Level Structure & System Tour
 
-The system is conceptually divided into the following layers:
+The system is organized into the following architectural layers:
 
 ```text
 ┌─────────────────────────────────────────┐
@@ -74,9 +74,40 @@ The system is conceptually divided into the following layers:
 └─────────────────────────────────────────┘
 ```
 
-These are conceptual boundaries, not necessarily separate packages or modules.
+### 3.1 End-to-End Decision Lifecycle (System Tour)
 
-The implementation should remain free to collapse layers when doing so improves simplicity.
+A decision query flows from the client through prompt construction, model evaluation, and entropy-gated candidate selection:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client
+    participant Server as HTTP Server (server.zig)
+    participant Engine as DecisionEngine (engine.zig)
+    participant Canvas as Canvas & Tokenizer (canvas.zig, tokenizer.zig)
+    participant Backend as Backend Runtime (infer.zig / infer_cuda.zig)
+    participant Model as DiffusionGemma (model.zig / infer_cuda.zig)
+
+    Client->>Server: POST /v1/systemone (query, context, candidates)
+    Server->>Engine: decide(request_allocator, req)
+    Note over Engine: Serializes concurrent calls via mutex
+    Engine->>Canvas: formatDecisionPrompt(query, context, candidates)
+    Canvas-->>Engine: Verbatim formatted prompt string
+    Engine->>Canvas: encodePromptWithBOS(prompt) + resolve candidate token IDs
+    Canvas-->>Engine: Prompt tokens P + verified single-token candidate IDs
+    Engine->>Backend: Forward read pass (eval_len = P + C, answer_pos = 0)
+    Note over Backend,Model: Causal prompt prefill (layers 0..29) + KV prefix cache
+    Note over Backend,Model: Bidirectional canvas evaluation (answer slot seeded with MASK)
+    Backend-->>Engine: Raw logits at answer slot P
+    Note over Engine: Extract candidate logits, unsoftcap, softmax, Shannon entropy
+    opt Multi-step adaptive refinement (steps_executed < step_cap AND H_norm >= tau)
+        Engine->>Backend: Step 2 read with self-conditioning soft-embedding (E_sc)
+        Backend-->>Engine: Step 2 refined candidate logits
+        Note over Engine: Re-evaluate calibrated probabilities and entropy
+    end
+    Engine-->>Server: DecisionResponse (decision, probability, entropy, uncertain, timings)
+    Server-->>Client: 200 OK JSON response
+```
 
 ---
 
@@ -100,53 +131,49 @@ It should be possible to change the CLI without changing the denoising engine.
 
 ## 5. Model Runtime
 
-The planned model runtime will own the execution process.
+The model runtime manages forward evaluation and state transitions across execution backends:
+- **CPU Reference Runtime (`src/infer.zig`)**: Implements `InferenceWorkspace` with multi-threaded layer pooling (`LayerPool`), full sliding-window and global attention, unquantized dequantization tables, and explicit activation buffers. Serves as the mathematical ground truth.
+- **CUDA Multi-GPU Runtime (`src/infer_cuda.zig`)**: Implements `CudaWorkspace` and `CudaDeviceWorkspace`, managing dual-GPU pipeline execution across Device 0 and Device 1. Features include prompt KV prefix caching (Phase 7B), device-resident canvas restoration buffers (`canvas_init_emb`, `canvas_raw_ans`), and multi-step CUDA graph capture and replay (`graph0_step2`) eliminating driver dispatch overhead.
 
-Its primary responsibility is to coordinate:
-
+The runtime coordinates the forward evaluation sequence:
 ```text
-input
-  ↓
-initial canvas/state
-  ↓
-denoising step
-  ↓
-updated state
-  ↓
-repeat
-  ↓
-final decoded representation
+prompt prefix tokens + canvas template
+                 ↓
+causal prompt prefill (populate prompt KV cache)
+                 ↓
+bidirectional canvas forward read (answer slot pinned at MASK)
+                 ↓
+raw logit extraction at answer slot (P)
+                 ↓
+[adaptive step 2 required? (H_norm >= tau)]
+    ├── yes: inject self-conditioning soft-embedding (E_sc) and replay graph
+    └── no: finalize decision
+                 ↓
+candidate probabilities, entropy, and typed decision
 ```
-
-The runtime controls temporal state.
-
-It should not own low-level kernel implementation details.
 
 ---
 
 ## 6. Model Layer
 
-The planned model layer represents the computation performed by DiffusionGemma. The reference execution path has distinct causal encoder/prefill and bidirectional decoder/denoising modes, with KV state and self-conditioning crossing those phases. A Zeno forward-pass contract must preserve this distinction rather than treating inference as one undifferentiated bidirectional pass.
-
-Conceptually:
+The model layer represents the 30-layer Gemma 4 Mixture-of-Experts architecture defined in [`specs/transformer.md`](specs/transformer.md) and mapped from the local GGUF artifact (`diffusiongemma-26B-A4B-it-Q4_K_M.gguf`, cataloged in [`specs/gguf-mapping.md`](specs/gguf-mapping.md)):
 
 ```text
-model configuration (GGUF metadata)
-        +
-weights (quantized tensor storage)
-        +
-runtime tensors
-        ↓
-model computation (embeddings, bidirectional attention, MoE blocks, RMSNorm)
-        ↓
-denoising prediction / model output
+GGUF File & Metadata (header, tensor descriptors, chat template)
+                   ↓
+Model Weights & Mappings (token_embd, 30 transformer layers, output_norm)
+                   ↓
+Execution Components:
+  - Token embedding lookup and unweighted input RMSNorm
+  - Attention: GQA with 16 query heads / 4 KV heads (d_head=256), dual-frequency RoPE
+  - MoE Feed-Forward: 128 experts (8 active per token) with top-8 routing and GeGLU activation
+  - Shared Dense FFN: 2112-dim intermediate projection
+  - Post-attention and post-FFN residual normalization
+                   ↓
+Final Output Norm & Candidate Logit Projection
 ```
 
-Model code should express model semantics rather than backend-specific optimization.
-
-The target DiffusionGemma weights and configuration are expected in GGUF containers (for example, Q4_K_M quantized tensors). Model facts and tensor mappings should be tied to a named model artifact and revision before implementation. The target architecture uses a Gemma-based Mixture-of-Experts (MoE) network with bidirectional (non-causal) attention.
-
-The same model operation should have the same meaning regardless of whether it executes on CPU or CUDA.
+Model semantics are mathematically identical between CPU and CUDA backends, governed by the reference tolerance policy `zeno.tolerance/v2` in [`specs/UNRESOLVED.md`](specs/UNRESOLVED.md).
 
 ---
 
@@ -176,78 +203,38 @@ Avoid creating a large tensor framework unless Zeno actually requires one.
 
 ## 8. Backend Layer & Multi-GPU Execution
 
-The backend provides execution primitives.
+The backend provides hardware-specialized execution primitives:
 
-The initial conceptual backends are:
-
-```text
-CPU
-CUDA (Single-GPU)
-CUDA (Multi-GPU Tensor Parallel)
-```
-
-The CPU path is intended to serve as the semantic reference implementation.
-
-CUDA implementations must preserve the exact semantic contract of the reference path.
-
-For multi-GPU execution, Zeno may investigate lessons from the [separate community patch for llama.cpp PR #24423](https://github.com/readwrightexecute/llamacpp-diffusiongemma-multigpu). That patch describes device-resident self-conditioning and prompt-KV caching for a specific two-GPU layer-split setup. It does not establish a general tensor-splitting strategy or behavior across other hardware layouts. Zeno's cache lifetime, sharding, and communication strategy remain open design questions.
+- **CPU Backend (`src/infer.zig`)**: Semantic reference implementation executed on host CPU with multi-threaded layer-pool concurrency.
+- **CUDA Dual-GPU Pipeline Backend (`src/infer_cuda.zig`)**: Implements Pipeline Layer Splitting (Strategy A), partitioning the 30-layer model across two GPUs (e.g. dual RTX 3060 12GB):
+  * **Device 0**: Transformer Layers 0..14 (~7.6 GB VRAM footprint including activation workspace).
+  * **Device 1**: Transformer Layers 15..29 + Final Output RMSNorm (~7.6 GB VRAM footprint).
+  * **Inter-Device Transfer**: Exactly one boundary transfer per step (transferring hidden state $H_{15}$ of shape $[N \times 2816]$ FP32). Coordinated asynchronously via `cudaMemcpyPeerAsync` and `boundary_event` (`cudaStreamWaitEvent`), or staged through pinned host memory fallback.
+  * **Performance**: Achieved the **sub-100ms structured decision milestone** ($C=16$: **99.87 ms** median canvas step 1 latency, **100.55 ms** HTTP round-trip).
+- **Open Research (Strategy B)**: Tensor/expert parallelism (distributing the 128 MoE experts across GPUs with intra-layer All-to-All collectives) remains an active research question documented in [`specs/multi-gpu.md`](specs/multi-gpu.md).
 
 ---
 
 ## 9. Decision Engine & Structured Reads
 
-The decision engine is the conceptual center of Zeno.
+The decision engine is the conceptual center of Zeno. Rather than generating conversational text token-by-token, Zeno operates over a seeded token canvas and executes **structured reads**:
 
-Rather than generating sequential conversational text token-by-token:
+### 9.1 Structured Reads Mode (System One Decision Primitive)
 
-```text
-token 1
-   ↓
-token 2
-   ↓
-token 3
-   ↓
-...
-```
+In structured-reads mode, the engine evaluates decisions in a single deterministic forward pass:
+1. **Seed Canvas**: Place input context and assistant prefix (`<|turn>user\n...<|turn>model\nAnswer: `) into the causal prompt region ($0 \dots P-1$). Place `MASK` (`4`) at canvas index 0 and `TURN_CLOSE` (`106`) at canvas index 1.
+2. **Forward Read**: Execute causal prompt prefill followed by bidirectional canvas evaluation.
+3. **Logit Readout**: Extract logits at canvas index 0 ($P+0$), restricted exclusively to the valid candidate token IDs.
+4. **Scoring & Entropy**: Apply single-softcapped unsoftcap transformation (`unsoftcap(logit, 30.0)`), compute softmax candidate probabilities, and evaluate normalized Shannon entropy ($H_{\text{norm}}$).
+5. **Calibration**: Apply empirical temperature scaling ($T_{\text{opt}} \approx 1.60$) for well-calibrated confidence estimates, as established in [`specs/calibration-analysis.md`](specs/calibration-analysis.md).
 
-Zeno is intended to operate over a seeded token canvas (the inspected model metadata reports 256 tokens) and execute **structured reads**, using [vLLM PR #57250](https://github.com/vllm-project/vllm/pull/57250) as a behavioral reference. Treat the canvas length as model metadata, not a universal fixed width.
+### 9.2 Adaptive Denoising & Multi-Step Refinement
 
-### 9.1 Structured Reads Mode (System One / Jev-Style Decisions)
-
-In structured-reads mode, the engine evaluates software decisions in a single or step-capped pass:
-
-```text
-1. Seed Canvas: Place input context and an answer template onto the configured canvas.
-2. Select Answer Positions: Mark the target positions and establish their exact seed/pinning behavior from the reference implementation.
-3. Forward Read: Execute a single parallel forward pass with bidirectional attention.
-4. Logit Readout: Read logits exclusively at the pinned slot index for allowed candidate tokens.
-5. Score: Normalize candidate logits if appropriate and compute Shannon entropy. Calibration requires separate empirical validation.
-```
-
-If the implementation restricts readout to the schema's candidate token IDs and validates the mapping, the selected label can be constrained to those choices. The vLLM reference requires each candidate answer to be a single token; clients can map longer labels to one-token codes. This constraint alone does not establish correctness or probability calibration.
-
-### 9.2 Follow-up Reads and Iterative Refinement (Research Question)
-
-The project has not established whether a high-entropy result should trigger another read of the same canvas, a new noise draw, or a denoising step. These are distinct strategies and should be compared experimentally before one becomes runtime behavior. Multi-token structured infilling is also outside the currently established read semantics.
-
-```text
-initial seeded canvas
-        ↓
-read step 1 (evaluate entropy at pinned slots)
-        ↓
-[entropy > threshold?]
-        ↓
-perform a separately specified follow-up read or refinement
-        ↓
-converged decision state
-```
-
-Questions to resolve:
-* **Bidirectional decoder attention**: the decoder evaluates the canvas bidirectionally; causal prompt prefill and its KV state remain a distinct phase.
-* **Cache behavior**: determine which prompt/model state can be reused and for what lifetime; do not assume caching across queries.
-* **Direct logit readout**: classification judgments are extracted directly from logits at pinned positions without free-form token emission.
-
-The exact mathematical semantics of structured reads and any denoising behavior belong in dedicated specifications in `specs/` before those behaviors are implemented.
+When candidate entropy exceeds the decision threshold ($H_{\text{norm}} \ge \tau$, default $\tau = 0.50$):
+- **Self-Conditioning Soft Embedding ($E_{\text{sc}}$)**: Evaluated at native temperature ($T=1.0$), weighted across candidate embeddings, and projected through the self-conditioning MLP.
+- **Step 2 Refinement**: Canvas position 0 is updated with $E_{\text{sc}}$ and evaluated through Step 2 using multi-step CUDA graph replay (`graph0_step2`), completing in **203.99 ms** (-55.5% faster than uncached execution).
+- **Empirical Impact**: As documented in [`specs/denoising.md`](specs/denoising.md), adaptive 2-step denoising virtually eliminates option-rotation bias (86.00% vs 84.67%, delta only 1.33%) and cuts multi-class Brier score nearly in half (0.3956 -> 0.2448).
+- **Scope Boundary**: Open-ended conversational infilling and multi-token text generation remain outside Zeno's System One decision scope.
 
 ---
 
