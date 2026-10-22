@@ -4,6 +4,7 @@
 //! and tensor descriptors from memory-mapped files.
 
 const std = @import("std");
+const quant = @import("quant.zig");
 
 pub const GGUF_MAGIC = [4]u8{ 'G', 'G', 'U', 'F' };
 
@@ -46,7 +47,42 @@ pub const GgufError = error{
     MalformedString,
     MalformedArray,
     TensorNotFound,
+    UnsupportedGgmlType,
 };
+
+/// Computes the total byte size required for a tensor payload using overflow-safe arithmetic.
+pub fn getTensorByteSize(tensor: TensorInfo) !usize {
+    var total_elements: usize = 1;
+    for (0..tensor.n_dimensions) |d| {
+        const dim_usize = std.math.cast(usize, tensor.dimensions[d]) orelse return error.UnexpectedEof;
+        total_elements = std.math.mul(usize, total_elements, dim_usize) catch return error.UnexpectedEof;
+    }
+    return switch (tensor.ggml_type) {
+        0 => std.math.mul(usize, total_elements, @sizeOf(f32)) catch return error.UnexpectedEof,
+        1 => std.math.mul(usize, total_elements, @sizeOf(f16)) catch return error.UnexpectedEof,
+        6 => { // Q5_0
+            if (total_elements % quant.QK5_0 != 0) return error.UnexpectedEof;
+            const blocks = total_elements / quant.QK5_0;
+            return std.math.mul(usize, blocks, @sizeOf(quant.BlockQ5_0)) catch return error.UnexpectedEof;
+        },
+        8 => { // Q8_0
+            if (total_elements % quant.QK8_0 != 0) return error.UnexpectedEof;
+            const blocks = total_elements / quant.QK8_0;
+            return std.math.mul(usize, blocks, @sizeOf(quant.BlockQ8_0)) catch return error.UnexpectedEof;
+        },
+        12 => { // Q4_K
+            if (total_elements % quant.QK_K != 0) return error.UnexpectedEof;
+            const blocks = total_elements / quant.QK_K;
+            return std.math.mul(usize, blocks, @sizeOf(quant.BlockQ4_K)) catch return error.UnexpectedEof;
+        },
+        14 => { // Q6_K
+            if (total_elements % quant.QK_K != 0) return error.UnexpectedEof;
+            const blocks = total_elements / quant.QK_K;
+            return std.math.mul(usize, blocks, @sizeOf(quant.BlockQ6_K)) catch return error.UnexpectedEof;
+        },
+        else => error.UnsupportedGgmlType,
+    };
+}
 
 pub const GgufFile = struct {
     data: []const u8,
@@ -279,7 +315,9 @@ pub fn parseGguf(allocator: std.mem.Allocator, data: []const u8) !GgufFile {
     for (tensors) |t| {
         const offset_usize = std.math.cast(usize, t.offset) orelse return error.UnexpectedEof;
         const start = std.math.add(usize, data_offset, offset_usize) catch return error.UnexpectedEof;
-        if (start > data.len) return error.UnexpectedEof;
+        const tensor_bytes = try getTensorByteSize(t);
+        const end = std.math.add(usize, start, tensor_bytes) catch return error.UnexpectedEof;
+        if (end > data.len) return error.UnexpectedEof;
     }
 
     return GgufFile{
@@ -375,4 +413,69 @@ test "parseGguf: truncated buffer and tensor out-of-bounds returns error.Unexpec
     cursor += 8;
 
     try std.testing.expectError(error.UnexpectedEof, parseGguf(std.testing.allocator, buf[0..cursor]));
+}
+
+test "parseGguf: valid tensor start with truncated payload returns error.UnexpectedEof" {
+    var buf: [256]u8 = undefined;
+    var cursor: usize = 0;
+
+    @memcpy(buf[cursor .. cursor + 4], "GGUF");
+    cursor += 4;
+    std.mem.writeInt(u32, buf[cursor..][0..4], 3, .little);
+    cursor += 4;
+    // Tensor count (1)
+    std.mem.writeInt(u64, buf[cursor..][0..8], 1, .little);
+    cursor += 8;
+    // Metadata count (0)
+    std.mem.writeInt(u64, buf[cursor..][0..8], 0, .little);
+    cursor += 8;
+
+    // Tensor name: "t0" (len 2)
+    std.mem.writeInt(u64, buf[cursor..][0..8], 2, .little);
+    cursor += 8;
+    @memcpy(buf[cursor .. cursor + 2], "t0");
+    cursor += 2;
+    // n_dims: 1
+    std.mem.writeInt(u32, buf[cursor..][0..4], 1, .little);
+    cursor += 4;
+    // dim 0: 16 (requires 16 * 4 = 64 bytes for F32)
+    std.mem.writeInt(u64, buf[cursor..][0..8], 16, .little);
+    cursor += 8;
+    // ggml_type: 0 (F32)
+    std.mem.writeInt(u32, buf[cursor..][0..4], 0, .little);
+    cursor += 4;
+    // offset: 0 (starts exactly at data_offset inside buf)
+    std.mem.writeInt(u64, buf[cursor..][0..8], 0, .little);
+    cursor += 8;
+
+    // Pad only 8 bytes after alignment boundary, so start <= buf.len, but start + 64 > buf.len
+    const alignment: usize = 32;
+    const data_offset = ((cursor + alignment - 1) / alignment) * alignment;
+    const truncated_total = data_offset + 8;
+    @memset(buf[0..truncated_total], 0);
+
+    // Re-fill header
+    cursor = 0;
+    @memcpy(buf[cursor .. cursor + 4], "GGUF");
+    cursor += 4;
+    std.mem.writeInt(u32, buf[cursor..][0..4], 3, .little);
+    cursor += 4;
+    std.mem.writeInt(u64, buf[cursor..][0..8], 1, .little);
+    cursor += 8;
+    std.mem.writeInt(u64, buf[cursor..][0..8], 0, .little);
+    cursor += 8;
+    std.mem.writeInt(u64, buf[cursor..][0..8], 2, .little);
+    cursor += 8;
+    @memcpy(buf[cursor .. cursor + 2], "t0");
+    cursor += 2;
+    std.mem.writeInt(u32, buf[cursor..][0..4], 1, .little);
+    cursor += 4;
+    std.mem.writeInt(u64, buf[cursor..][0..8], 16, .little);
+    cursor += 8;
+    std.mem.writeInt(u32, buf[cursor..][0..4], 0, .little);
+    cursor += 4;
+    std.mem.writeInt(u64, buf[cursor..][0..8], 0, .little);
+    cursor += 8;
+
+    try std.testing.expectError(error.UnexpectedEof, parseGguf(std.testing.allocator, buf[0..truncated_total]));
 }

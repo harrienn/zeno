@@ -204,6 +204,96 @@ def optimize_temperature(
         "calibrated_bins": opt_bins
     }
 
+def compute_cross_validated_temperature(
+    results: List[Dict[str, Any]],
+    use_softcapped: bool = True,
+    k_folds: int = 5,
+    t_min: float = 0.05,
+    t_max: float = 5.0,
+    steps: int = 500
+) -> Dict[str, Any]:
+    """Evaluates temperature scaling using k-fold cross-validation on held-out splits (out-of-sample)."""
+    logit_key = "softcapped_logit" if use_softcapped else "raw_logit"
+    valid_items = []
+    for r in results:
+        gt = r.get("ground_truth")
+        cands = r.get("candidates", [])
+        if not cands or not gt or logit_key not in cands[0]:
+            continue
+        logits = [float(c[logit_key]) for c in cands]
+        target_idx = None
+        for idx, c in enumerate(cands):
+            if c["label"] == gt:
+                target_idx = idx
+                break
+        if target_idx is not None:
+            valid_items.append((logits, target_idx))
+
+    if len(valid_items) < k_folds:
+        return {}
+
+    fold_size = len(valid_items) // k_folds
+    oos_scaled_results = []
+    fold_optimal_temps = []
+    total_oos_nll = 0.0
+    total_oos_sq_err = 0.0
+
+    for fold in range(k_folds):
+        val_start = fold * fold_size
+        val_end = val_start + fold_size if fold < k_folds - 1 else len(valid_items)
+        val_data = valid_items[val_start:val_end]
+        train_data = valid_items[:val_start] + valid_items[val_end:]
+
+        # Fit T on train_data
+        best_t = 1.0
+        best_nll = float('inf')
+        dt = (t_max - t_min) / steps
+        for step in range(steps + 1):
+            T = t_min + step * dt
+            train_nll = 0.0
+            for logits, target_idx in train_data:
+                max_l = max(logits)
+                exp_l = [math.exp((l - max_l) / T) for l in logits]
+                gt_prob = max(exp_l[target_idx] / sum(exp_l), 1e-15)
+                train_nll += -math.log(gt_prob)
+            train_nll /= len(train_data)
+            if train_nll < best_nll:
+                best_nll = train_nll
+                best_t = T
+        fold_optimal_temps.append(best_t)
+
+        # Evaluate on held-out val_data with best_t
+        for logits, target_idx in val_data:
+            max_l = max(logits)
+            exp_l = [math.exp((l - max_l) / best_t) for l in logits]
+            sum_exp = sum(exp_l)
+            probs = [e / sum_exp for e in exp_l]
+            gt_prob = max(probs[target_idx], 1e-15)
+            total_oos_nll += -math.log(gt_prob)
+            for idx, p in enumerate(probs):
+                target = 1.0 if idx == target_idx else 0.0
+                total_oos_sq_err += (p - target) ** 2
+            top_prob = max(probs)
+            top_idx = probs.index(top_prob)
+            is_correct = (top_idx == target_idx)
+            oos_scaled_results.append({
+                "decision_probability": top_prob,
+                "is_correct": is_correct
+            })
+
+    mean_opt_t = sum(fold_optimal_temps) / len(fold_optimal_temps)
+    oos_nll = total_oos_nll / len(valid_items)
+    oos_brier = total_oos_sq_err / len(valid_items)
+    oos_ece, oos_mce, _ = compute_ece_and_bins(oos_scaled_results)
+
+    return {
+        "mean_fold_temperature": mean_opt_t,
+        "oos_nll": oos_nll,
+        "oos_brier": oos_brier,
+        "oos_ece": oos_ece,
+        "oos_mce": oos_mce,
+    }
+
 def evaluate_dataset_at_temperature(results: List[Dict[str, Any]], T: float, use_softcapped: bool = True) -> Tuple[float, float, float]:
     """Evaluates NLL, Brier score, and ECE for a dataset at a specific temperature T."""
     logit_key = "softcapped_logit" if use_softcapped else "raw_logit"
@@ -270,6 +360,8 @@ def analyze_run(data: Dict[str, Any], filepath: str) -> Dict[str, Any]:
 
     temp_softcapped = optimize_temperature(results, use_softcapped=True)
     temp_raw = optimize_temperature(results, use_softcapped=False)
+    cv_softcapped = compute_cross_validated_temperature(results, use_softcapped=True)
+    cv_raw = compute_cross_validated_temperature(results, use_softcapped=False)
         
     return {
         "file": filepath,
@@ -291,6 +383,8 @@ def analyze_run(data: Dict[str, Any], filepath: str) -> Dict[str, Any]:
         "cat_stats": cat_stats,
         "temp_softcapped": temp_softcapped,
         "temp_raw": temp_raw,
+        "cv_softcapped": cv_softcapped,
+        "cv_raw": cv_raw,
     }
 
 def print_single_report(analysis: Dict[str, Any]):
@@ -347,27 +441,41 @@ def print_single_report(analysis: Dict[str, Any]):
     if analysis.get("temp_softcapped"):
         ts = analysis["temp_softcapped"]
         print("\n--- Temperature Scaling Optimization (Post-Hoc Calibration) ---")
-        print(f"Optimal Temperature (Softcapped): T = {ts['optimal_temperature']:.3f}")
+        print(f"Optimal Temperature (Softcapped, In-Sample): T = {ts['optimal_temperature']:.3f}")
         print(f"  NLL:   {ts['base_nll']:.4f} -> {ts['calibrated_nll']:.4f} (delta = {ts['calibrated_nll'] - ts['base_nll']:+.4f})")
         print(f"  Brier: {ts['base_brier']:.4f} -> {ts['calibrated_brier']:.4f} (delta = {ts['calibrated_brier'] - ts['base_brier']:+.4f})")
         print(f"  ECE:   {ts['base_ece']:.4f} -> {ts['calibrated_ece']:.4f} (delta = {ts['calibrated_ece'] - ts['base_ece']:+.4f})")
         print(f"  MCE:   {ts['base_mce']:.4f} -> {ts['calibrated_mce']:.4f} (delta = {ts['calibrated_mce'] - ts['base_mce']:+.4f})")
+        if analysis.get("cv_softcapped"):
+            cv = analysis["cv_softcapped"]
+            print(f"  5-Fold Out-of-Sample CV (Softcapped, Mean Fold T = {cv['mean_fold_temperature']:.3f}):")
+            print(f"    Held-Out NLL:   {cv['oos_nll']:.4f} (delta = {cv['oos_nll'] - ts['base_nll']:+.4f})")
+            print(f"    Held-Out Brier: {cv['oos_brier']:.4f} (delta = {cv['oos_brier'] - ts['base_brier']:+.4f})")
+            print(f"    Held-Out ECE:   {cv['oos_ece']:.4f} (delta = {cv['oos_ece'] - ts['base_ece']:+.4f})")
+            print(f"    Held-Out MCE:   {cv['oos_mce']:.4f} (delta = {cv['oos_mce'] - ts['base_mce']:+.4f})")
     if analysis.get("temp_raw"):
         tr = analysis["temp_raw"]
-        print(f"\nOptimal Temperature (Raw Logits):  T = {tr['optimal_temperature']:.3f}")
+        print(f"\nOptimal Temperature (Raw Logits, In-Sample):  T = {tr['optimal_temperature']:.3f}")
         print(f"  NLL:   {tr['base_nll']:.4f} -> {tr['calibrated_nll']:.4f} (delta = {tr['calibrated_nll'] - tr['base_nll']:+.4f})")
         print(f"  Brier: {tr['base_brier']:.4f} -> {tr['calibrated_brier']:.4f} (delta = {tr['calibrated_brier'] - tr['base_brier']:+.4f})")
         print(f"  ECE:   {tr['base_ece']:.4f} -> {tr['calibrated_ece']:.4f} (delta = {tr['calibrated_ece'] - tr['base_ece']:+.4f})")
         print(f"  MCE:   {tr['base_mce']:.4f} -> {tr['calibrated_mce']:.4f} (delta = {tr['calibrated_mce'] - tr['base_mce']:+.4f})")
+        if analysis.get("cv_raw"):
+            cvr = analysis["cv_raw"]
+            print(f"  5-Fold Out-of-Sample CV (Raw Logits, Mean Fold T = {cvr['mean_fold_temperature']:.3f}):")
+            print(f"    Held-Out NLL:   {cvr['oos_nll']:.4f} (delta = {cvr['oos_nll'] - tr['base_nll']:+.4f})")
+            print(f"    Held-Out Brier: {cvr['oos_brier']:.4f} (delta = {cvr['oos_brier'] - tr['base_brier']:+.4f})")
+            print(f"    Held-Out ECE:   {cvr['oos_ece']:.4f} (delta = {cvr['oos_ece'] - tr['base_ece']:+.4f})")
+            print(f"    Held-Out MCE:   {cvr['oos_mce']:.4f} (delta = {cvr['oos_mce'] - tr['base_mce']:+.4f})")
 
     print("=" * 80 + "\n")
 
 def print_comparison_table(analyses: List[Dict[str, Any]]):
-    print("\n" + "=" * 105)
+    print("\n" + "=" * 118)
     print(" Comparative Step Dynamics & Calibration Matrix")
-    print("=" * 105)
-    print("| Run Name / Config | Mode | Steps | Acc (%) | ECE (Base) | ECE (Calib) | T_opt | Brier | NLL   | Latency |")
-    print("|:-------------------|:-----|:-----:|:-------:|:----------:|:-----------:|:-----:|:-----:|:-----:|:-------:|")
+    print("=" * 118)
+    print("| Run Name / Config | Mode | Steps | Acc (%) | ECE (Base) | ECE (Fit) | ECE (CV) | T_opt | Brier | NLL   | Latency |")
+    print("|:-------------------|:-----|:-----:|:-------:|:----------:|:---------:|:--------:|:-----:|:-----:|:-----:|:-------:|")
     for a in analyses:
         cfg = a["config"]
         name = Path(a["file"]).stem
@@ -377,13 +485,15 @@ def print_comparison_table(analyses: List[Dict[str, Any]]):
         ece_base = f"{a['ece']:.4f}"
         ts = a.get("temp_softcapped", {})
         ece_calib = f"{ts.get('calibrated_ece', 0.0):.4f}" if ts else "N/A"
+        cv = a.get("cv_softcapped", {})
+        ece_cv = f"{cv.get('oos_ece', 0.0):.4f}" if cv else "N/A"
         t_opt = f"{ts.get('optimal_temperature', 1.0):.2f}" if ts else "N/A"
         brier = f"{a['brier']:.4f}"
         nll = f"{a['nll']:.4f}"
         lat = f"{a['mean_latency']:.1f}ms"
         
-        print(f"| {name:<18} | {mode:<18} | {steps:<5} | {acc:>7} | {ece_base:>10} | {ece_calib:>11} | {t_opt:>5} | {brier:>5} | {nll:>5} | {lat:>7} |")
-    print("=" * 105 + "\n")
+        print(f"| {name:<18} | {mode:<18} | {steps:<5} | {acc:>7} | {ece_base:>10} | {ece_calib:>9} | {ece_cv:>8} | {t_opt:>5} | {brier:>5} | {nll:>5} | {lat:>7} |")
+    print("=" * 118 + "\n")
 
 def print_cross_calibration_matrix(analyses: List[Dict[str, Any]], use_softcapped: bool = True):
     key = "temp_softcapped" if use_softcapped else "temp_raw"

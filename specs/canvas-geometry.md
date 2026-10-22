@@ -61,53 +61,64 @@ Because `PAD` (0) corresponds to a trained token embedding vector with non-zero 
 
 Using the automated geometry test harness ([`tools/evaluate_geometry.py`](../tools/evaluate_geometry.py)), we evaluate answer slot placement across offsets $k \in \{0, 1, 2, 4, 7, 15\}$ on dual RTX 3060 GPUs (`canvas_length = 16`, single-step read $T=1$).
 
-### 3.1 Experimental Results ($C = 16$)
+### 3.1 Evaluated Token Layouts (`seedSingleStepAt`)
 
-| Fixture Name | Position ($k$) | Decision | Decision Prob | Normalized Entropy | Raw Logit Margin | Step 1 Latency |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| `system_health_boolean` | **0** | **Yes** | 0.8512 | 0.6070 | 2.7388 | 101.2 ms |
-| `system_health_boolean` | **1** | **Yes** | **0.9697** | **0.1961** | **10.9097** | 103.8 ms |
-| `system_health_boolean` | 2 | Yes | 0.8194 | 0.6814 | 4.6324 | 105.2 ms |
-| `system_health_boolean` | 4 | Yes | 0.7521 | 0.8080 | 2.6211 | 102.2 ms |
-| `system_health_boolean` | 7 | Yes | 0.5606 | 0.9894 | 0.6232 | 113.5 ms |
-| `system_health_boolean` | 15 | Yes | 0.6414 | 0.9415 | 1.4034 | 101.8 ms |
-| `incident_severity_multiclass` | **0** | **Medium** | 0.4371 | 0.9679 | 0.2962 | 102.8 ms |
-| `incident_severity_multiclass` | 1 | High | 0.6179 | 0.8392 | 4.4712 | 101.1 ms |
-| `incident_severity_multiclass` | 2 | High | 0.6603 | 0.7155 | 2.6056 | 102.8 ms |
-| `incident_severity_multiclass` | 4 | High | 0.5137 | 0.9196 | 1.4419 | 102.9 ms |
-| `incident_severity_multiclass` | 7 | High | 0.5315 | 0.8548 | 1.0304 | 104.2 ms |
-| `incident_severity_multiclass` | 15 | Medium | 0.5416 | 0.7692 | 0.5548 | 103.4 ms |
-| `boundary_256_incident_triage` | **0** | **No** | **1.0000** | **0.0001** | **13.6824** | 114.8 ms |
-| `boundary_256_incident_triage` | 1 | No | 0.9609 | 0.2381 | 7.4423 | 114.7 ms |
-| `boundary_256_incident_triage` | 2 | No | 0.9715 | 0.1867 | 10.3398 | 114.3 ms |
-| `boundary_256_incident_triage` | 4 | No | 0.9561 | 0.2597 | 6.9967 | 114.4 ms |
-| `boundary_256_incident_triage` | 7 | No | 0.9281 | 0.3731 | 6.0687 | 114.9 ms |
-| `boundary_256_incident_triage` | 15 | No | 0.9983 | 0.0181 | 10.3442 | 114.9 ms |
-| `maintenance_priority_uncertain` | **0** | **Low** | 0.7032 | 0.6781 | 1.4357 | 104.5 ms |
-| `maintenance_priority_uncertain` | **1** | **Low** | 0.7144 | **0.5892** | **12.9139** | 104.3 ms |
-| `maintenance_priority_uncertain` | 2 | Low | 0.9279 | 0.2738 | 7.0723 | 105.4 ms |
-| `maintenance_priority_uncertain` | 4 | Low | 0.8360 | 0.5050 | 5.7547 | 105.6 ms |
-| `maintenance_priority_uncertain` | 7 | Low | 0.9081 | 0.3304 | 7.7119 | 106.5 ms |
-| `maintenance_priority_uncertain` | 15 | Low | 0.8701 | 0.4311 | 5.7249 | 105.7 ms |
-| `satisfaction_score_5class` | **0** | **5** | 0.9549 | 0.1438 | 5.0393 | 105.7 ms |
-| `satisfaction_score_5class` | **1** | **5** | **0.9999** | **0.0010** | **28.5107** | 104.5 ms |
-| `satisfaction_score_5class` | 2 | 5 | 0.9767 | 0.0863 | 8.7263 | 107.4 ms |
-| `satisfaction_score_5class` | 4 | 5 | 0.9825 | 0.0678 | 10.1087 | 106.6 ms |
-| `satisfaction_score_5class` | 7 | 5 | 0.9214 | 0.2174 | 5.8870 | 107.2 ms |
-| `satisfaction_score_5class` | 15 | 5 | 0.5407 | 0.6880 | 1.0757 | 108.0 ms |
+Per `Canvas.seedSingleStepAt(answer_pos)` in [`src/canvas.zig`](../src/canvas.zig), each sweep point configures a joint placement of the decision cluster `(MASK, TURN_CLOSE)` within the 16-token canvas prefix:
+- $k = 0$: `[MASK, TURN_CLOSE, PAD, PAD, PAD x 12]` — Answer at index 0, delimited immediately by `TURN_CLOSE` at index 1, followed by 14 trailing `PAD` tokens.
+- $k = 1$: `[PAD, MASK, TURN_CLOSE, PAD, PAD x 11]` — Index 0 is `PAD`, Answer at index 1, delimited by `TURN_CLOSE` at index 2, followed by 13 trailing `PAD` tokens.
+- $k = 2$: `[PAD x 2, MASK, TURN_CLOSE, PAD x 12]` — Two leading `PAD` tokens, Answer at index 2, `TURN_CLOSE` at index 3.
+- $k = 4$: `[PAD x 4, MASK, TURN_CLOSE, PAD x 10]` — Four leading `PAD` tokens, Answer at index 4, `TURN_CLOSE` at index 5.
+- $k = 7$: `[PAD x 7, MASK, TURN_CLOSE, PAD x 7]` — Seven leading `PAD` tokens, Answer at index 7, `TURN_CLOSE` at index 8.
+- $k = 15$: `[PAD x 14, TURN_CLOSE, MASK]` — Fourteen leading `PAD` tokens; to fit the 16-token boundary, `TURN_CLOSE` is placed before the answer at index 14, and Answer is at index 15.
 
-### 3.2 Key Insights on Answer Position Placement
+### 3.2 Experimental Results ($C = 16$)
 
-1. **Prompt Demarcation at Position 1**:
-   - For `system_health_boolean`, `maintenance_priority_uncertain`, and `satisfaction_score_5class`, placing `TURN_CLOSE` at position 0 and `MASK` at **position 1** significantly amplifies decision confidence and raw logit separation (e.g. `satisfaction_score` margin jumps from 5.04 to **28.51**, and `system_health` margin expands from 2.74 to **10.91**).
-   - This occurs because `TURN_CLOSE` (`106`) cleanly terminates the user turn before the model token representation begins, acting as an attention anchor.
-2. **Positional Entropy Growth**:
-   - As $k$ increases towards mid-canvas ($k = 4, 7$), normalized entropy increases dramatically (e.g., `system_health` entropy climbs from 0.196 to **0.9894**, approaching near-uniform random dispersion).
+| Fixture Name | Position ($k$) | Layout Prefix | Decision | Decision Prob | Normalized Entropy | Raw Logit Margin | Step 1 Latency |
+| :--- | :---: | :--- | :---: | :---: | :---: | :---: | :---: |
+| `system_health_boolean` | **0** | `[MASK, CLOSE, PAD...]` | **Yes** | 0.8512 | 0.6070 | 2.7388 | 101.2 ms |
+| `system_health_boolean` | **1** | `[PAD, MASK, CLOSE...]` | **Yes** | **0.9697** | **0.1961** | **10.9097** | 103.8 ms |
+| `system_health_boolean` | 2 | `[PADx2, MASK, CLOSE...]` | Yes | 0.8194 | 0.6814 | 4.6324 | 105.2 ms |
+| `system_health_boolean` | 4 | `[PADx4, MASK, CLOSE...]` | Yes | 0.7521 | 0.8080 | 2.6211 | 102.2 ms |
+| `system_health_boolean` | 7 | `[PADx7, MASK, CLOSE...]` | Yes | 0.5606 | 0.9894 | 0.6232 | 113.5 ms |
+| `system_health_boolean` | 15 | `[PADx14, CLOSE, MASK]` | Yes | 0.6414 | 0.9415 | 1.4034 | 101.8 ms |
+| `incident_severity_multiclass` | **0** | `[MASK, CLOSE, PAD...]` | **Medium** | 0.4371 | 0.9679 | 0.2962 | 102.8 ms |
+| `incident_severity_multiclass` | 1 | `[PAD, MASK, CLOSE...]` | High | 0.6179 | 0.8392 | 4.4712 | 101.1 ms |
+| `incident_severity_multiclass` | 2 | `[PADx2, MASK, CLOSE...]` | High | 0.6603 | 0.7155 | 2.6056 | 102.8 ms |
+| `incident_severity_multiclass` | 4 | `[PADx4, MASK, CLOSE...]` | High | 0.5137 | 0.9196 | 1.4419 | 102.9 ms |
+| `incident_severity_multiclass` | 7 | `[PADx7, MASK, CLOSE...]` | High | 0.5315 | 0.8548 | 1.0304 | 104.2 ms |
+| `incident_severity_multiclass` | 15 | `[PADx14, CLOSE, MASK]` | Medium | 0.5416 | 0.7692 | 0.5548 | 103.4 ms |
+| `boundary_256_incident_triage` | **0** | `[MASK, CLOSE, PAD...]` | **No** | **1.0000** | **0.0001** | **13.6824** | 114.8 ms |
+| `boundary_256_incident_triage` | 1 | `[PAD, MASK, CLOSE...]` | No | 0.9609 | 0.2381 | 7.4423 | 114.7 ms |
+| `boundary_256_incident_triage` | 2 | `[PADx2, MASK, CLOSE...]` | No | 0.9715 | 0.1867 | 10.3398 | 114.3 ms |
+| `boundary_256_incident_triage` | 4 | `[PADx4, MASK, CLOSE...]` | No | 0.9561 | 0.2597 | 6.9967 | 114.4 ms |
+| `boundary_256_incident_triage` | 7 | `[PADx7, MASK, CLOSE...]` | No | 0.9281 | 0.3731 | 6.0687 | 114.9 ms |
+| `boundary_256_incident_triage` | 15 | `[PADx14, CLOSE, MASK]` | No | 0.9983 | 0.0181 | 10.3442 | 114.9 ms |
+| `maintenance_priority_uncertain` | **0** | `[MASK, CLOSE, PAD...]` | **Low** | 0.7032 | 0.6781 | 1.4357 | 104.5 ms |
+| `maintenance_priority_uncertain` | **1** | `[PAD, MASK, CLOSE...]` | **Low** | 0.7144 | **0.5892** | **12.9139** | 104.3 ms |
+| `maintenance_priority_uncertain` | 2 | `[PADx2, MASK, CLOSE...]` | Low | 0.9279 | 0.2738 | 7.0723 | 105.4 ms |
+| `maintenance_priority_uncertain` | 4 | `[PADx4, MASK, CLOSE...]` | Low | 0.8360 | 0.5050 | 5.7547 | 105.6 ms |
+| `maintenance_priority_uncertain` | 7 | `[PADx7, MASK, CLOSE...]` | Low | 0.9081 | 0.3304 | 7.7119 | 106.5 ms |
+| `maintenance_priority_uncertain` | 15 | `[PADx14, CLOSE, MASK]` | Low | 0.8701 | 0.4311 | 5.7249 | 105.7 ms |
+| `satisfaction_score_5class` | **0** | `[MASK, CLOSE, PAD...]` | **5** | 0.9549 | 0.1438 | 5.0393 | 105.7 ms |
+| `satisfaction_score_5class` | **1** | `[PAD, MASK, CLOSE...]` | **5** | **0.9999** | **0.0010** | **28.5107** | 104.5 ms |
+| `satisfaction_score_5class` | 2 | `[PADx2, MASK, CLOSE...]` | 5 | 0.9767 | 0.0863 | 8.7263 | 107.4 ms |
+| `satisfaction_score_5class` | 4 | `[PADx4, MASK, CLOSE...]` | 5 | 0.9825 | 0.0678 | 10.1087 | 106.6 ms |
+| `satisfaction_score_5class` | 7 | `[PADx7, MASK, CLOSE...]` | 5 | 0.9214 | 0.2174 | 5.8870 | 107.2 ms |
+| `satisfaction_score_5class` | 15 | `[PADx14, CLOSE, MASK]` | 5 | 0.5407 | 0.6880 | 1.0757 | 108.0 ms |
+
+### 3.3 Key Insights on Answer Position Placement
+
+1. **Joint Answer and Boundary Shift**:
+   - The position sweep evaluates the joint placement of the decision cluster `(MASK, TURN_CLOSE)` under `seedSingleStepAt`.
+   - At $k=0$ (`[MASK, TURN_CLOSE, PAD...]`), the answer token abuts the prompt boundary with zero leading buffer tokens, providing maximum determinism across all schema types (e.g. `boundary_256` achieves margin 13.68 and entropy 0.0001).
+   - At $k=1$ (`[PAD, MASK, TURN_CLOSE, PAD...]`), placing a single buffer `PAD` token before `MASK` achieves high confidence and logit separation for fixtures like `satisfaction_score_5class` (margin 28.51) and `system_health_boolean` (margin 10.91). Here, the trailing `TURN_CLOSE` at index 2 immediately bounds the decision slot while staying within 2 tokens of the causal prompt boundary. (Note: index 0 contains a `PAD` token, not `TURN_CLOSE`; the turn closing token trails the `MASK` at index 2).
+2. **Positional Entropy Growth under Leading PAD Insertion**:
+   - As $k$ increases towards mid-canvas ($k = 4, 7$), inserting 4 to 7 leading `PAD` tokens between the causal prompt boundary and the `(MASK, TURN_CLOSE)` pair degrades attention energy: normalized entropy increases dramatically (e.g., `system_health` entropy climbs from 0.196 to **0.9894**, approaching near-uniform random dispersion).
    - The raw logit margin collapses as distance grows (10.91 $\to$ 4.63 $\to$ 2.62 $\to$ 0.62).
 3. **Tail Degradation ($k = 15$)**:
-   - At the extreme canvas tail ($k = 15$), the answer token is surrounded entirely by leading `PAD` tokens, attenuating candidate separation across complex multi-class schemas.
+   - At the extreme canvas tail ($k = 15$, `[PAD x 14, TURN_CLOSE, MASK]`), `TURN_CLOSE` is shifted before the answer slot to fit the 16-token canvas boundary, resulting in severe logit margin degradation across complex multiclass schemas.
 4. **Conclusion**:
-   - The optimal answer slot positions are strictly **$k \in \{0, 1\}$**. Placing answer tokens deeper in the canvas ($k \ge 4$) introduces representation decay and excessive entropy.
+   - The optimal answer slot positions are strictly **$k \in \{0, 1\}$**. Placing answer tokens deeper in the canvas ($k \ge 4$) introduces representation decay and excessive entropy due to intervening leading `PAD` tokens.
 
 ---
 
@@ -206,7 +217,7 @@ Zeno Direct Canvas Contract (Decoupled):
    - For latency-critical System One decision serving, set **`canvas_length = 16`**.
    - Provides sub-100ms canvas step latency (**101.3 ms**) while maintaining 100% discrete decision parity with native $C=256$ execution across all golden fixtures.
 2. **Recommended Answer Position Placement**:
-   - Use canonical **`answer_position = 0`** (or `answer_position = 1` when preceded by explicit `TURN_CLOSE`).
-   - Do not place answer positions at $k \ge 4$; distance from the prompt boundary induces positional attention decay and inflates normalized entropy.
+   - Use canonical **`answer_position = 0`** (`[MASK, TURN_CLOSE, PAD...]`) as the default standard layout. Single-buffer placement `answer_position = 1` (`[PAD, MASK, TURN_CLOSE, PAD...]`) provides an alternative high-separation layout.
+   - Do not place answer positions at $k \ge 4$; distance from the prompt boundary and intervening leading `PAD` tokens induce positional attention decay and inflate normalized entropy.
 3. **Avoid Intermediate Canvas Widths**:
    - Intermediate lengths ($C \in \{32, 64, 128\}$) must not be used in production due to MoE router boundary expert perturbation from intermediate `PAD` token ratios.

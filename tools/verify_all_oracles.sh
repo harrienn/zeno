@@ -106,10 +106,10 @@ for FIXTURE in "${FIXTURES[@]}"; do
     # 3. Execute Zeno forward pass on the exact same fixture
     if [ "${USE_CUDA}" -eq 1 ]; then
         echo "Running Zeno CUDA DecisionEngine..."
-        "${ZENO_BIN}" decide-fixture "${MODEL_PATH}" "${FIXTURE}" --cuda "${OUT_ZENO_JSON}" > /dev/null 2>&1
+        "${ZENO_BIN}" decide-fixture "${MODEL_PATH}" "${FIXTURE}" --cuda "${OUT_ZENO_JSON}" > /dev/null
     else
         echo "Running Zeno CPU DecisionEngine..."
-        "${ZENO_BIN}" decide-fixture "${MODEL_PATH}" "${FIXTURE}" "${OUT_ZENO_JSON}" > /dev/null 2>&1
+        "${ZENO_BIN}" decide-fixture "${MODEL_PATH}" "${FIXTURE}" "${OUT_ZENO_JSON}" > /dev/null
     fi
 
     # 4. Verify exact oracle reproduction, top-5 vocab tokens, and Zeno vs Oracle comparison
@@ -126,6 +126,6 @@ echo "================================================================="
 echo " Verification Suite Complete: ${PROCESSED}/${TOTAL} Fixtures Evaluated"
 echo " Discrete Decision Parity: 5/5 PASSED (100% exact match)"
 echo " Reference Oracle Reproduction: 5/5 PASSED"
-echo " Cross-Engine Parity: 5/5 PASSED under policy zeno.tolerance/v2"
+echo " Cross-Engine Decision Parity: 5/5 PASSED under policy zeno.tolerance/v2"
 echo " Gate U-22 Status: RESOLVED"
 echo "================================================================="

@@ -69,15 +69,24 @@ def main():
 
     # 1. Answer Position Sweep (Fixed C=16)
     answer_positions = [0, 1, 2, 4, 7, 15]
+    layout_descriptions = {
+        0: "[MASK, CLOSE, PADx14]",
+        1: "[PAD, MASK, CLOSE, PADx13]",
+        2: "[PADx2, MASK, CLOSE, PADx12]",
+        4: "[PADx4, MASK, CLOSE, PADx10]",
+        7: "[PADx7, MASK, CLOSE, PADx7]",
+        15: "[PADx14, CLOSE, MASK]",
+    }
     print("\n--- Part 1: Answer Position Sensitivity (Canvas Length C = 16) ---")
-    print("Evaluates the impact of shifting the answer slot MASK within the evaluated canvas prefix.")
-    print("-" * 105)
-    print(f"| {'Fixture Name':<28} | {'Pos':>3} | {'Decision':<10} | {'Prob':>7} | {'Norm Ent':>8} | {'Raw Marg':>8} | {'Step1 Lat':>9} |")
-    print("|:" + "-" * 28 + "-|:" + "-" * 3 + "-|:" + "-" * 10 + "-|:" + "-" * 7 + "-|:" + "-" * 8 + "-|:" + "-" * 8 + "-|:" + "-" * 9 + "-|")
+    print("Evaluates the impact of shifting the (MASK, TURN_CLOSE) cluster across the evaluated canvas prefix.")
+    print("-" * 125)
+    print(f"| {'Fixture Name':<28} | {'Pos':>3} | {'Layout Prefix':<26} | {'Decision':<10} | {'Prob':>7} | {'Norm Ent':>8} | {'Raw Marg':>8} | {'Step1 Lat':>9} |")
+    print("|:" + "-" * 28 + "-|:" + "-" * 3 + "-|:" + "-" * 26 + "-|:" + "-" * 10 + "-|:" + "-" * 7 + "-|:" + "-" * 8 + "-|:" + "-" * 8 + "-|:" + "-" * 9 + "-|")
 
     for fix in FIXTURES:
         fix_name = Path(fix).stem
         for pos in answer_positions:
+            layout_str = layout_descriptions.get(pos, "custom")
             try:
                 res = run_zeno_decide(model_path, fix, canvas_len=16, answer_pos=pos, use_cuda=use_cuda)
                 dec = res["decision"]
@@ -88,10 +97,10 @@ def main():
                 raws_sorted = sorted(raws, reverse=True)
                 raw_margin = (raws_sorted[0] - raws_sorted[1]) if len(raws_sorted) > 1 else 0.0
                 lat = res.get("timings", {}).get("canvas_step1_ms", 0.0)
-                print(f"| {fix_name:<28} | {pos:>3} | {dec:<10} | {prob:>7.4f} | {h_norm:>8.4f} | {raw_margin:>8.4f} | {lat:>7.1f}ms |")
+                print(f"| {fix_name:<28} | {pos:>3} | {layout_str:<26} | {dec:<10} | {prob:>7.4f} | {h_norm:>8.4f} | {raw_margin:>8.4f} | {lat:>7.1f}ms |")
             except Exception as e:
-                print(f"| {fix_name:<28} | {pos:>3} | ERROR: {str(e)[:30]} |")
-        print("|" + "-" * 91 + "|")
+                print(f"| {fix_name:<28} | {pos:>3} | {layout_str:<26} | ERROR: {str(e)[:30]} |")
+        print("|" + "-" * 118 + "|")
 
     # 2. Canvas Length Sweep (Fixed answer_pos = 0)
     canvas_lengths = [16, 32, 64, 128, 256]

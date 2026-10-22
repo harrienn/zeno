@@ -119,7 +119,7 @@ def main():
         if "uncertain" in ref:
             assert oracle_uncertain == ref["uncertain"], f"Oracle uncertainty mismatch: {oracle_uncertain} != {ref['uncertain']}"
 
-        print("✓ Reference execution identically reproduces captured oracle record.")
+        print("✓ Reference execution identically reproduces captured oracle record (including top-5 unconstrained vocabulary ranking).")
 
     # 2. Compare Zeno engine against Reference Oracle
     if zeno_json_path:
@@ -218,7 +218,7 @@ def main():
             unc_match
         )
         if passed_parity:
-            print(f"\n✓ Full reference parity PASS under policy {policy} (U-22 resolved).")
+            print(f"\n✓ Full reference decision parity PASS under policy {policy} (U-22 resolved).")
         else:
             print(f"\n! Numerical cross-engine divergence exceeds {policy} budget (max raw delta={max_raw_delta:.4f} > {raw_tol}, max prob delta={max_prob_delta:.4f} > {prob_tol}, max H delta={d_entropy:.4f} > {entropy_tol}).")
             if strict_parity:

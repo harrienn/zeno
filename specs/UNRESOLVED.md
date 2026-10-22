@@ -49,7 +49,7 @@ A row may not be marked `resolved` without naming the evidence that closed it. "
 | **U-16** | `resolved` | What is the RoPE position convention across the prefill and decoder phases? | Phase 3 parity | Within single-step structured reads, prompt and canvas tokens share one contiguous 0-indexed position space $[0, \text{eval\_len})$, where $p = \text{answer\_pos}$ is the absolute index within that canvas. | None required. |
 | **U-17** | `resolved` | What activation dtype does the reference use between layers? | Phase 3 parity | fp32 throughout in CPU reference execution. | None required. |
 | **U-18** | `resolved` | Does a one-step read require a zero-initialized self-conditioning input? | Phase 3 implementation and parity | Single-step reads (`single_step_slots`, `cap == 1`) bypass self-conditioning computation entirely. | None required (`vllm@1b3b88ec:vllm/model_executor/models/diffusion_gemma.py:1159-1160,1414-1419`). |
-| **U-22** | `resolved` | What comparison method and tolerance apply to each fixture field, and where is that policy recorded? | Phase 3 parity and exit | Tolerance policy `zeno.tolerance/v2` defined in §6: exact discrete decision match (5/5), exact top-5 unconstrained vocabulary token match (5/5), exact uncertainty match (5/5), candidate raw logit tolerance $\le 10.0$, softcapped logit tolerance $\le 7.0$, probability tolerance $\le 0.15$, and entropy tolerance $\le 0.35$. Accounts for accumulated FP32 vs Q8_K dot-product quantization drift across 30 transformer layers. Local engine regression continues to be asserted under strict `zeno.tolerance/v1` ($\le 0.5$ raw, $\le 0.05$ prob). All 5 golden fixtures pass 100% under `zeno.tolerance/v2` in `tools/verify_all_oracles.sh` and `src/fixture.zig`. | None required. |
+| **U-22** | `resolved` | What comparison method and tolerance apply to each fixture field, and where is that policy recorded? | Phase 3 parity and exit | Tolerance policy `zeno.tolerance/v2` defined in §6: exact discrete decision match (5/5), exact uncertainty match (5/5), candidate raw logit tolerance $\le 10.0$, softcapped logit tolerance $\le 7.0$, probability tolerance $\le 0.15$, and entropy tolerance $\le 0.35$ (with `top_5_vocab_tokens` verified as an exact reference reproduction invariant). Accounts for accumulated FP32 vs Q8_K dot-product quantization drift across 30 transformer layers. Local engine regression continues to be asserted under strict `zeno.tolerance/v1` ($\le 0.5$ raw, $\le 0.05$ prob). All 5 golden fixtures pass 100% under `zeno.tolerance/v2` in `tools/verify_all_oracles.sh` and `src/fixture.zig`. | None required. |
 | **U-23** | `resolved` | What coordinate pairing does the RoPE implementation use? | Phase 3 implementation and parity | Use NeoX-style half-split pairing, matching the pinned vLLM Gemma4 implementation and [`transformer.md`](transformer.md) §4.3. | None required. |
 
 ### 3.3 Resolved by internal evidence or contract decision — recorded, not open
@@ -158,15 +158,20 @@ Zeno defines two versioned comparison policies governing fixture evaluation:
 1. **`zeno.tolerance/v1` (Local Engine Regression Policy)**: Governs internal regression testing, ensuring that updates to Zeno (CPU or CUDA) do not drift against stored `local_engine_baseline` values where identical FP32 arithmetic is executed.
 2. **`zeno.tolerance/v2` (Cross-Engine Oracle Parity Policy)**: Governs parity assertions between Zeno and the pinned external reference oracle (`llama-diffusion-gemma-eval` from llama.cpp PR #24423).
 
-### 6.1 Cross-Engine Error Budget & Rationale (`zeno.tolerance/v2`)
+### 6.1 Verification Structure & Error Budget Rationale (`zeno.tolerance/v2`)
 
-Comparing Zeno against llama.cpp involves evaluating two different arithmetic implementations across 30 transformer layers:
-- **Zeno**: Executes full dequantized FP32 dot products and fused FP32 elementwise activations.
-- **GGML reference**: Executes dynamic INT8/Q8_K quantized SIMD dot products (`ggml_vec_dot_q4_K_q8_K`) with block-level quantization scales.
+Comparing Zeno against the external llama.cpp reference oracle involves two decoupled verification stages:
+1. **Reference Oracle Reproduction Check**: Verifies that the external reference oracle binary (`llama-diffusion-gemma-eval`) and local model weights independently reproduce the captured golden fixture record:
+   - **`top_5_vocab_tokens`**: Exact token ID sequence match across all 262,144 tokens (`exact`). Confirms that the reference computation graph and unconstrained vocabulary ranking are reproducible.
+   - **`decision`**: Exact string match (`exact`).
+   - Logits and probabilities match captured values within $10^{-3}$.
+2. **Cross-Engine Decision Parity (`zeno.tolerance/v2`)**: Verifies that Zeno's high-speed structured decision output matches the Reference Oracle on candidate options:
+   - **Zeno**: Executes full dequantized FP32 dot products and fused FP32 elementwise activations, projecting onto candidate tokens ($K \le 32$).
+   - **GGML reference**: Executes dynamic INT8/Q8_K quantized SIMD dot products (`ggml_vec_dot_q4_K_q8_K`) with block-level quantization scales across all 30 layers.
 
-Layer-by-layer cosine similarity profiling (`tools/compare_layers.py`) demonstrates that activations remain virtually identical through Layer 14 ($\ge 0.998$). In deeper layers (15–29), accumulated quantization differences in the 128-expert MoE router can marginally perturb the 8th expert selection weight. While discrete decisions and top-5 vocabulary tokens remain 100% identical (5/5 across all 262,144 vocabulary tokens), unbounded pre-softmax raw logits drift by up to 9.92.
+Layer-by-layer cosine similarity profiling (`tools/compare_layers.py`) demonstrates that activations remain virtually identical through Layer 14 ($\ge 0.998$). In deeper layers (15–29), accumulated quantization differences in the 128-expert MoE router can marginally perturb the 8th expert selection weight. While discrete decisions remain 100% identical (5/5), unbounded pre-softmax raw logits drift by up to 9.92.
 
-Policy `zeno.tolerance/v2` formalizes this empirical reality: exact discrete choice and unconstrained vocabulary ranking are required invariants, while bounded numerical tolerances absorb cross-engine quantization drift.
+Policy `zeno.tolerance/v2` formalizes this empirical reality: exact discrete choice and uncertainty gating are required invariants for Zeno, while bounded numerical tolerances absorb cross-engine quantization drift.
 
 ### 6.2 Cross-Engine Parity Policy: `zeno.tolerance/v2`
 
@@ -174,13 +179,14 @@ Policy `zeno.tolerance/v2` formalizes this empirical reality: exact discrete cho
 | :--- | :--- | :--- | :--- |
 | `decision` | Exact string match | `exact` | Invariant: Discrete decision must match reference oracle verbatim. |
 | `uncertain` | Exact boolean match | `exact` | Invariant: Uncertainty gating condition must match verbatim. |
-| `top_5_vocab_tokens` | Exact token ID sequence match | `exact` | Invariant: Top-5 unconstrained vocabulary ranking across all 262,144 tokens must match identically. |
 | `candidate_logits_raw` | Absolute difference | $\le 10.0$ | Accounts for accumulated FP32 vs Q8_K dot-product quantization drift across 30 layers (observed max: 9.9219). |
 | `candidate_logits_softcapped` | Absolute difference | $\le 7.0$ | Deterministic $30 \tanh(x/30)$ monotonic mapping of raw logits (observed max: 6.5257). |
 | `probabilities` | Absolute difference | $\le 0.15$ | Candidate-normalized softmax probability drift under logit shift (observed max: 0.1386). |
 | `decision_probability` | Absolute difference | $\le 0.15$ | Selected candidate probability recorded in `probabilities`. |
 | `entropy_nats` | Absolute difference | $\le 0.35$ | Shannon entropy variation corresponding to probability drift (observed max: 0.3257). |
 | `normalized_entropy` | Absolute difference | $\le 0.25$ | Normalized Shannon entropy $H / \ln(\|K\|)$ (observed max: 0.2024). |
+
+*(Note: `top_5_vocab_tokens` is asserted as an exact invariant under Phase 1 Reference Oracle Reproduction, ensuring the external oracle independently reproduces its captured 262,144-token ranking before cross-engine evaluation begins).*
 
 ### 6.3 Local Regression Policy: `zeno.tolerance/v1`
 

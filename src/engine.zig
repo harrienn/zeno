@@ -272,10 +272,12 @@ pub const DecisionEngine = struct {
 
             steps_executed += 1;
 
-            // 5. Candidate-restricted softmax normalization
-            ops.softmax(softcapped_logits, req.temperature, probs);
+            // 5. Candidate-restricted softmax normalization at native training temperature (T = 1.0)
+            // R44-05: Self-conditioning soft-embeddings MUST receive native unscaled probabilities (T=1.0)
+            // so intermediate passes remain faithful to the model's self-conditioning training contract.
+            ops.softmax(softcapped_logits, 1.0, probs);
 
-            // 6. Candidate Shannon entropy in nats and normalized entropy in [0, 1]
+            // 6. Candidate Shannon entropy in nats and normalized entropy in [0, 1] for adaptive early stopping
             h_nats = ops.shannonEntropyNats(probs);
             h_norm = ops.normalizedEntropy(h_nats, cand_count);
 
@@ -286,10 +288,18 @@ pub const DecisionEngine = struct {
                 if (h_norm < th) break;
             }
 
-            // Propagate candidate probabilities as self-conditioning for subsequent step
+            // Propagate native unscaled (T=1.0) candidate probabilities as self-conditioning for subsequent step
             if (steps_executed < req.step_cap) {
                 @memcpy(prev_probs.?, probs);
             }
+        }
+
+        // R44-05: Apply caller-requested temperature scaling strictly to the final decision output probabilities
+        if (req.temperature != 1.0) {
+            ops.softmax(softcapped_logits, req.temperature, probs);
+            h_nats = ops.shannonEntropyNats(probs);
+            h_norm = ops.normalizedEntropy(h_nats, cand_count);
+            uncertain = if (req.entropy_threshold) |th| (h_norm >= th) else false;
         }
 
         // 7. Determine highest-scoring decision candidate

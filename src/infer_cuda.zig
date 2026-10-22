@@ -27,23 +27,17 @@ pub const CudaStream = cuda_mem.CudaStream;
 pub const StageTimings = decision.StageTimings;
 
 pub fn getTensorByteSize(tensor: gguf.TensorInfo) usize {
-    var total_elements: usize = 1;
-    for (0..tensor.n_dimensions) |d| {
-        total_elements *= @as(usize, @intCast(tensor.dimensions[d]));
-    }
-    return switch (tensor.ggml_type) {
-        0 => total_elements * @sizeOf(f32),
-        6 => (total_elements / quant.QK5_0) * @sizeOf(quant.BlockQ5_0),
-        8 => (total_elements / quant.QK8_0) * @sizeOf(quant.BlockQ8_0),
-        12 => (total_elements / quant.QK_K) * @sizeOf(quant.BlockQ4_K),
-        14 => (total_elements / quant.QK_K) * @sizeOf(quant.BlockQ6_K),
-        else => std.debug.panic("Unsupported ggml_type {} for tensor '{s}'", .{ tensor.ggml_type, tensor.name }),
+    return gguf.getTensorByteSize(tensor) catch |err| {
+        std.debug.panic("Failed to compute tensor byte size for '{s}': {s}", .{ tensor.name, @errorName(err) });
     };
 }
 
 pub fn getExactTensorSlice(cpu_model: DiffusionGemmaModel, tensor: gguf.TensorInfo) []const u8 {
     const raw = cpu_model.gguf_file.getTensorSlice(tensor);
     const size = getTensorByteSize(tensor);
+    if (raw.len < size) {
+        std.debug.panic("Truncated tensor slice for '{s}': available={d}, required={d}", .{ tensor.name, raw.len, size });
+    }
     return raw[0..size];
 }
 
@@ -761,6 +755,10 @@ pub const MAX_QUARANTINED_BUFFERS: usize = 16;
 pub var quarantined_buffers: [MAX_QUARANTINED_BUFFERS]?QuarantinedPinnedBuffer = @splat(null);
 pub var quarantined_buffers_count: usize = 0;
 
+pub const MAX_OVERFLOW_BUFFERS: usize = 64;
+pub var overflow_quarantined_buffers: [MAX_OVERFLOW_BUFFERS]?QuarantinedPinnedBuffer = @splat(null);
+pub var overflow_quarantined_buffers_count: usize = 0;
+
 pub fn quarantinePinnedBuffer(buf: *cuda_mem.PinnedBuffer(f32)) void {
     if (comptime !cuda.is_enabled) return;
     if (buf.ptr) |p| {
@@ -791,35 +789,68 @@ pub fn quarantinePinnedBuffer(buf: *cuda_mem.PinnedBuffer(f32)) void {
                 }
             }
         }
-        if (!placed) {
-            // R43-01: Explicit teardown when quarantine capacity (16) remains exhausted even after drain.
-            // Synchronize all devices to establish whole-device quiescence and deinit directly
-            // so we never leak or drop ownership of host memory.
-            std.log.err("quarantinePinnedBuffer: quarantine capacity ({d}) exhausted; synchronizing devices for immediate safe teardown of buffer {*} (len={d})", .{
-                MAX_QUARANTINED_BUFFERS,
-                p,
-                buf.len,
-            });
-            var dev_count: c_int = 0;
-            if (cuda.c.zeno_cuda_get_device_count(&dev_count) != cuda.c.ZENO_CUDA_SUCCESS or dev_count <= 0) {
-                dev_count = 1;
-            }
-            var d: c_int = 0;
-            var sync_ok = true;
+        if (placed) {
+            _ = buf.move();
+            return;
+        }
+
+        // R43-01 & R44-04: Explicit teardown when primary quarantine capacity remains exhausted even after drain.
+        // Synchronize all devices to establish whole-device quiescence and deinit directly
+        // so we never leak or drop ownership of host memory.
+        std.log.warn("quarantinePinnedBuffer: primary quarantine capacity ({d}) exhausted; synchronizing devices for immediate safe teardown of buffer {*} (len={d})", .{
+            MAX_QUARANTINED_BUFFERS,
+            p,
+            buf.len,
+        });
+        var dev_count: c_int = 0;
+        if (cuda.c.zeno_cuda_get_device_count(&dev_count) != cuda.c.ZENO_CUDA_SUCCESS or dev_count <= 0) {
+            dev_count = 1;
+        }
+        var d: c_int = 0;
+        var sync_ok = !inject_device_sync_failure;
+        if (sync_ok) {
             while (d < dev_count) : (d += 1) {
                 if (cuda.c.zeno_cuda_device_synchronize(d) != cuda.c.ZENO_CUDA_SUCCESS) {
                     sync_ok = false;
                     break;
                 }
             }
-            if (sync_ok) {
-                buf.deinit();
-                return;
-            } else {
-                std.log.err("quarantinePinnedBuffer: device synchronization failed during emergency teardown; buffer {*} retained to prevent memory corruption", .{p});
+        }
+
+        if (sync_ok) {
+            buf.deinit();
+            return;
+        }
+
+        // Emergency device synchronization failed: in-flight DMA may still be active.
+        // R44-04: Place into durable overflow quarantine to maintain clear, tracked ownership.
+        var placed_overflow = false;
+        for (&overflow_quarantined_buffers) |*slot| {
+            if (slot.* == null) {
+                slot.* = .{
+                    .ptr = p,
+                    .len = buf.len,
+                };
+                overflow_quarantined_buffers_count += 1;
+                placed_overflow = true;
+                break;
             }
         }
-        _ = buf.move();
+
+        if (placed_overflow) {
+            std.log.warn("quarantinePinnedBuffer: emergency device synchronization failed; buffer {*} retained in durable overflow quarantine ({d}/{d})", .{
+                p,
+                overflow_quarantined_buffers_count,
+                MAX_OVERFLOW_BUFFERS,
+            });
+            _ = buf.move();
+        } else {
+            std.log.warn("quarantinePinnedBuffer: emergency sync failed and overflow capacity ({d}) exhausted; buffer {*} ownership retained by caller", .{
+                MAX_OVERFLOW_BUFFERS,
+                p,
+            });
+            // R44-04: Do not move/disarm buf; caller retains ownership rather than leaking untracked memory.
+        }
     }
 }
 
@@ -857,6 +888,19 @@ pub fn drainQuarantinedPinnedBuffers() !void {
                 if (quarantined_buffers_count > 0) quarantined_buffers_count -= 1;
             } else {
                 std.log.warn("drainQuarantinedPinnedBuffers: failed to free quarantined host buffer {*} (rc={d}); retaining slot", .{ q.ptr, rc });
+            }
+        }
+    }
+
+    // R44-04: Also release any overflow quarantined pinned buffers once devices are quiescent.
+    for (&overflow_quarantined_buffers) |*slot| {
+        if (slot.*) |q| {
+            const rc = cuda.c.zeno_cuda_host_free(q.ptr);
+            if (rc == cuda.c.ZENO_CUDA_SUCCESS) {
+                slot.* = null;
+                if (overflow_quarantined_buffers_count > 0) overflow_quarantined_buffers_count -= 1;
+            } else {
+                std.log.warn("drainQuarantinedPinnedBuffers: failed to free overflow quarantined host buffer {*} (rc={d}); retaining slot", .{ q.ptr, rc });
             }
         }
     }
@@ -3564,6 +3608,37 @@ test "R41-01: CudaWorkspace quarantine policy and failed stream synchronization"
         // Final cleanup
         try drainQuarantinedPinnedBuffers();
         try std.testing.expectEqual(@as(usize, 0), quarantined_buffers_count);
+    }
+
+    // Test 4: R44-04: Quarantine overflow with failed emergency sync moves to durable overflow quarantine
+    {
+        try drainQuarantinedPinnedBuffers();
+        try std.testing.expectEqual(@as(usize, 0), quarantined_buffers_count);
+        try std.testing.expectEqual(@as(usize, 0), overflow_quarantined_buffers_count);
+
+        // Fill all 16 slots with sync failure so opportunistic drain is skipped
+        inject_device_sync_failure = true;
+
+        var mock_buffers: [MAX_QUARANTINED_BUFFERS]cuda_mem.PinnedBuffer(f32) = undefined;
+        for (0..MAX_QUARANTINED_BUFFERS) |i| {
+            mock_buffers[i] = try cuda_mem.PinnedBuffer(f32).init(64);
+            quarantinePinnedBuffer(&mock_buffers[i]);
+            try std.testing.expect(mock_buffers[i].ptr == null);
+        }
+        try std.testing.expectEqual(@as(usize, MAX_QUARANTINED_BUFFERS), quarantined_buffers_count);
+
+        // Allocate a 17th pinned buffer: primary quarantine full, device sync fails
+        var buf17 = try cuda_mem.PinnedBuffer(f32).init(64);
+        quarantinePinnedBuffer(&buf17);
+        // buf17 should be moved into overflow_quarantined_buffers
+        try std.testing.expect(buf17.ptr == null);
+        try std.testing.expectEqual(@as(usize, 1), overflow_quarantined_buffers_count);
+
+        // Now restore device sync and drain all
+        inject_device_sync_failure = false;
+        try drainQuarantinedPinnedBuffers();
+        try std.testing.expectEqual(@as(usize, 0), quarantined_buffers_count);
+        try std.testing.expectEqual(@as(usize, 0), overflow_quarantined_buffers_count);
     }
 }
 
