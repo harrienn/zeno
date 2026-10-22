@@ -777,11 +777,20 @@ pub const MAX_EMERGENCY_RESERVE_BUFFERS: usize = 16;
 pub var emergency_reserve_buffers: [MAX_EMERGENCY_RESERVE_BUFFERS]?QuarantinedPinnedBuffer = @splat(null);
 pub var emergency_reserve_buffers_count: usize = 0;
 
-/// R47-01: Terminal teardown tracking for workspaces retained when all quarantine tiers
+/// R47-01 / R48-01: Terminal teardown tracking for pinned buffers preserved when all quarantine tiers
 /// (primary 16 + overflow 64 + dynamic heap + emergency reserve 16) are exhausted and
-/// stream/device synchronization fails. This preserves the owning workspace rather than
-/// destroying it and leaving the pinned allocation untracked.
-pub var retained_workspaces_head: ?*CudaWorkspace = null;
+/// stream/device synchronization fails. To guarantee that retained state outlives any caller-owned
+/// short-lived allocator (e.g. an ArenaAllocator released immediately after workspace deinit),
+/// records are maintained in a static pool with process lifetime rather than referencing caller workspace storage.
+pub const RetainedWorkspaceRecord = struct {
+    pinned_ptr: [*]f32,
+    pinned_len: usize,
+    next: ?*RetainedWorkspaceRecord = null,
+};
+pub const MAX_RETAINED_WORKSPACES: usize = 16;
+pub var retained_workspace_pool: [MAX_RETAINED_WORKSPACES]RetainedWorkspaceRecord = undefined;
+pub var retained_workspace_pool_used: [MAX_RETAINED_WORKSPACES]bool = @splat(false);
+pub var retained_workspaces_head: ?*RetainedWorkspaceRecord = null;
 pub var retained_workspaces_count: usize = 0;
 
 pub fn hasQuarantinedBuffers() bool {
@@ -1017,39 +1026,30 @@ pub fn drainQuarantinedPinnedBuffers() !void {
         }
     }
 
-    // R47-01: Also release any workspaces retained when all quarantine tiers were exhausted.
-    var curr_ws = retained_workspaces_head;
-    var prev_ws: ?*CudaWorkspace = null;
-    while (curr_ws) |ws| {
-        const next_ws = ws.next_retained;
-        const p = ws.host_staging_pinned.ptr;
-        if (p) |ptr| {
-            const rc = cuda.c.zeno_cuda_host_free(ptr);
-            if (rc == cuda.c.ZENO_CUDA_SUCCESS) {
-                ws.host_staging_pinned.ptr = null;
-                const alloc = ws.allocator;
-                alloc.destroy(ws);
-                if (prev_ws) |p_ws| {
-                    p_ws.next_retained = next_ws;
-                } else {
-                    retained_workspaces_head = next_ws;
+    // R47-01 / R48-01: Release any pinned buffers preserved in the static retained workspace pool.
+    var curr_rec = retained_workspaces_head;
+    var prev_rec: ?*RetainedWorkspaceRecord = null;
+    while (curr_rec) |rec| {
+        const next_rec = rec.next;
+        const rc = cuda.c.zeno_cuda_host_free(rec.pinned_ptr);
+        if (rc == cuda.c.ZENO_CUDA_SUCCESS) {
+            for (&retained_workspace_pool, 0..) |*slot, idx| {
+                if (slot == rec) {
+                    retained_workspace_pool_used[idx] = false;
+                    break;
                 }
-                if (retained_workspaces_count > 0) retained_workspaces_count -= 1;
-            } else {
-                std.log.warn("drainQuarantinedPinnedBuffers: failed to free retained workspace host buffer {*} (rc={d}); retaining workspace", .{ ptr, rc });
-                prev_ws = ws;
             }
-        } else {
-            const alloc = ws.allocator;
-            alloc.destroy(ws);
-            if (prev_ws) |p_ws| {
-                p_ws.next_retained = next_ws;
+            if (prev_rec) |p_rec| {
+                p_rec.next = next_rec;
             } else {
-                retained_workspaces_head = next_ws;
+                retained_workspaces_head = next_rec;
             }
             if (retained_workspaces_count > 0) retained_workspaces_count -= 1;
+        } else {
+            std.log.warn("drainQuarantinedPinnedBuffers: failed to free retained workspace host buffer {*} (rc={d}); retaining slot", .{ rec.pinned_ptr, rc });
+            prev_rec = rec;
         }
-        curr_ws = next_ws;
+        curr_rec = next_rec;
     }
 }
 
@@ -1082,9 +1082,6 @@ pub const CudaWorkspace = struct {
     // Stage-level profiling timings (Review Round 34 Option 1)
     last_stage_timings: decision.StageTimings,
     last_canvas_ms: f32,
-
-    // R47-01: Terminal teardown fallback link for workspaces retained when all quarantine tiers are exhausted
-    next_retained: ?*CudaWorkspace = null,
 
     pub fn synchronize(self: *CudaWorkspace) !void {
         if (inject_stream_sync_failure) return error.StreamSyncFailed;
@@ -1174,7 +1171,6 @@ pub const CudaWorkspace = struct {
         ws_ptr.prompt_cache_valid = false;
         ws_ptr.last_stage_timings = .{};
         ws_ptr.last_canvas_ms = 0.0;
-        ws_ptr.next_retained = null;
 
         return ws_ptr;
     }
@@ -1234,18 +1230,37 @@ pub const CudaWorkspace = struct {
             quarantinePinnedBuffer(&self.host_staging_pinned);
 
             if (self.host_staging_pinned.ptr != null) {
-                // R47-01: Terminal fallback: all quarantine tables, dynamic allocations, and emergency
-                // reserves are exhausted. The pinned buffer could not be transferred to a quarantine slot.
-                // Rather than destroying `self` and leaving the allocation untracked/unowned, preserve
-                // the owning workspace in `retained_workspaces_head` until device quiescence is confirmed.
-                std.log.warn("CudaWorkspace.deinit: all quarantine tiers exhausted; preserving owning workspace {*} in retained_workspaces_head", .{self});
-                if (self.boundary_event) |*ev| ev.deinit();
-                if (self.dev1) |*d1| d1.deinit();
-                self.dev0.deinit();
-                self.next_retained = retained_workspaces_head;
-                retained_workspaces_head = self;
-                retained_workspaces_count += 1;
-                return;
+                // R47-01 / R48-01: Terminal fallback: all quarantine tables, dynamic allocations, and emergency
+                // reserves are exhausted. Store the pinned buffer in a static RetainedWorkspaceRecord
+                // guaranteed to outlive the workspace and its allocator.
+                var placed_retained = false;
+                for (&retained_workspace_pool, 0..) |*rec, idx| {
+                    if (!retained_workspace_pool_used[idx]) {
+                        retained_workspace_pool_used[idx] = true;
+                        rec.* = .{
+                            .pinned_ptr = self.host_staging_pinned.ptr.?,
+                            .pinned_len = self.host_staging_pinned.len,
+                            .next = retained_workspaces_head,
+                        };
+                        retained_workspaces_head = rec;
+                        retained_workspaces_count += 1;
+                        placed_retained = true;
+                        std.log.warn("CudaWorkspace.deinit: all quarantine tiers exhausted; buffer {*} preserved in static retained workspace pool ({d}/{d})", .{
+                            self.host_staging_pinned.ptr.?,
+                            retained_workspaces_count,
+                            MAX_RETAINED_WORKSPACES,
+                        });
+                        _ = self.host_staging_pinned.move();
+                        break;
+                    }
+                }
+                if (!placed_retained) {
+                    std.log.err("CudaWorkspace.deinit: static retained workspace pool exhausted ({d}/{d}); buffer {*} cannot be preserved", .{
+                        retained_workspaces_count,
+                        MAX_RETAINED_WORKSPACES,
+                        self.host_staging_pinned.ptr.?,
+                    });
+                }
             }
         }
 
@@ -3933,8 +3948,10 @@ test "R41-01: CudaWorkspace quarantine policy and failed stream synchronization"
         try std.testing.expect(emergency_reserve_buffers[0] == null);
     }
 
-    // Test 7: R47-01: Terminal fallback: all quarantine tiers (16 primary + 64 overflow + 16 emergency reserve)
-    // saturated + sync failure + dynamic allocator failure preserves owning workspace in retained_workspaces_head
+    // Test 7: R47-01 / R48-01: Terminal fallback: all quarantine tiers (16 primary + 64 overflow + 16 emergency reserve)
+    // saturated + sync failure + dynamic allocator failure preserves pinned buffer in static retained workspace pool.
+    // Workspace allocated from a short-lived ArenaAllocator can have its lifetime terminated prior to drainage
+    // without invalidating the retained record or causing use-after-free on drain.
     {
         try drainQuarantinedPinnedBuffers();
         try std.testing.expectEqual(@as(usize, 0), quarantined_buffers_count);
@@ -3974,21 +3991,34 @@ test "R41-01: CudaWorkspace quarantine policy and failed stream synchronization"
         }
         try std.testing.expectEqual(@as(usize, MAX_EMERGENCY_RESERVE_BUFFERS), emergency_reserve_buffers_count);
 
-        // 4. Deinit a CudaWorkspace: all 96 quarantine slots full, dynamic allocator fails
-        var ws = try CudaWorkspace.init(std.testing.allocator, .single_gpu, [_]i32{ 0, 0 }, 32);
-        const ws_pinned_ptr = ws.host_staging_pinned.ptr.?;
+        // 4. Deinit a CudaWorkspace allocated from a short-lived ArenaAllocator:
+        // all 96 quarantine slots full, dynamic allocator fails
+        var ws_pinned_ptr: [*]f32 = undefined;
+        {
+            var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+            defer arena.deinit();
+            const arena_allocator = arena.allocator();
 
-        inject_stream_sync_failure = true;
-        ws.deinit();
-        inject_stream_sync_failure = false;
+            var ws = try CudaWorkspace.init(arena_allocator, .single_gpu, [_]i32{ 0, 0 }, 32);
+            ws_pinned_ptr = ws.host_staging_pinned.ptr.?;
 
-        // Verify workspace itself was preserved in retained_workspaces_head
+            inject_stream_sync_failure = true;
+            ws.deinit();
+            inject_stream_sync_failure = false;
+
+            // Verify pinned buffer was preserved in static storage guaranteed to outlive arena
+            try std.testing.expectEqual(@as(usize, 1), retained_workspaces_count);
+            try std.testing.expect(retained_workspaces_head != null);
+            try std.testing.expectEqual(ws_pinned_ptr, retained_workspaces_head.?.pinned_ptr);
+        }
+        // Arena is now deinitialized and its backing storage completely released!
+
+        // Verify retained static record survives arena destruction without pointing to invalid memory
         try std.testing.expectEqual(@as(usize, 1), retained_workspaces_count);
         try std.testing.expect(retained_workspaces_head != null);
-        try std.testing.expectEqual(ws, retained_workspaces_head.?);
-        try std.testing.expectEqual(ws_pinned_ptr, retained_workspaces_head.?.host_staging_pinned.ptr.?);
+        try std.testing.expectEqual(ws_pinned_ptr, retained_workspaces_head.?.pinned_ptr);
 
-        // 5. Restore sync and allocator, and drain all 97 buffers cleanly
+        // 5. Restore sync and allocator, and exercise the drain path after arena destruction
         inject_device_sync_failure = false;
         inject_quarantine_allocator_failure = false;
 
