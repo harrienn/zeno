@@ -91,8 +91,13 @@ If you are exploring the codebase or integrating Zeno, here is the recommended r
 
 ### 6.1 Prerequisites
 
-- **Zig**: `0.17.0-dev.2234+80fe9b2b7` or a compatible version, as declared in `build.zig.zon`.
-- **Model**: Local reference artifact `models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf`. (GGUF weights are git-ignored and must be supplied locally).
+- **Zig**: `0.17.0` (or compatible version).
+- **Model**: Local reference artifact `models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf`. Download the 4-bit quantized GGUF (`diffusiongemma-26B-A4B-it-Q4_K_M.gguf`) from [unsloth/diffusiongemma-26B-A4B-it-GGUF](https://huggingface.co/unsloth/diffusiongemma-26B-A4B-it-GGUF) on Hugging Face:
+  ```bash
+  mkdir -p models
+  wget -O models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf \
+    https://huggingface.co/unsloth/diffusiongemma-26B-A4B-it-GGUF/resolve/main/diffusiongemma-26B-A4B-it-Q4_K_M.gguf
+  ```
 - **GPU (Optional)**: NVIDIA GPU with CUDA 12.0+ compute capability (e.g., dual RTX 3060 12GB for accelerated dual-GPU execution).
 
 ### 6.2 CLI Direct Decision
