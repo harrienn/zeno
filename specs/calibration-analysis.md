@@ -107,23 +107,23 @@ Using line search to minimize Negative Log-Likelihood (NLL) over the labeled eva
 
 ### 4.3 Stratified Out-of-Sample 5-Fold Cross-Validation Performance
 
-To evaluate the generalization and stability of post-hoc temperature optimization across subgroups, we execute 5-fold stratified cross-validation, partitioning items across folds in round-robin fashion stratified by ground-truth answer index (balanced option label representation). For each fold, $T$ is optimized on 80% of the partition to minimize training NLL, and evaluated on the remaining 20% held-out partition. Aggregated out-of-sample metrics and fold temperature variations are reported below:
+To evaluate out-of-sample generalization across subgroups without logit-value alignment artifacts, we execute 5-fold stratified cross-validation using reproducible pseudorandom shuffling within each ground-truth candidate label stratum (`seed = 42`, R46-03). Stratifying by target index guarantees balanced label distributions across folds, while independent intra-stratum shuffling prevents adjacent score profile alignment. For each fold, $T$ is optimized on 80% of the partition to minimize training NLL, and evaluated on the remaining 20% held-out partition. Aggregated out-of-sample metrics and fold temperature variations are reported below:
 
 | Run | Logit Representation | Mean Fold $T$ | Fold $T$ Range [Min, Max] | Fold $T$ Std | Held-Out NLL | Held-Out Brier | Held-Out ECE | Base ECE |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| `t1_phase18` | Softcapped ($C=256$) | **1.832** | [1.693, 1.911] | 0.085 | **0.8205** | 0.3975 | **0.0778** | 0.0679 |
-| `t1_phase18` | Raw Logits | **2.479** | [2.277, 2.634] | 0.146 | **0.8058** | **0.3919** | **0.0707** | 0.1247 |
-| `t1_rot1_phase18` | Softcapped ($C=256$) | **1.782** | [1.624, 1.861] | 0.086 | **0.8176** | **0.4299** | **0.0788** | 0.1400 |
-| `t1_rot1_phase18` | Raw Logits | **2.434** | [2.257, 2.535] | 0.096 | **0.8037** | **0.4259** | **0.0868** | 0.1922 |
-| `t2_adapt_phase18` | Softcapped ($C=256$) | **1.560** | [1.465, 1.634] | 0.057 | **0.5694** | 0.2526 | **0.0507** | 0.0596 |
-| `t2_adapt_phase18` | Raw Logits | **2.454** | [2.238, 2.624] | 0.134 | **0.5608** | 0.2505 | **0.0536** | 0.0978 |
-| `t2_adapt_rot1_phase18` | Softcapped ($C=256$) | **1.440** | [1.268, 1.505] | 0.088 | **0.5301** | 0.2425 | **0.0451** | 0.0487 |
-| `t2_adapt_rot1_phase18` | Raw Logits | **2.277** | [2.089, 2.396] | 0.118 | **0.5069** | **0.2335** | **0.0670** | 0.1105 |
+| `t1_phase18` | Softcapped ($C=256$) | **1.828** | [1.693, 1.941] | 0.080 | **0.8200** | 0.3968 | **0.0886** | 0.0679 |
+| `t1_phase18` | Raw Logits | **2.477** | [2.277, 2.634] | 0.115 | **0.8023** | **0.3906** | **0.0856** | 0.1247 |
+| `t1_rot1_phase18` | Softcapped ($C=256$) | **1.776** | [1.614, 1.861] | 0.089 | **0.8196** | **0.4300** | **0.1019** | 0.1400 |
+| `t1_rot1_phase18` | Raw Logits | **2.428** | [2.257, 2.535] | 0.098 | **0.8062** | **0.4262** | **0.0945** | 0.1922 |
+| `t2_adapt_phase18` | Softcapped ($C=256$) | **1.563** | [1.465, 1.634] | 0.055 | **0.5701** | 0.2536 | **0.0696** | 0.0596 |
+| `t2_adapt_phase18` | Raw Logits | **2.456** | [2.238, 2.624] | 0.134 | **0.5627** | 0.2514 | **0.0543** | 0.0978 |
+| `t2_adapt_rot1_phase18` | Softcapped ($C=256$) | **1.436** | [1.278, 1.515] | 0.090 | **0.5304** | 0.2429 | **0.0444** | 0.0487 |
+| `t2_adapt_rot1_phase18` | Raw Logits | **2.277** | [2.089, 2.377] | 0.112 | **0.5060** | **0.2351** | **0.0640** | 0.1105 |
 
 **Empirical Observations & Methodological Scope**:
-- Across stratified folds, optimal fold temperatures exhibit narrow dispersion (standard deviation $\sigma_T \le 0.15$), and held-out out-of-sample NLL closely matches in-sample fit NLL (divergence $\le 0.015$).
-- On this 150-query multiple-choice sample, held-out ECE on raw logits drops by 35%–55% relative to uncalibrated $T=1.0$ baselines.
-- *Methodological Scope*: These observations demonstrate parameter stability across balanced folds within the ARC-Challenge evaluation sample; they reflect the low dimensionality of 1-parameter temperature scaling on this benchmark rather than universal proof against overfitting on broader or out-of-domain distributions. Additional verification on larger and diverse datasets remains necessary before claiming universal distribution calibration.
+- Across reproducible stratified folds, optimal fold temperatures exhibit narrow dispersion (standard deviation $\sigma_T \le 0.14$), and held-out out-of-sample NLL closely matches in-sample fit NLL (divergence $\le 0.015$).
+- On this 150-query multiple-choice sample, held-out ECE on raw logits drops by 32%–50% relative to uncalibrated $T=1.0$ baselines.
+- *Methodological Scope*: These observations demonstrate parameter stability across balanced, randomly shuffled folds within the ARC-Challenge evaluation sample; they reflect the low dimensionality of 1-parameter temperature scaling on this benchmark rather than universal proof against overfitting on broader or out-of-domain distributions. Additional verification on larger and diverse datasets remains necessary before claiming universal distribution calibration.
 
 **Key Findings**:
 1. **Raw Logit Universality**: Across all 4 runs (single-step, adaptive 2-step, canonical, and rotated), the optimal temperature for raw logits is remarkably stable: **$T_{\text{opt}} \approx 2.41 \pm 0.08$** (ranging from 2.282 to 2.480).

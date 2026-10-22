@@ -744,6 +744,7 @@ pub var inject_stream_sync_failure: bool = false;
 pub var inject_dev0_sync_failure: bool = false;
 pub var inject_dev1_sync_failure: bool = false;
 pub var inject_device_sync_failure: bool = false;
+pub var inject_quarantine_allocator_failure: bool = false;
 
 /// Teardown safety policy: quarantined pinned staging allocations retained when stream
 /// synchronization fails during workspace deinitialization.
@@ -769,8 +770,15 @@ pub const DurableQuarantineNode = struct {
 pub var dynamic_quarantined_head: ?*DurableQuarantineNode = null;
 pub var dynamic_quarantined_count: usize = 0;
 
+/// R46-04: Static emergency reserve for pinned buffers quarantined when fixed tables (16+64)
+/// are exhausted, emergency device synchronization fails, and dynamic node heap allocation fails.
+/// This guarantees a durable owner that outlives workspace teardown even during host OOM.
+pub const MAX_EMERGENCY_RESERVE_BUFFERS: usize = 16;
+pub var emergency_reserve_buffers: [MAX_EMERGENCY_RESERVE_BUFFERS]?QuarantinedPinnedBuffer = @splat(null);
+pub var emergency_reserve_buffers_count: usize = 0;
+
 pub fn hasQuarantinedBuffers() bool {
-    return quarantined_buffers_count > 0 or overflow_quarantined_buffers_count > 0 or dynamic_quarantined_count > 0;
+    return quarantined_buffers_count > 0 or overflow_quarantined_buffers_count > 0 or dynamic_quarantined_count > 0 or emergency_reserve_buffers_count > 0;
 }
 
 pub fn quarantinePinnedBuffer(buf: *cuda_mem.PinnedBuffer(f32)) void {
@@ -861,23 +869,53 @@ pub fn quarantinePinnedBuffer(buf: *cuda_mem.PinnedBuffer(f32)) void {
         } else {
             // R45-03: Primary (16) and overflow (64) fixed tables are exhausted AND emergency device sync failed.
             // Allocate a dynamic quarantine node to guarantee durable ownership and tracking across workspace teardown.
-            if (std.heap.c_allocator.create(DurableQuarantineNode)) |node| {
-                node.* = .{
-                    .ptr = p,
-                    .len = buf.len,
-                    .next = dynamic_quarantined_head,
-                };
-                dynamic_quarantined_head = node;
-                dynamic_quarantined_count += 1;
-                std.log.warn("quarantinePinnedBuffer: emergency sync failed and fixed tables ({d}+{d}) exhausted; buffer {*} tracked in dynamic overflow quarantine ({d})", .{
-                    MAX_QUARANTINED_BUFFERS,
-                    MAX_OVERFLOW_BUFFERS,
-                    p,
-                    dynamic_quarantined_count,
-                });
-                _ = buf.move();
-            } else |_| {
-                std.log.warn("quarantinePinnedBuffer: emergency sync failed, fixed tables exhausted, and dynamic node allocation failed; buffer {*} ownership retained by caller", .{p});
+            var dynamic_placed = false;
+            if (!inject_quarantine_allocator_failure) {
+                if (std.heap.c_allocator.create(DurableQuarantineNode)) |node| {
+                    node.* = .{
+                        .ptr = p,
+                        .len = buf.len,
+                        .next = dynamic_quarantined_head,
+                    };
+                    dynamic_quarantined_head = node;
+                    dynamic_quarantined_count += 1;
+                    dynamic_placed = true;
+                    std.log.warn("quarantinePinnedBuffer: emergency sync failed and fixed tables ({d}+{d}) exhausted; buffer {*} tracked in dynamic overflow quarantine ({d})", .{
+                        MAX_QUARANTINED_BUFFERS,
+                        MAX_OVERFLOW_BUFFERS,
+                        p,
+                        dynamic_quarantined_count,
+                    });
+                    _ = buf.move();
+                } else |_| {}
+            }
+
+            if (!dynamic_placed) {
+                // R46-04: Dynamic node allocation failed (host OOM or injected failure).
+                // Place into static emergency reserve so the buffer is guaranteed to survive workspace teardown.
+                var placed_reserve = false;
+                for (&emergency_reserve_buffers) |*slot| {
+                    if (slot.* == null) {
+                        slot.* = .{
+                            .ptr = p,
+                            .len = buf.len,
+                        };
+                        emergency_reserve_buffers_count += 1;
+                        placed_reserve = true;
+                        break;
+                    }
+                }
+
+                if (placed_reserve) {
+                    std.log.warn("quarantinePinnedBuffer: dynamic node allocation failed; buffer {*} preserved in static emergency reserve quarantine ({d}/{d})", .{
+                        p,
+                        emergency_reserve_buffers_count,
+                        MAX_EMERGENCY_RESERVE_BUFFERS,
+                    });
+                    _ = buf.move();
+                } else {
+                    std.log.warn("quarantinePinnedBuffer: emergency sync, fixed tables, dynamic allocation, and emergency reserve exhausted; buffer {*} ownership retained by caller", .{p});
+                }
             }
         }
     }
@@ -953,6 +991,19 @@ pub fn drainQuarantinedPinnedBuffers() !void {
             prev_dynamic = node;
         }
         curr_dynamic = next_node;
+    }
+
+    // R46-04: Also release any emergency reserve quarantined pinned buffers once devices are quiescent.
+    for (&emergency_reserve_buffers) |*slot| {
+        if (slot.*) |q| {
+            const rc = cuda.c.zeno_cuda_host_free(q.ptr);
+            if (rc == cuda.c.ZENO_CUDA_SUCCESS) {
+                slot.* = null;
+                if (emergency_reserve_buffers_count > 0) emergency_reserve_buffers_count -= 1;
+            } else {
+                std.log.warn("drainQuarantinedPinnedBuffers: failed to free emergency reserve quarantined host buffer {*} (rc={d}); retaining slot", .{ q.ptr, rc });
+            }
+        }
     }
 }
 
@@ -3756,6 +3807,65 @@ test "R41-01: CudaWorkspace quarantine policy and failed stream synchronization"
         try std.testing.expectEqual(@as(usize, 0), overflow_quarantined_buffers_count);
         try std.testing.expectEqual(@as(usize, 0), dynamic_quarantined_count);
         try std.testing.expect(dynamic_quarantined_head == null);
+    }
+
+    // Test 6: R46-04: Fixed tables saturated + emergency device sync failed + dynamic node allocator failure
+    // preserves buffer in static emergency reserve quarantine across workspace teardown
+    {
+        try drainQuarantinedPinnedBuffers();
+        try std.testing.expectEqual(@as(usize, 0), quarantined_buffers_count);
+        try std.testing.expectEqual(@as(usize, 0), overflow_quarantined_buffers_count);
+        try std.testing.expectEqual(@as(usize, 0), dynamic_quarantined_count);
+        try std.testing.expectEqual(@as(usize, 0), emergency_reserve_buffers_count);
+
+        inject_device_sync_failure = true;
+        inject_quarantine_allocator_failure = true;
+
+        // 1. Fill 16 primary slots
+        var primary_mock_buffers: [MAX_QUARANTINED_BUFFERS]cuda_mem.PinnedBuffer(f32) = undefined;
+        for (0..MAX_QUARANTINED_BUFFERS) |i| {
+            primary_mock_buffers[i] = try cuda_mem.PinnedBuffer(f32).init(64);
+            quarantinePinnedBuffer(&primary_mock_buffers[i]);
+            try std.testing.expect(primary_mock_buffers[i].ptr == null);
+        }
+        try std.testing.expectEqual(@as(usize, MAX_QUARANTINED_BUFFERS), quarantined_buffers_count);
+
+        // 2. Fill 64 overflow slots
+        var overflow_mock_buffers: [MAX_OVERFLOW_BUFFERS]cuda_mem.PinnedBuffer(f32) = undefined;
+        for (0..MAX_OVERFLOW_BUFFERS) |i| {
+            overflow_mock_buffers[i] = try cuda_mem.PinnedBuffer(f32).init(64);
+            quarantinePinnedBuffer(&overflow_mock_buffers[i]);
+            try std.testing.expect(overflow_mock_buffers[i].ptr == null);
+        }
+        try std.testing.expectEqual(@as(usize, MAX_OVERFLOW_BUFFERS), overflow_quarantined_buffers_count);
+
+        // 3. Deinit a CudaWorkspace under failed stream sync, failed device sync, and failed dynamic allocator
+        {
+            var ws = try CudaWorkspace.init(std.testing.allocator, .single_gpu, [_]i32{ 0, 0 }, 32);
+            const ws_pinned_ptr = ws.host_staging_pinned.ptr.?;
+
+            inject_stream_sync_failure = true;
+            ws.deinit();
+            inject_stream_sync_failure = false;
+
+            // Assert workspace was destroyed, dynamic allocation was skipped/failed,
+            // and allocation was safely preserved in static emergency reserve quarantine
+            try std.testing.expectEqual(@as(usize, 0), dynamic_quarantined_count);
+            try std.testing.expectEqual(@as(usize, 1), emergency_reserve_buffers_count);
+            try std.testing.expect(emergency_reserve_buffers[0] != null);
+            try std.testing.expectEqual(ws_pinned_ptr, emergency_reserve_buffers[0].?.ptr);
+        }
+
+        // 4. Restore device synchronization and allocator, and drain all 81 buffers cleanly
+        inject_device_sync_failure = false;
+        inject_quarantine_allocator_failure = false;
+
+        try drainQuarantinedPinnedBuffers();
+        try std.testing.expectEqual(@as(usize, 0), quarantined_buffers_count);
+        try std.testing.expectEqual(@as(usize, 0), overflow_quarantined_buffers_count);
+        try std.testing.expectEqual(@as(usize, 0), dynamic_quarantined_count);
+        try std.testing.expectEqual(@as(usize, 0), emergency_reserve_buffers_count);
+        try std.testing.expect(emergency_reserve_buffers[0] == null);
     }
 }
 

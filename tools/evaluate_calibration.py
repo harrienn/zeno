@@ -11,6 +11,7 @@ Usage:
 import sys
 import json
 import math
+import random
 from pathlib import Path
 from typing import List, Dict, Any, Tuple
 
@@ -210,9 +211,10 @@ def compute_cross_validated_temperature(
     k_folds: int = 5,
     t_min: float = 0.05,
     t_max: float = 5.0,
-    steps: int = 500
+    steps: int = 500,
+    seed: int = 42,
 ) -> Dict[str, Any]:
-    """Evaluates temperature scaling using k-fold cross-validation on held-out splits (out-of-sample)."""
+    """Evaluates temperature scaling using seeded stratified k-fold cross-validation on held-out splits (out-of-sample, R46-03)."""
     logit_key = "softcapped_logit" if use_softcapped else "raw_logit"
     valid_items = []
     for r in results:
@@ -232,18 +234,17 @@ def compute_cross_validated_temperature(
     if len(valid_items) < k_folds:
         return {}
 
-    # Deterministic stratified k-fold partitioning by target class index
+    # Deterministic stratified k-fold partitioning by target class index with reproducible shuffle (R46-03)
     strata: Dict[int, List[Tuple[List[float], int]]] = {}
     for logits, target_idx in valid_items:
         strata.setdefault(target_idx, []).append((logits, target_idx))
 
-    # Deterministic ordering within strata
-    for s_items in strata.values():
-        s_items.sort(key=lambda x: (sum(x[0]), x[0][0]))
-
+    rng = random.Random(seed)
     folds: List[List[Tuple[List[float], int]]] = [[] for _ in range(k_folds)]
     for target_idx in sorted(strata.keys()):
-        for idx, item in enumerate(strata[target_idx]):
+        stratum_items = list(strata[target_idx])
+        rng.shuffle(stratum_items)
+        for idx, item in enumerate(stratum_items):
             folds[idx % k_folds].append(item)
 
     oos_scaled_results = []
@@ -304,6 +305,7 @@ def compute_cross_validated_temperature(
     oos_ece, oos_mce, _ = compute_ece_and_bins(oos_scaled_results)
 
     return {
+        "stratified_seed": seed,
         "mean_fold_temperature": mean_opt_t,
         "min_fold_temperature": min_opt_t,
         "max_fold_temperature": max_opt_t,
@@ -469,7 +471,7 @@ def print_single_report(analysis: Dict[str, Any]):
         print(f"  MCE:   {ts['base_mce']:.4f} -> {ts['calibrated_mce']:.4f} (delta = {ts['calibrated_mce'] - ts['base_mce']:+.4f})")
         if analysis.get("cv_softcapped"):
             cv = analysis["cv_softcapped"]
-            print(f"  5-Fold Stratified Out-of-Sample CV (Softcapped, Mean Fold T = {cv['mean_fold_temperature']:.3f}, Range = [{cv['min_fold_temperature']:.3f}, {cv['max_fold_temperature']:.3f}], std = {cv['std_fold_temperature']:.3f}):")
+            print(f"  5-Fold Stratified Out-of-Sample CV (Softcapped, Seed = {cv['stratified_seed']}, Mean Fold T = {cv['mean_fold_temperature']:.3f}, Range = [{cv['min_fold_temperature']:.3f}, {cv['max_fold_temperature']:.3f}], std = {cv['std_fold_temperature']:.3f}):")
             print(f"    Held-Out NLL:   {cv['oos_nll']:.4f} (delta = {cv['oos_nll'] - ts['base_nll']:+.4f})")
             print(f"    Held-Out Brier: {cv['oos_brier']:.4f} (delta = {cv['oos_brier'] - ts['base_brier']:+.4f})")
             print(f"    Held-Out ECE:   {cv['oos_ece']:.4f} (delta = {cv['oos_ece'] - ts['base_ece']:+.4f})")
@@ -483,7 +485,7 @@ def print_single_report(analysis: Dict[str, Any]):
         print(f"  MCE:   {tr['base_mce']:.4f} -> {tr['calibrated_mce']:.4f} (delta = {tr['calibrated_mce'] - tr['base_mce']:+.4f})")
         if analysis.get("cv_raw"):
             cvr = analysis["cv_raw"]
-            print(f"  5-Fold Stratified Out-of-Sample CV (Raw Logits, Mean Fold T = {cvr['mean_fold_temperature']:.3f}, Range = [{cvr['min_fold_temperature']:.3f}, {cvr['max_fold_temperature']:.3f}], std = {cvr['std_fold_temperature']:.3f}):")
+            print(f"  5-Fold Stratified Out-of-Sample CV (Raw Logits, Seed = {cvr['stratified_seed']}, Mean Fold T = {cvr['mean_fold_temperature']:.3f}, Range = [{cvr['min_fold_temperature']:.3f}, {cvr['max_fold_temperature']:.3f}], std = {cvr['std_fold_temperature']:.3f}):")
             print(f"    Held-Out NLL:   {cvr['oos_nll']:.4f} (delta = {cvr['oos_nll'] - tr['base_nll']:+.4f})")
             print(f"    Held-Out Brier: {cvr['oos_brier']:.4f} (delta = {cvr['oos_brier'] - tr['base_brier']:+.4f})")
             print(f"    Held-Out ECE:   {cvr['oos_ece']:.4f} (delta = {cvr['oos_ece'] - tr['base_ece']:+.4f})")

@@ -53,6 +53,58 @@ pub const Mutex = struct {
     }
 };
 
+/// Production stepping and output temperature scaling state for decision execution (R44-05, R45-01, R46-02).
+pub const StepDecisionState = struct {
+    steps_executed: u32 = 0,
+    entropy_nats: f32 = 0.0,
+    normalized_entropy: f32 = 0.0,
+    uncertain: bool = false,
+
+    /// Evaluates step candidate probabilities under native training temperature T=1.0 for self-conditioning and early stopping.
+    /// Returns true if early stopping threshold was met (decisive).
+    pub fn processStep(
+        self: *StepDecisionState,
+        softcapped_logits: []const f32,
+        cand_count: usize,
+        entropy_threshold: ?f32,
+        probs_out: []f32,
+        prev_probs_out: ?[]f32,
+        step_cap: u32,
+    ) bool {
+        self.steps_executed += 1;
+        ops.softmax(softcapped_logits, 1.0, probs_out);
+        self.entropy_nats = ops.shannonEntropyNats(probs_out);
+        self.normalized_entropy = ops.normalizedEntropy(self.entropy_nats, cand_count);
+        self.uncertain = if (entropy_threshold) |th| (self.normalized_entropy >= th) else false;
+
+        const stop_early = if (entropy_threshold) |th| (self.normalized_entropy < th) else false;
+        if (!stop_early and self.steps_executed < step_cap) {
+            if (prev_probs_out) |prev| {
+                @memcpy(prev, probs_out);
+            }
+        }
+        return stop_early;
+    }
+
+    /// Applies caller-specified temperature scaling to final logits, updating output probabilities,
+    /// response entropy, and client-facing uncertain flag.
+    pub fn finalizeOutput(
+        self: *StepDecisionState,
+        softcapped_logits: []const f32,
+        cand_count: usize,
+        temperature: f32,
+        entropy_threshold: ?f32,
+        probs_out: []f32,
+    ) void {
+        if (temperature != 1.0) {
+            ops.softmax(softcapped_logits, temperature, probs_out);
+            self.entropy_nats = ops.shannonEntropyNats(probs_out);
+            self.normalized_entropy = ops.normalizedEntropy(self.entropy_nats, cand_count);
+            self.uncertain = if (entropy_threshold) |th| (self.normalized_entropy >= th) else false;
+        }
+    }
+};
+
 pub const DecisionEngine = struct {
     allocator: std.mem.Allocator,
     model: DiffusionGemmaModel,
@@ -216,14 +268,11 @@ pub const DecisionEngine = struct {
         }
         defer if (prev_probs) |p| request_allocator.free(p);
 
-        var steps_executed: u32 = 0;
-        var h_nats: f32 = 0.0;
-        var h_norm: f32 = 0.0;
-        var uncertain: bool = false;
+        var step_state = StepDecisionState{};
         var stage_timings: ?decision.StageTimings = if (self.backend == .cuda) decision.StageTimings{} else null;
 
-        while (steps_executed < req.step_cap) {
-            const step_probs = if (steps_executed == 0) null else prev_probs;
+        while (step_state.steps_executed < req.step_cap) {
+            const step_probs = if (step_state.steps_executed == 0) null else prev_probs;
 
             switch (self.backend) {
                 .cpu => {
@@ -256,51 +305,44 @@ pub const DecisionEngine = struct {
                         softcapped_logits,
                     );
                     if (stage_timings) |*st| {
-                        if (steps_executed == 0) {
+                        if (step_state.steps_executed == 0) {
                             st.prompt_prefill_ms = ws.last_stage_timings.prompt_prefill_ms;
                             st.prompt_p0_ms = ws.last_stage_timings.prompt_p0_ms;
                             st.prompt_transfer_ms = ws.last_stage_timings.prompt_transfer_ms;
                             st.prompt_p1_ms = ws.last_stage_timings.prompt_p1_ms;
                             st.prompt_cache_hit = ws.last_stage_timings.prompt_cache_hit;
                             st.canvas_step1_ms = ws.last_canvas_ms;
-                        } else if (steps_executed == 1) {
+                        } else if (step_state.steps_executed == 1) {
                             st.canvas_step2_ms = ws.last_canvas_ms;
                         }
                     }
                 },
             }
 
-            steps_executed += 1;
-
-            // 5. Candidate-restricted softmax normalization at native training temperature (T = 1.0)
-            // R44-05: Self-conditioning soft-embeddings MUST receive native unscaled probabilities (T=1.0)
-            // so intermediate passes remain faithful to the model's self-conditioning training contract.
-            ops.softmax(softcapped_logits, 1.0, probs);
-
-            // 6. Candidate Shannon entropy in nats and normalized entropy in [0, 1] for adaptive early stopping
-            h_nats = ops.shannonEntropyNats(probs);
-            h_norm = ops.normalizedEntropy(h_nats, cand_count);
-
-            uncertain = if (req.entropy_threshold) |th| (h_norm >= th) else false;
-
-            // Adaptive early stopping: if decisive (h_norm < entropy_threshold), terminate early
-            if (req.entropy_threshold) |th| {
-                if (h_norm < th) break;
-            }
-
-            // Propagate native unscaled (T=1.0) candidate probabilities as self-conditioning for subsequent step
-            if (steps_executed < req.step_cap) {
-                @memcpy(prev_probs.?, probs);
-            }
+            // 5 & 6. Process step candidate probabilities at native T=1.0 for self-conditioning and early stopping
+            if (step_state.processStep(
+                softcapped_logits,
+                cand_count,
+                req.entropy_threshold,
+                probs,
+                prev_probs,
+                req.step_cap,
+            )) break;
         }
 
-        // R44-05: Apply caller-requested temperature scaling strictly to the final decision output probabilities
-        if (req.temperature != 1.0) {
-            ops.softmax(softcapped_logits, req.temperature, probs);
-            h_nats = ops.shannonEntropyNats(probs);
-            h_norm = ops.normalizedEntropy(h_nats, cand_count);
-            uncertain = if (req.entropy_threshold) |th| (h_norm >= th) else false;
-        }
+        // R44-05 & R45-01: Apply caller-requested temperature scaling strictly to final decision output probabilities
+        step_state.finalizeOutput(
+            softcapped_logits,
+            cand_count,
+            req.temperature,
+            req.entropy_threshold,
+            probs,
+        );
+
+        const steps_executed = step_state.steps_executed;
+        const h_nats = step_state.entropy_nats;
+        const h_norm = step_state.normalized_entropy;
+        const uncertain = step_state.uncertain;
 
         // 7. Determine highest-scoring decision candidate
         var best_idx: usize = 0;
@@ -618,45 +660,92 @@ test "DecisionEngine: maxPromptTokensForBackend calculates effective prompt limi
     try std.testing.expectEqual(@as(usize, 0), maxPromptTokensForBackend(.cpu, 1024, 1024));
 }
 
-test "DecisionEngine: split temperature semantics for internal stopping vs response uncertainty (R45-01)" {
-    // Contract: Intermediate stepping evaluates softmax and normalized entropy at native T=1.0.
-    // Post-hoc options.temperature is applied strictly to final response probabilities and sets response uncertainty.
+test "DecisionEngine: split temperature semantics for internal stopping vs response uncertainty (R45-01 / R46-01 / R46-02)" {
+    // Contract: Intermediate stepping evaluates softmax and normalized entropy at native T=1.0 via StepDecisionState.processStep.
+    // Post-hoc options.temperature is applied strictly to final response probabilities and sets response uncertainty via StepDecisionState.finalizeOutput.
     // With non-default T > 1.0, internal stopping may halt early (decisive under native dynamics)
     // while the client response flags uncertain = true due to post-hoc dispersion expansion.
 
     const cand_count = 2;
-    var softcapped_logits = [_]f32{ 14.0, 11.0 }; // delta = 3.0
-    var internal_probs: [cand_count]f32 = undefined;
-    var response_probs: [cand_count]f32 = undefined;
+    const decisive_logits = [_]f32{ 14.0, 11.0 }; // delta = 3.0
+    var probs: [cand_count]f32 = undefined;
+    var prev_probs: [cand_count]f32 = undefined;
 
-    // 1. Internal evaluation at native T = 1.0
-    ops.softmax(&softcapped_logits, 1.0, &internal_probs);
-    const internal_h_nats = ops.shannonEntropyNats(&internal_probs);
-    const internal_h_norm = ops.normalizedEntropy(internal_h_nats, cand_count);
+    // --- Scenario 1: Step 1 is decisive under T=1.0, but T=2.0 expands response dispersion ---
+    {
+        var step_state = StepDecisionState{};
+        const tau: f32 = 0.30;
+        const req_temp: f32 = 2.0;
 
-    // Delta = 3.0 -> exp(3) / (1 + exp(3)) ~= 0.95257 -> decisive
-    try std.testing.expect(internal_probs[0] > 0.95);
-    try std.testing.expect(internal_h_norm < 0.30); // ~0.2758
+        // Step 1: processStep under native T=1.0
+        const stopped_early = step_state.processStep(
+            &decisive_logits,
+            cand_count,
+            tau,
+            &probs,
+            &prev_probs,
+            2, // step_cap = 2
+        );
 
-    const tau: f32 = 0.30;
-    // Under native dynamics, internal_h_norm < tau -> triggers early stopping at step 1
-    const stopped_early = (internal_h_norm < tau);
-    try std.testing.expect(stopped_early);
+        // Native T=1.0: delta = 3.0 -> prob0 ~= 0.9526, H_norm ~= 0.2758 < tau (0.30)
+        try std.testing.expect(stopped_early);
+        try std.testing.expectEqual(@as(u32, 1), step_state.steps_executed);
+        try std.testing.expect(probs[0] > 0.95);
+        try std.testing.expect(step_state.normalized_entropy < 0.30);
+        try std.testing.expect(!step_state.uncertain); // Decisive internally
 
-    // 2. Response evaluation at calibrated options.temperature = 2.0
-    const req_temp: f32 = 2.0;
-    ops.softmax(&softcapped_logits, req_temp, &response_probs);
-    const response_h_nats = ops.shannonEntropyNats(&response_probs);
-    const response_h_norm = ops.normalizedEntropy(response_h_nats, cand_count);
+        // Finalize output under req_temp = 2.0
+        step_state.finalizeOutput(
+            &decisive_logits,
+            cand_count,
+            req_temp,
+            tau,
+            &probs,
+        );
 
-    // Scaled delta = 1.5 -> exp(1.5) / (1 + exp(1.5)) ~= 0.81757
-    try std.testing.expect(response_probs[0] < 0.85);
-    try std.testing.expect(response_h_norm > 0.60); // ~0.6840
+        // Scaled T=2.0: delta = 1.5 -> prob0 ~= 0.8176, H_norm ~= 0.6840 >= tau (0.30)
+        try std.testing.expectEqual(@as(u32, 1), step_state.steps_executed); // Steps unchanged
+        try std.testing.expect(probs[0] < 0.85);
+        try std.testing.expect(step_state.normalized_entropy > 0.60);
+        try std.testing.expect(step_state.uncertain); // Response flagged uncertain
 
-    // Client-facing uncertain flag is evaluated on the response distribution
-    const uncertain = (response_h_norm >= tau);
-    try std.testing.expect(uncertain);
+        // Verified: Execution halted early at step 1 while response output reported uncertain = true
+        try std.testing.expect(stopped_early and step_state.uncertain);
+    }
 
-    // Verified: Internal stopping halted early (steps_executed = 1) while response flagged uncertain = true
-    try std.testing.expect(stopped_early and uncertain);
+    // --- Scenario 2: Multi-step progression with self-conditioning buffer propagation ---
+    {
+        var step_state = StepDecisionState{};
+        const tau: f32 = 0.50;
+        const ambiguous_logits = [_]f32{ 12.05, 12.00 }; // delta = 0.05 -> H_norm ~= 0.999
+
+        // Step 1: Ambiguous -> should NOT stop early, must populate prev_probs
+        const step1_stopped = step_state.processStep(
+            &ambiguous_logits,
+            cand_count,
+            tau,
+            &probs,
+            &prev_probs,
+            2, // step_cap = 2
+        );
+        try std.testing.expect(!step1_stopped);
+        try std.testing.expectEqual(@as(u32, 1), step_state.steps_executed);
+        try std.testing.expect(step_state.uncertain);
+        // Assert prev_probs was populated from probs
+        try std.testing.expectEqual(probs[0], prev_probs[0]);
+        try std.testing.expectEqual(probs[1], prev_probs[1]);
+
+        // Step 2: Decisive -> should stop early
+        const step2_stopped = step_state.processStep(
+            &decisive_logits,
+            cand_count,
+            tau,
+            &probs,
+            &prev_probs,
+            2,
+        );
+        try std.testing.expect(step2_stopped);
+        try std.testing.expectEqual(@as(u32, 2), step_state.steps_executed);
+        try std.testing.expect(!step_state.uncertain);
+    }
 }
