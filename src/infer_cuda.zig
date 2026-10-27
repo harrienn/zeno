@@ -351,17 +351,77 @@ pub const CudaModel = struct {
         devices: [2]i32,
     };
 
-    /// Evaluates visible GPU topology, verifies VRAM admission requirements,
-    /// and selects an eligible device pair (dual_gpu_split) or single device (single_gpu).
-    pub fn selectAndValidateDevices(topo: cuda.Topology, force_single_gpu: bool) !SelectedTopology {
-        const min_dual_split_free_bytes: usize = 7_800 * 1024 * 1024; // 7.8 GiB required per GPU
-        const min_single_gpu_free_bytes: usize = 15_500 * 1024 * 1024; // 15.5 GiB required for single GPU
+    pub const ComputeCapability = struct {
+        major: i32,
+        minor: i32,
+    };
 
+    /// Parses architecture string (e.g. "sm_86", "sm_80", "sm_89", "sm_90") into major/minor compute capability.
+    pub fn parseTargetComputeCapability(arch_str: []const u8) ?ComputeCapability {
+        if (std.mem.eql(u8, arch_str, "none")) return null;
+        if (std.mem.startsWith(u8, arch_str, "sm_")) {
+            const digits = arch_str[3..];
+            if (digits.len == 2) {
+                const maj = std.fmt.parseInt(i32, digits[0..1], 10) catch return null;
+                const min = std.fmt.parseInt(i32, digits[1..2], 10) catch return null;
+                return .{ .major = maj, .minor = min };
+            } else if (digits.len == 3) {
+                const maj = std.fmt.parseInt(i32, digits[0..2], 10) catch return null;
+                const min = std.fmt.parseInt(i32, digits[2..3], 10) catch return null;
+                return .{ .major = maj, .minor = min };
+            }
+        }
+        return null;
+    }
+
+    /// Evaluates whether a GPU device's compute capability is compatible with the compiled CUDA target architecture.
+    pub fn isDeviceArchCompatible(dev: *const cuda.DeviceInfo, target_arch_str: []const u8) bool {
+        const target = parseTargetComputeCapability(target_arch_str) orelse return true;
+        return dev.compute_major == target.major and dev.compute_minor == target.minor;
+    }
+
+    /// Minimum free VRAM required per GPU in dual_gpu_split mode: 7,800 MiB (~7.62 GiB / 8.18 GB).
+    pub const min_dual_split_free_bytes: usize = 7_800 * 1024 * 1024;
+
+    /// Minimum free VRAM required for single_gpu mode: 15,500 MiB (~15.14 GiB / 16.25 GB).
+    pub const min_single_gpu_free_bytes: usize = 15_500 * 1024 * 1024;
+
+    /// Evaluates visible GPU topology, verifies VRAM admission requirements,
+    /// ensures architecture compatibility with target_arch_str, and selects an eligible device pair (dual_gpu_split)
+    /// or single device (single_gpu).
+    pub fn selectAndValidateDevicesWithOptions(
+        topo: cuda.Topology,
+        force_single_gpu: bool,
+        target_arch_str: []const u8,
+    ) !SelectedTopology {
         if (topo.reported_devices == 0) return error.NoDevice;
+
+        var has_arch_compatible_device = false;
+        for (0..topo.reported_devices) |i| {
+            if (isDeviceArchCompatible(&topo.devices[i], target_arch_str)) {
+                has_arch_compatible_device = true;
+                break;
+            }
+        }
+        if (!has_arch_compatible_device) {
+            std.log.warn("CUDA preflight failed: no visible device matches compiled target architecture '{s}'.", .{target_arch_str});
+            for (0..topo.reported_devices) |i| {
+                std.log.warn("  Device {d} ({s}): compute capability {d}.{d} (expected {s})", .{
+                    topo.devices[i].device_id,
+                    topo.devices[i].name(),
+                    topo.devices[i].compute_major,
+                    topo.devices[i].compute_minor,
+                    target_arch_str,
+                });
+            }
+            return error.DeviceMismatch;
+        }
 
         if (!force_single_gpu and topo.reported_devices >= 2) {
             // Check primary device pair (0, 1)
-            if (topo.devices[0].free_memory_bytes >= min_dual_split_free_bytes and
+            if (isDeviceArchCompatible(&topo.devices[0], target_arch_str) and
+                isDeviceArchCompatible(&topo.devices[1], target_arch_str) and
+                topo.devices[0].free_memory_bytes >= min_dual_split_free_bytes and
                 topo.devices[1].free_memory_bytes >= min_dual_split_free_bytes)
             {
                 return SelectedTopology{
@@ -370,9 +430,11 @@ pub const CudaModel = struct {
                 };
             }
 
-            // If primary pair is insufficient, search for any eligible pair
+            // Search for any eligible compatible pair
             for (0..topo.reported_devices) |i| {
+                if (!isDeviceArchCompatible(&topo.devices[i], target_arch_str)) continue;
                 for ((i + 1)..topo.reported_devices) |j| {
+                    if (!isDeviceArchCompatible(&topo.devices[j], target_arch_str)) continue;
                     if (topo.devices[i].free_memory_bytes >= min_dual_split_free_bytes and
                         topo.devices[j].free_memory_bytes >= min_dual_split_free_bytes)
                     {
@@ -386,6 +448,7 @@ pub const CudaModel = struct {
 
             // Fallback: Check if any single visible device has sufficient VRAM for single_gpu mode
             for (0..topo.reported_devices) |i| {
+                if (!isDeviceArchCompatible(&topo.devices[i], target_arch_str)) continue;
                 if (topo.devices[i].free_memory_bytes >= min_single_gpu_free_bytes) {
                     std.log.info("CUDA preflight: dual_gpu_split insufficient free VRAM; falling back to single_gpu on Device {d} ({s}, {d} MiB free)", .{
                         topo.devices[i].device_id,
@@ -400,11 +463,13 @@ pub const CudaModel = struct {
                 }
             }
 
-            std.log.err("CUDA preflight failed: insufficient VRAM for dual_gpu_split (requires >= 7.8 GiB free on 2 devices) or single_gpu (requires >= 15.5 GiB free on 1 device).", .{});
+            std.log.warn("CUDA preflight failed: insufficient VRAM for dual_gpu_split (requires >= 7,800 MiB free on 2 compatible devices) or single_gpu (requires >= 15,500 MiB free on 1 compatible device).", .{});
             for (0..topo.reported_devices) |i| {
-                std.log.err("  Device {d} ({s}): {d} MiB free / {d} MiB total", .{
+                std.log.warn("  Device {d} ({s}): CC {d}.{d}, {d} MiB free / {d} MiB total", .{
                     topo.devices[i].device_id,
                     topo.devices[i].name(),
+                    topo.devices[i].compute_major,
+                    topo.devices[i].compute_minor,
                     topo.devices[i].free_memory_bytes / (1024 * 1024),
                     topo.devices[i].total_memory_bytes / (1024 * 1024),
                 });
@@ -414,6 +479,7 @@ pub const CudaModel = struct {
 
         // Single-GPU mode (forced or single reported device)
         for (0..topo.reported_devices) |i| {
+            if (!isDeviceArchCompatible(&topo.devices[i], target_arch_str)) continue;
             if (topo.devices[i].free_memory_bytes >= min_single_gpu_free_bytes) {
                 const dev_id = topo.devices[i].device_id;
                 return SelectedTopology{
@@ -423,16 +489,23 @@ pub const CudaModel = struct {
             }
         }
 
-        std.log.err("CUDA preflight failed: single_gpu topology requires at least 15.5 GiB free VRAM on one device.", .{});
+        std.log.warn("CUDA preflight failed: single_gpu topology requires at least 15,500 MiB free VRAM on one compatible device.", .{});
         for (0..topo.reported_devices) |i| {
-            std.log.err("  Device {d} ({s}): {d} MiB free / {d} MiB total", .{
+            std.log.warn("  Device {d} ({s}): CC {d}.{d}, {d} MiB free / {d} MiB total", .{
                 topo.devices[i].device_id,
                 topo.devices[i].name(),
+                topo.devices[i].compute_major,
+                topo.devices[i].compute_minor,
                 topo.devices[i].free_memory_bytes / (1024 * 1024),
                 topo.devices[i].total_memory_bytes / (1024 * 1024),
             });
         }
         return error.InsufficientDeviceMemory;
+    }
+
+    /// Evaluates visible GPU topology against compiled cuda.target_arch and VRAM thresholds.
+    pub fn selectAndValidateDevices(topo: cuda.Topology, force_single_gpu: bool) !SelectedTopology {
+        return selectAndValidateDevicesWithOptions(topo, force_single_gpu, cuda.target_arch);
     }
 
     pub fn initFromCpuModel(allocator: std.mem.Allocator, cpu_model: DiffusionGemmaModel, force_single_gpu: bool) !*CudaModel {
@@ -4380,5 +4453,197 @@ test "R41-01: CudaWorkspace quarantine policy and failed stream synchronization"
         try std.testing.expectEqual(@as(usize, 0), retained_workspaces_count);
         try std.testing.expect(retained_workspaces_head == null);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Unit tests for device selection, architecture compatibility, and VRAM preflight
+// ---------------------------------------------------------------------------
+
+fn makeTestTopology(devices: []const struct {
+    id: i32,
+    major: i32,
+    minor: i32,
+    free_mib: usize,
+    total_mib: usize,
+}) cuda.Topology {
+    var topo: cuda.Topology = .{
+        .total_visible_devices = devices.len,
+        .reported_devices = devices.len,
+        .devices = undefined,
+    };
+    for (devices, 0..) |d, i| {
+        topo.devices[i] = .{
+            .device_id = d.id,
+            .name_buf = undefined,
+            .name_len = 0,
+            .compute_major = d.major,
+            .compute_minor = d.minor,
+            .total_memory_bytes = d.total_mib * 1024 * 1024,
+            .free_memory_bytes = d.free_mib * 1024 * 1024,
+            .multi_processor_count = 28,
+            .warp_size = 32,
+            .can_access_peer = .{ false, false, false, false, false, false, false, false },
+        };
+    }
+    return topo;
+}
+
+test "CudaModel.parseTargetComputeCapability" {
+    const cc86 = CudaModel.parseTargetComputeCapability("sm_86");
+    try std.testing.expect(cc86 != null);
+    try std.testing.expectEqual(@as(i32, 8), cc86.?.major);
+    try std.testing.expectEqual(@as(i32, 6), cc86.?.minor);
+
+    const cc80 = CudaModel.parseTargetComputeCapability("sm_80");
+    try std.testing.expect(cc80 != null);
+    try std.testing.expectEqual(@as(i32, 8), cc80.?.major);
+    try std.testing.expectEqual(@as(i32, 0), cc80.?.minor);
+
+    const cc89 = CudaModel.parseTargetComputeCapability("sm_89");
+    try std.testing.expect(cc89 != null);
+    try std.testing.expectEqual(@as(i32, 8), cc89.?.major);
+    try std.testing.expectEqual(@as(i32, 9), cc89.?.minor);
+
+    const cc90 = CudaModel.parseTargetComputeCapability("sm_90");
+    try std.testing.expect(cc90 != null);
+    try std.testing.expectEqual(@as(i32, 9), cc90.?.major);
+    try std.testing.expectEqual(@as(i32, 0), cc90.?.minor);
+
+    const cc100 = CudaModel.parseTargetComputeCapability("sm_100");
+    try std.testing.expect(cc100 != null);
+    try std.testing.expectEqual(@as(i32, 10), cc100.?.major);
+    try std.testing.expectEqual(@as(i32, 0), cc100.?.minor);
+
+    try std.testing.expect(CudaModel.parseTargetComputeCapability("none") == null);
+    try std.testing.expect(CudaModel.parseTargetComputeCapability("invalid") == null);
+}
+
+test "CudaModel.isDeviceArchCompatible" {
+    var dev: cuda.DeviceInfo = .{
+        .device_id = 0,
+        .name_buf = undefined,
+        .name_len = 0,
+        .compute_major = 8,
+        .compute_minor = 6,
+        .total_memory_bytes = 12000 * 1024 * 1024,
+        .free_memory_bytes = 10000 * 1024 * 1024,
+        .multi_processor_count = 28,
+        .warp_size = 32,
+        .can_access_peer = .{ false, false, false, false, false, false, false, false },
+    };
+
+    try std.testing.expect(CudaModel.isDeviceArchCompatible(&dev, "sm_86"));
+    try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev, "sm_80"));
+    try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev, "sm_89"));
+    try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev, "sm_90"));
+    try std.testing.expect(CudaModel.isDeviceArchCompatible(&dev, "none"));
+}
+
+test "selectAndValidateDevices: zero devices returns NoDevice" {
+    const topo = makeTestTopology(&.{});
+    try std.testing.expectError(error.NoDevice, CudaModel.selectAndValidateDevicesWithOptions(topo, false, "sm_86"));
+}
+
+test "selectAndValidateDevices: primary pair eligible" {
+    const topo = makeTestTopology(&.{
+        .{ .id = 0, .major = 8, .minor = 6, .free_mib = 8000, .total_mib = 12000 },
+        .{ .id = 1, .major = 8, .minor = 6, .free_mib = 8000, .total_mib = 12000 },
+    });
+    const sel = try CudaModel.selectAndValidateDevicesWithOptions(topo, false, "sm_86");
+    try std.testing.expectEqual(ExecutionTopology.dual_gpu_split, sel.topology);
+    try std.testing.expectEqual(@as(i32, 0), sel.devices[0]);
+    try std.testing.expectEqual(@as(i32, 1), sel.devices[1]);
+}
+
+test "selectAndValidateDevices: primary pair boundary at 7799 MiB vs 7800 MiB" {
+    // 7799 MiB is 1 MiB below the 7800 MiB dual split threshold
+    const topo_below = makeTestTopology(&.{
+        .{ .id = 0, .major = 8, .minor = 6, .free_mib = 7799, .total_mib = 12000 },
+        .{ .id = 1, .major = 8, .minor = 6, .free_mib = 8000, .total_mib = 12000 },
+    });
+    try std.testing.expectError(error.InsufficientDeviceMemory, CudaModel.selectAndValidateDevicesWithOptions(topo_below, false, "sm_86"));
+
+    // Exactly 7800 MiB on both devices is accepted
+    const topo_exact = makeTestTopology(&.{
+        .{ .id = 0, .major = 8, .minor = 6, .free_mib = 7800, .total_mib = 12000 },
+        .{ .id = 1, .major = 8, .minor = 6, .free_mib = 7800, .total_mib = 12000 },
+    });
+    const sel_exact = try CudaModel.selectAndValidateDevicesWithOptions(topo_exact, false, "sm_86");
+    try std.testing.expectEqual(ExecutionTopology.dual_gpu_split, sel_exact.topology);
+    try std.testing.expectEqual(@as(i32, 0), sel_exact.devices[0]);
+    try std.testing.expectEqual(@as(i32, 1), sel_exact.devices[1]);
+}
+
+test "selectAndValidateDevices: architecture mismatch rejection" {
+    // Device 1 is sm_75 while target is sm_86
+    const topo = makeTestTopology(&.{
+        .{ .id = 0, .major = 8, .minor = 6, .free_mib = 8000, .total_mib = 12000 },
+        .{ .id = 1, .major = 7, .minor = 5, .free_mib = 8000, .total_mib = 12000 },
+    });
+    try std.testing.expectError(error.InsufficientDeviceMemory, CudaModel.selectAndValidateDevicesWithOptions(topo, false, "sm_86"));
+
+    // Both devices have mismatched architecture
+    const topo_all_mismatch = makeTestTopology(&.{
+        .{ .id = 0, .major = 7, .minor = 5, .free_mib = 8000, .total_mib = 12000 },
+        .{ .id = 1, .major = 7, .minor = 5, .free_mib = 8000, .total_mib = 12000 },
+    });
+    try std.testing.expectError(error.DeviceMismatch, CudaModel.selectAndValidateDevicesWithOptions(topo_all_mismatch, false, "sm_86"));
+}
+
+test "selectAndValidateDevices: later pair selection when device 0 is inadequate" {
+    const topo = makeTestTopology(&.{
+        .{ .id = 0, .major = 8, .minor = 6, .free_mib = 2000, .total_mib = 12000 }, // low memory
+        .{ .id = 1, .major = 8, .minor = 6, .free_mib = 9000, .total_mib = 12000 },
+        .{ .id = 2, .major = 8, .minor = 6, .free_mib = 9000, .total_mib = 12000 },
+    });
+    const sel = try CudaModel.selectAndValidateDevicesWithOptions(topo, false, "sm_86");
+    try std.testing.expectEqual(ExecutionTopology.dual_gpu_split, sel.topology);
+    try std.testing.expectEqual(@as(i32, 1), sel.devices[0]);
+    try std.testing.expectEqual(@as(i32, 2), sel.devices[1]);
+}
+
+test "selectAndValidateDevices: fallback to single_gpu when dual split insufficient" {
+    const topo = makeTestTopology(&.{
+        .{ .id = 0, .major = 8, .minor = 6, .free_mib = 16000, .total_mib = 24000 }, // RTX 3090 with 16 GB free
+        .{ .id = 1, .major = 8, .minor = 6, .free_mib = 4000, .total_mib = 12000 },  // second card with only 4 GB free
+    });
+    const sel = try CudaModel.selectAndValidateDevicesWithOptions(topo, false, "sm_86");
+    try std.testing.expectEqual(ExecutionTopology.single_gpu, sel.topology);
+    try std.testing.expectEqual(@as(i32, 0), sel.devices[0]);
+    try std.testing.expectEqual(@as(i32, 0), sel.devices[1]);
+}
+
+test "selectAndValidateDevices: forced single_gpu boundary at 15499 MiB vs 15500 MiB" {
+    const topo_below = makeTestTopology(&.{
+        .{ .id = 0, .major = 8, .minor = 6, .free_mib = 15499, .total_mib = 24000 },
+    });
+    try std.testing.expectError(error.InsufficientDeviceMemory, CudaModel.selectAndValidateDevicesWithOptions(topo_below, true, "sm_86"));
+
+    const topo_exact = makeTestTopology(&.{
+        .{ .id = 0, .major = 8, .minor = 6, .free_mib = 15500, .total_mib = 24000 },
+    });
+    const sel_exact = try CudaModel.selectAndValidateDevicesWithOptions(topo_exact, true, "sm_86");
+    try std.testing.expectEqual(ExecutionTopology.single_gpu, sel_exact.topology);
+    try std.testing.expectEqual(@as(i32, 0), sel_exact.devices[0]);
+}
+
+test "selectAndValidateDevices: cross-architecture targets sm_80, sm_89, sm_90" {
+    const topo_a100 = makeTestTopology(&.{
+        .{ .id = 0, .major = 8, .minor = 0, .free_mib = 30000, .total_mib = 40000 },
+    });
+    const sel_a100 = try CudaModel.selectAndValidateDevicesWithOptions(topo_a100, true, "sm_80");
+    try std.testing.expectEqual(ExecutionTopology.single_gpu, sel_a100.topology);
+
+    const topo_4090 = makeTestTopology(&.{
+        .{ .id = 0, .major = 8, .minor = 9, .free_mib = 20000, .total_mib = 24000 },
+    });
+    const sel_4090 = try CudaModel.selectAndValidateDevicesWithOptions(topo_4090, true, "sm_89");
+    try std.testing.expectEqual(ExecutionTopology.single_gpu, sel_4090.topology);
+
+    const topo_h100 = makeTestTopology(&.{
+        .{ .id = 0, .major = 9, .minor = 0, .free_mib = 70000, .total_mib = 80000 },
+    });
+    const sel_h100 = try CudaModel.selectAndValidateDevicesWithOptions(topo_h100, true, "sm_90");
+    try std.testing.expectEqual(ExecutionTopology.single_gpu, sel_h100.topology);
 }
 

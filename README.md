@@ -100,19 +100,22 @@ If you are exploring the codebase or integrating Zeno, here is the recommended r
   ```
 - **CUDA Toolkit (Optional)**: CUDA Toolkit 12.0+ (tested on CUDA 12.4 and 13.3) with NVIDIA driver 550+ / 595+.
 - **GPU Hardware & Compute Capability (Optional)**:
-  - *Verified in Hardware*: NVIDIA Ampere with Compute Capability 8.6 (`sm_86`, dual RTX 3060 12GB).
-  - *Build-Supported*: Other architectures selectable via `zig build -Dcuda-arch=<arch>` (e.g. `sm_80`, `sm_89`, `sm_90`), but unverified on hardware.
+  - *Hardware-Verified*: NVIDIA Ampere with Compute Capability 8.6 (`sm_86`, dual RTX 3060 12GB).
+  - *Build-Verified*: Ampere (`sm_80`, `sm_86`), Ada Lovelace (`sm_89`), and Hopper (`sm_90`) verified compiling cleanly via `zig build -Dcuda=true -Dcuda-arch=<arch>`; runtime execution on non-3060 hardware remains unverified.
 
 ### 6.2 Hardware & Platform Compatibility Matrix
 
 | Support Tier | Target GPU & Architecture | Compute Capability | Memory Requirement | Verified Environment / Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **Tested & Verified** | Dual NVIDIA GeForce RTX 3060 (12GB) | `sm_86` (Ampere) | $\ge 8.0$ GB free per GPU | Dual RTX 3060 12GB, Linux x86_64, Driver 550+/595+, CUDA Toolkit 12.4/13.3, Zig 0.17.0. Verified end-to-end across all 5 reference fixtures. |
-| **Build-Tested Only** | NVIDIA RTX 3090 / 4090 / A100 / H100 | `sm_80`, `sm_89`, `sm_90` | $\ge 16.0$ GB free (Single-GPU) | Supported via `-Dcuda-arch=<arch>`. Compiles cleanly; runtime numerical parity and latency on these architectures remain unverified on hardware. |
+| **Tested & Verified** | Dual NVIDIA GeForce RTX 3060 (12GB) | `sm_86` (Ampere) | $\ge 7,800$ MiB free per GPU | Dual RTX 3060 12GB, Linux x86_64, Driver 550+/595+, CUDA Toolkit 12.4/13.3, Zig 0.17.0. Verified end-to-end across all 5 reference fixtures. |
+| **Build-Verified; Hardware-Untested** | NVIDIA GeForce RTX 3090 (24GB) | `sm_86` (Ampere) | $\ge 15,500$ MiB free (Single-GPU) | Compiles cleanly with `-Dcuda-arch=sm_86`. Single-GPU execution unverified on physical 3090 hardware. |
+| **Build-Verified; Hardware-Untested** | NVIDIA GeForce RTX 4090 (24GB) | `sm_89` (Ada Lovelace) | $\ge 15,500$ MiB free (Single-GPU) | Compiles cleanly with `-Dcuda-arch=sm_89`. Execution unverified on physical 4090 hardware. |
+| **Build-Verified; Hardware-Untested** | NVIDIA A100 Tensor Core (40GB / 80GB) | `sm_80` (Ampere DC) | $\ge 15,500$ MiB free (Single-GPU) | Compiles cleanly with `-Dcuda-arch=sm_80`. Execution unverified on physical A100 hardware. |
+| **Build-Verified; Hardware-Untested** | NVIDIA H100 Tensor Core (80GB) | `sm_90` (Hopper) | $\ge 15,500$ MiB free (Single-GPU) | Compiles cleanly with `-Dcuda-arch=sm_90`. Execution unverified on physical H100 hardware. |
 | **Untested / Unsupported** | Arbitrary $N > 2$ GPU topologies | Any | Heterogeneous | Not supported in v0.2.0. Dynamic $N$-way heterogeneous layer sharding remains an open research question. |
 
 > [!NOTE]
-> **VRAM Preflight Admission**: Before loading weights, Zeno checks available free VRAM. The dual-GPU split requires $\ge 7.8$ GiB free on two devices; single-GPU requires $\ge 15.5$ GiB free on one device. If insufficient VRAM is detected, the engine aborts with clear diagnostics rather than crashing during allocation. Use standard `CUDA_VISIBLE_DEVICES` (e.g. `CUDA_VISIBLE_DEVICES=0,1`) to select specific physical GPUs, or pass `--single-gpu` to force single-device execution.
+> **VRAM Admission & Target Preflight**: Before loading weights, Zeno evaluates visible devices against the compiled CUDA target architecture and free VRAM. The dual-GPU split requires $\ge 7,800$ MiB (~7.62 GiB / 8.18 GB) free memory on two architecture-compatible devices; single-GPU requires $\ge 15,500$ MiB (~15.14 GiB / 16.25 GB) free on one compatible device. Preflight serves as an early capacity snapshot check; post-admission runtime allocation failures continue to be handled with deterministic buffer cleanup and caller-visible errors. Use standard `CUDA_VISIBLE_DEVICES` (e.g. `CUDA_VISIBLE_DEVICES=0,1`) to select specific physical GPUs, or pass `--single-gpu` to force single-device execution.
 
 ### 6.3 CLI Direct Decision
 

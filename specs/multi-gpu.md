@@ -27,24 +27,50 @@ Zeno implements a hybrid CPU/GPU architecture: input token embedding lookups and
 
 | Support Tier | Target GPU & Architecture | Compute Capability | Memory Requirement | Verified Environment / Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **Tested & Verified** | Dual NVIDIA GeForce RTX 3060 (12GB) | `sm_86` (Ampere) | $\ge 8.0$ GB free per GPU | Dual RTX 3060 12GB, Linux x86_64, Driver 550+/595+, CUDA Toolkit 12.4/13.3, Zig 0.17.0. Verified end-to-end across all 5 reference fixtures. |
-| **Build-Tested Only** | NVIDIA RTX 3090 / 4090 / A100 / H100 | `sm_80`, `sm_89`, `sm_90` | $\ge 16.0$ GB free (Single-GPU) | Supported via `-Dcuda-arch=<arch>`. Compiles cleanly; end-to-end numerical parity and latency on these architectures remain unverified on hardware. |
+| **Tested & Verified** | Dual NVIDIA GeForce RTX 3060 (12GB) | `sm_86` (Ampere) | $\ge 7,800$ MiB free per GPU | Dual RTX 3060 12GB, Linux x86_64, Driver 550+/595+, CUDA Toolkit 12.4/13.3, Zig 0.17.0. Verified end-to-end across all 5 reference fixtures. |
+| **Build-Verified; Hardware-Untested** | NVIDIA GeForce RTX 3090 (24GB) | `sm_86` (Ampere) | $\ge 15,500$ MiB free (Single-GPU) | Compiles cleanly with `-Dcuda-arch=sm_86` under CUDA Toolkit 13.3. Execution unverified on physical 3090 hardware. |
+| **Build-Verified; Hardware-Untested** | NVIDIA GeForce RTX 4090 (24GB) | `sm_89` (Ada Lovelace) | $\ge 15,500$ MiB free (Single-GPU) | Compiles cleanly with `-Dcuda-arch=sm_89` under CUDA Toolkit 13.3. Execution unverified on physical 4090 hardware. |
+| **Build-Verified; Hardware-Untested** | NVIDIA A100 Tensor Core (40GB / 80GB) | `sm_80` (Ampere DC) | $\ge 15,500$ MiB free (Single-GPU) | Compiles cleanly with `-Dcuda-arch=sm_80` under CUDA Toolkit 13.3. Execution unverified on physical A100 hardware. |
+| **Build-Verified; Hardware-Untested** | NVIDIA H100 Tensor Core (80GB) | `sm_90` (Hopper) | $\ge 15,500$ MiB free (Single-GPU) | Compiles cleanly with `-Dcuda-arch=sm_90` under CUDA Toolkit 13.3. Execution unverified on physical H100 hardware. |
 | **Untested / Unsupported** | Arbitrary $N > 2$ GPU topologies | Any | Heterogeneous | Not supported in v0.2.0. Dynamic $N$-way heterogeneous layer sharding remains an open research question. |
+
+#### Recorded Architecture Build Verification Log
+
+The following compilation runs were verified clean (zero errors or warnings) on Linux x86_64 with Zig 0.17.0 and CUDA Toolkit 13.3 (`nvcc` release 13.3, V13.3.73):
+```bash
+# Ampere data center
+zig build -Dcuda=true -Dcuda-arch=sm_80
+
+# Ampere client/workstation (default)
+zig build -Dcuda=true -Dcuda-arch=sm_86
+
+# Ada Lovelace client/workstation
+zig build -Dcuda=true -Dcuda-arch=sm_89
+
+# Hopper data center
+zig build -Dcuda=true -Dcuda-arch=sm_90
+```
 
 ### 2.2 VRAM Admission & Topology Selection Contract
 
-To prevent partial allocation aborts or runtime memory corruption, `src/infer_cuda.zig` (`selectAndValidateDevices`) executes automated preflight admission checks before loading model layers:
-1. **`dual_gpu_split` Mode**:
-   - Requires two visible devices with at least **7.8 GiB (8.18 GB)** free VRAM each.
+To provide early detection of insufficient memory or architecture mismatch, `src/infer_cuda.zig` (`selectAndValidateDevicesWithOptions`) executes automated preflight admission checks before attempting layer allocations:
+1. **Architecture Compatibility Check**:
+   - Each visible device's compute capability (`compute_major`, `compute_minor`) is validated against the binary's compiled `cuda.target_arch`.
+   - Devices whose compute capability does not match the compiled binary target are skipped. If no visible device matches, preflight fails early with `error.DeviceMismatch`.
+2. **`dual_gpu_split` Mode**:
+   - Requires two visible, architecture-compatible devices with at least **7,800 MiB (~7.62 GiB / 8.18 GB)** free VRAM each.
    - If visible devices exceed 2, the engine searches for the first compatible device pair meeting the threshold.
-   - If no dual-GPU pair qualifies, but a high-capacity GPU ($\ge 15.5$ GiB free) is present, the engine automatically logs a diagnostic and falls back to `single_gpu`.
-2. **`single_gpu` Mode**:
-   - Requires one device with at least **15.5 GiB (16.25 GB)** free VRAM.
+   - If no dual-GPU pair qualifies, but a high-capacity GPU ($\ge 15,500$ MiB free) is present, the engine automatically logs a diagnostic and falls back to `single_gpu`.
+3. **`single_gpu` Mode**:
+   - Requires one architecture-compatible device with at least **15,500 MiB (~15.14 GiB / 16.25 GB)** free VRAM.
    - Can be explicitly requested via `--single-gpu` CLI flag or forced via `force_single_gpu = true`.
-3. **Explicit Device Placement**:
+4. **Preflight Scope & Post-Admission Safety**:
+   - Preflight is an early capacity snapshot check. It does not reserve physical VRAM against concurrent external host processes.
+   - If a post-admission runtime allocation failure occurs during model loading, `CudaModel.initFromCpuModel` and `DeviceBuffer.init` unwind and release all allocated resources cleanly via `errdefer`.
+5. **Explicit Device Placement**:
    - Standard `CUDA_VISIBLE_DEVICES` (e.g., `CUDA_VISIBLE_DEVICES=0,1` or `CUDA_VISIBLE_DEVICES=1`) governs device visibility.
-4. **Admission Failure**:
-   - If memory requirements cannot be met, the engine emits detailed logs with device IDs, names, and memory statistics, and returns `error.InsufficientDeviceMemory`.
+6. **Admission Failure**:
+   - If memory requirements cannot be met, the engine emits detailed logs with device IDs, names, compute capabilities, and memory statistics, returning `error.InsufficientDeviceMemory`.
 
 * **Canvas Activation Workspace**:
   - Sequence limit $N \le 512$ is strictly enforced at the CUDA entry point.
