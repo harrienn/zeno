@@ -351,33 +351,70 @@ pub const CudaModel = struct {
         devices: [2]i32,
     };
 
-    pub const ComputeCapability = struct {
+    pub const TargetArch = struct {
         major: i32,
         minor: i32,
+        exact_only: bool = false,
     };
 
-    /// Parses architecture string (e.g. "sm_86", "sm_80", "sm_89", "sm_90") into major/minor compute capability.
-    pub fn parseTargetComputeCapability(arch_str: []const u8) ?ComputeCapability {
-        if (std.mem.eql(u8, arch_str, "none")) return null;
-        if (std.mem.startsWith(u8, arch_str, "sm_")) {
-            const digits = arch_str[3..];
-            if (digits.len == 2) {
-                const maj = std.fmt.parseInt(i32, digits[0..1], 10) catch return null;
-                const min = std.fmt.parseInt(i32, digits[1..2], 10) catch return null;
-                return .{ .major = maj, .minor = min };
-            } else if (digits.len == 3) {
-                const maj = std.fmt.parseInt(i32, digits[0..2], 10) catch return null;
-                const min = std.fmt.parseInt(i32, digits[2..3], 10) catch return null;
-                return .{ .major = maj, .minor = min };
-            }
+    pub const ComputeCapability = TargetArch;
+
+    /// Parses architecture string (e.g. "sm_86", "sm_80", "sm_89", "sm_90", "sm_90a", "compute_80")
+    /// into a structured TargetArch. Returns null for malformed or unrecognized strings (fail-closed).
+    pub fn parseTargetArch(arch_str: []const u8) ?TargetArch {
+        var s = arch_str;
+        if (std.mem.startsWith(u8, s, "sm_")) {
+            s = s[3..];
+        } else if (std.mem.startsWith(u8, s, "compute_")) {
+            s = s[8..];
+        } else {
+            return null; // Fail-closed: require valid sm_ or compute_ prefix
+        }
+
+        if (s.len == 0) return null;
+
+        var exact_only = false;
+        if (s[s.len - 1] == 'a') {
+            exact_only = true;
+            s = s[0 .. s.len - 1];
+        }
+
+        if (s.len == 2) {
+            const maj = std.fmt.parseInt(i32, s[0..1], 10) catch return null;
+            const min = std.fmt.parseInt(i32, s[1..2], 10) catch return null;
+            return TargetArch{
+                .major = maj,
+                .minor = min,
+                .exact_only = exact_only,
+            };
+        } else if (s.len == 3) {
+            const maj = std.fmt.parseInt(i32, s[0..2], 10) catch return null;
+            const min = std.fmt.parseInt(i32, s[2..3], 10) catch return null;
+            return TargetArch{
+                .major = maj,
+                .minor = min,
+                .exact_only = exact_only,
+            };
         }
         return null;
     }
 
-    /// Evaluates whether a GPU device's compute capability is compatible with the compiled CUDA target architecture.
+    /// Backwards-compatible alias for parseTargetArch.
+    pub fn parseTargetComputeCapability(arch_str: []const u8) ?TargetArch {
+        return parseTargetArch(arch_str);
+    }
+
+    /// Evaluates whether a GPU device's compute capability is binary-compatible with the compiled CUDA target.
+    /// Follows NVIDIA CUDA Binary Compatibility rules (SASS is forward-compatible within same major architecture:
+    /// device.major == target.major and device.minor >= target.minor; suffixed targets like sm_90a require exact match).
+    /// Returns false (fail-closed) for any unparsed or unrecognized target string.
     pub fn isDeviceArchCompatible(dev: *const cuda.DeviceInfo, target_arch_str: []const u8) bool {
-        const target = parseTargetComputeCapability(target_arch_str) orelse return true;
-        return dev.compute_major == target.major and dev.compute_minor == target.minor;
+        const target = parseTargetArch(target_arch_str) orelse return false; // Fail-closed!
+        if (dev.compute_major != target.major) return false;
+        if (target.exact_only) {
+            return dev.compute_minor == target.minor;
+        }
+        return dev.compute_minor >= target.minor;
     }
 
     /// Minimum free VRAM required per GPU in dual_gpu_split mode: 7,800 MiB (~7.62 GiB / 8.18 GB).
@@ -4488,55 +4525,129 @@ fn makeTestTopology(devices: []const struct {
     return topo;
 }
 
-test "CudaModel.parseTargetComputeCapability" {
-    const cc86 = CudaModel.parseTargetComputeCapability("sm_86");
+test "CudaModel.parseTargetArch" {
+    // Standard targets
+    const cc86 = CudaModel.parseTargetArch("sm_86");
     try std.testing.expect(cc86 != null);
     try std.testing.expectEqual(@as(i32, 8), cc86.?.major);
     try std.testing.expectEqual(@as(i32, 6), cc86.?.minor);
+    try std.testing.expect(!cc86.?.exact_only);
 
-    const cc80 = CudaModel.parseTargetComputeCapability("sm_80");
+    const cc80 = CudaModel.parseTargetArch("sm_80");
     try std.testing.expect(cc80 != null);
     try std.testing.expectEqual(@as(i32, 8), cc80.?.major);
     try std.testing.expectEqual(@as(i32, 0), cc80.?.minor);
+    try std.testing.expect(!cc80.?.exact_only);
 
-    const cc89 = CudaModel.parseTargetComputeCapability("sm_89");
+    const cc89 = CudaModel.parseTargetArch("sm_89");
     try std.testing.expect(cc89 != null);
     try std.testing.expectEqual(@as(i32, 8), cc89.?.major);
     try std.testing.expectEqual(@as(i32, 9), cc89.?.minor);
+    try std.testing.expect(!cc89.?.exact_only);
 
-    const cc90 = CudaModel.parseTargetComputeCapability("sm_90");
+    const cc90 = CudaModel.parseTargetArch("sm_90");
     try std.testing.expect(cc90 != null);
     try std.testing.expectEqual(@as(i32, 9), cc90.?.major);
     try std.testing.expectEqual(@as(i32, 0), cc90.?.minor);
+    try std.testing.expect(!cc90.?.exact_only);
 
-    const cc100 = CudaModel.parseTargetComputeCapability("sm_100");
+    const cc100 = CudaModel.parseTargetArch("sm_100");
     try std.testing.expect(cc100 != null);
     try std.testing.expectEqual(@as(i32, 10), cc100.?.major);
     try std.testing.expectEqual(@as(i32, 0), cc100.?.minor);
+    try std.testing.expect(!cc100.?.exact_only);
 
-    try std.testing.expect(CudaModel.parseTargetComputeCapability("none") == null);
-    try std.testing.expect(CudaModel.parseTargetComputeCapability("invalid") == null);
+    // Suffixed architecture-specific targets (exact_only = true)
+    const cc90a = CudaModel.parseTargetArch("sm_90a");
+    try std.testing.expect(cc90a != null);
+    try std.testing.expectEqual(@as(i32, 9), cc90a.?.major);
+    try std.testing.expectEqual(@as(i32, 0), cc90a.?.minor);
+    try std.testing.expect(cc90a.?.exact_only);
+
+    const cc100a = CudaModel.parseTargetArch("sm_100a");
+    try std.testing.expect(cc100a != null);
+    try std.testing.expectEqual(@as(i32, 10), cc100a.?.major);
+    try std.testing.expectEqual(@as(i32, 0), cc100a.?.minor);
+    try std.testing.expect(cc100a.?.exact_only);
+
+    // compute_ prefix (virtual target)
+    const comp80 = CudaModel.parseTargetArch("compute_80");
+    try std.testing.expect(comp80 != null);
+    try std.testing.expectEqual(@as(i32, 8), comp80.?.major);
+    try std.testing.expectEqual(@as(i32, 0), comp80.?.minor);
+
+    // Fail-closed / malformed / unsupported targets
+    try std.testing.expect(CudaModel.parseTargetArch("none") == null);
+    try std.testing.expect(CudaModel.parseTargetArch("invalid") == null);
+    try std.testing.expect(CudaModel.parseTargetArch("") == null);
+    try std.testing.expect(CudaModel.parseTargetArch("sm_") == null);
+    try std.testing.expect(CudaModel.parseTargetArch("sm_x") == null);
+    try std.testing.expect(CudaModel.parseTargetArch("sm_8") == null);
+    try std.testing.expect(CudaModel.parseTargetArch("sm_8600") == null);
 }
 
-test "CudaModel.isDeviceArchCompatible" {
-    var dev: cuda.DeviceInfo = .{
-        .device_id = 0,
-        .name_buf = undefined,
-        .name_len = 0,
-        .compute_major = 8,
-        .compute_minor = 6,
-        .total_memory_bytes = 12000 * 1024 * 1024,
-        .free_memory_bytes = 10000 * 1024 * 1024,
-        .multi_processor_count = 28,
-        .warp_size = 32,
-        .can_access_peer = .{ false, false, false, false, false, false, false, false },
-    };
+test "CudaModel.isDeviceArchCompatible binary compatibility rules" {
+    const makeDev = struct {
+        fn get(maj: i32, min: i32) cuda.DeviceInfo {
+            return .{
+                .device_id = 0,
+                .name_buf = undefined,
+                .name_len = 0,
+                .compute_major = maj,
+                .compute_minor = min,
+                .total_memory_bytes = 12000 * 1024 * 1024,
+                .free_memory_bytes = 10000 * 1024 * 1024,
+                .multi_processor_count = 28,
+                .warp_size = 32,
+                .can_access_peer = .{ false, false, false, false, false, false, false, false },
+            };
+        }
+    }.get;
 
-    try std.testing.expect(CudaModel.isDeviceArchCompatible(&dev, "sm_86"));
-    try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev, "sm_80"));
-    try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev, "sm_89"));
-    try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev, "sm_90"));
-    try std.testing.expect(CudaModel.isDeviceArchCompatible(&dev, "none"));
+    const dev_cc80 = makeDev(8, 0); // e.g. A100
+    const dev_cc86 = makeDev(8, 6); // e.g. RTX 3060 / 3090
+    const dev_cc89 = makeDev(8, 9); // e.g. RTX 4090
+    const dev_cc90 = makeDev(9, 0); // e.g. H100
+    const dev_cc91 = makeDev(9, 1);
+    const dev_cc75 = makeDev(7, 5); // e.g. RTX 2080 (Turing)
+
+    // 1. sm_80 target compatibility:
+    // SASS for sm_80 is forward-compatible across Ampere and Ada (CC 8.0, 8.6, 8.9)
+    try std.testing.expect(CudaModel.isDeviceArchCompatible(&dev_cc80, "sm_80"));
+    try std.testing.expect(CudaModel.isDeviceArchCompatible(&dev_cc86, "sm_80"));
+    try std.testing.expect(CudaModel.isDeviceArchCompatible(&dev_cc89, "sm_80"));
+    try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev_cc90, "sm_80")); // major mismatch
+    try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev_cc75, "sm_80")); // major mismatch
+
+    // 2. sm_86 target compatibility:
+    // SASS for sm_86 runs on CC 8.6 and forward on CC 8.9, but NOT on CC 8.0 (minor < target.minor)
+    try std.testing.expect(CudaModel.isDeviceArchCompatible(&dev_cc86, "sm_86"));
+    try std.testing.expect(CudaModel.isDeviceArchCompatible(&dev_cc89, "sm_86"));
+    try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev_cc80, "sm_86")); // 8.0 < 8.6
+    try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev_cc90, "sm_86")); // major mismatch
+
+    // 3. sm_89 target compatibility:
+    // SASS for sm_89 runs on CC 8.9, but NOT on CC 8.6 or 8.0
+    try std.testing.expect(CudaModel.isDeviceArchCompatible(&dev_cc89, "sm_89"));
+    try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev_cc86, "sm_89"));
+    try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev_cc80, "sm_89"));
+
+    // 4. sm_90 target compatibility:
+    try std.testing.expect(CudaModel.isDeviceArchCompatible(&dev_cc90, "sm_90"));
+    try std.testing.expect(CudaModel.isDeviceArchCompatible(&dev_cc91, "sm_90"));
+    try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev_cc86, "sm_90"));
+
+    // 5. Suffixed exact-match target (sm_90a):
+    // Requires exact match CC 9.0; NOT forward-compatible to CC 9.1
+    try std.testing.expect(CudaModel.isDeviceArchCompatible(&dev_cc90, "sm_90a"));
+    try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev_cc91, "sm_90a"));
+    try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev_cc86, "sm_90a"));
+
+    // 6. Fail-closed: unrecognized or malformed targets must return false
+    try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev_cc86, "none"));
+    try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev_cc86, "invalid"));
+    try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev_cc86, ""));
+    try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev_cc86, "sm_foo"));
 }
 
 test "selectAndValidateDevices: zero devices returns NoDevice" {
@@ -4550,6 +4661,28 @@ test "selectAndValidateDevices: primary pair eligible" {
         .{ .id = 1, .major = 8, .minor = 6, .free_mib = 8000, .total_mib = 12000 },
     });
     const sel = try CudaModel.selectAndValidateDevicesWithOptions(topo, false, "sm_86");
+    try std.testing.expectEqual(ExecutionTopology.dual_gpu_split, sel.topology);
+    try std.testing.expectEqual(@as(i32, 0), sel.devices[0]);
+    try std.testing.expectEqual(@as(i32, 1), sel.devices[1]);
+}
+
+test "selectAndValidateDevices: forward-compatible heterogeneous pair (CC 8.6 + CC 8.9 on sm_86)" {
+    const topo = makeTestTopology(&.{
+        .{ .id = 0, .major = 8, .minor = 6, .free_mib = 8000, .total_mib = 12000 }, // RTX 3060
+        .{ .id = 1, .major = 8, .minor = 9, .free_mib = 8000, .total_mib = 24000 }, // RTX 4090
+    });
+    const sel = try CudaModel.selectAndValidateDevicesWithOptions(topo, false, "sm_86");
+    try std.testing.expectEqual(ExecutionTopology.dual_gpu_split, sel.topology);
+    try std.testing.expectEqual(@as(i32, 0), sel.devices[0]);
+    try std.testing.expectEqual(@as(i32, 1), sel.devices[1]);
+}
+
+test "selectAndValidateDevices: sm_80 target on dual CC 8.6 GPUs" {
+    const topo = makeTestTopology(&.{
+        .{ .id = 0, .major = 8, .minor = 6, .free_mib = 8000, .total_mib = 12000 },
+        .{ .id = 1, .major = 8, .minor = 6, .free_mib = 8000, .total_mib = 12000 },
+    });
+    const sel = try CudaModel.selectAndValidateDevicesWithOptions(topo, false, "sm_80");
     try std.testing.expectEqual(ExecutionTopology.dual_gpu_split, sel.topology);
     try std.testing.expectEqual(@as(i32, 0), sel.devices[0]);
     try std.testing.expectEqual(@as(i32, 1), sel.devices[1]);
@@ -4588,6 +4721,13 @@ test "selectAndValidateDevices: architecture mismatch rejection" {
         .{ .id = 1, .major = 7, .minor = 5, .free_mib = 8000, .total_mib = 12000 },
     });
     try std.testing.expectError(error.DeviceMismatch, CudaModel.selectAndValidateDevicesWithOptions(topo_all_mismatch, false, "sm_86"));
+
+    // Target is invalid / malformed string (fail-closed)
+    const topo_valid_devs = makeTestTopology(&.{
+        .{ .id = 0, .major = 8, .minor = 6, .free_mib = 8000, .total_mib = 12000 },
+        .{ .id = 1, .major = 8, .minor = 6, .free_mib = 8000, .total_mib = 12000 },
+    });
+    try std.testing.expectError(error.DeviceMismatch, CudaModel.selectAndValidateDevicesWithOptions(topo_valid_devs, false, "invalid"));
 }
 
 test "selectAndValidateDevices: later pair selection when device 0 is inadequate" {
