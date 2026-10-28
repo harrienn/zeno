@@ -351,10 +351,19 @@ pub const CudaModel = struct {
         devices: [2]i32,
     };
 
+    pub const CodeImage = enum {
+        /// Standard sm_XY: emits SASS for sm_XY and forward-compatible PTX for compute_XY.
+        sass_and_ptx,
+        /// Architecture-specific sm_XYa: emits SASS for sm_XYa only (requires exact compute capability).
+        sass_only,
+        /// Virtual architecture compute_XY: emits PTX for compute_XY only (forward-compatible to CC >= target_cc).
+        ptx_only,
+    };
+
     pub const TargetArch = struct {
         major: i32,
         minor: i32,
-        exact_only: bool = false,
+        image: CodeImage,
     };
 
     pub const ComputeCapability = TargetArch;
@@ -363,21 +372,24 @@ pub const CudaModel = struct {
     /// into a structured TargetArch. Returns null for malformed or unrecognized strings (fail-closed).
     pub fn parseTargetArch(arch_str: []const u8) ?TargetArch {
         var s = arch_str;
+        var image: CodeImage = undefined;
+
         if (std.mem.startsWith(u8, s, "sm_")) {
             s = s[3..];
+            if (s.len > 0 and s[s.len - 1] == 'a') {
+                image = .sass_only;
+                s = s[0 .. s.len - 1];
+            } else {
+                image = .sass_and_ptx;
+            }
         } else if (std.mem.startsWith(u8, s, "compute_")) {
             s = s[8..];
+            image = .ptx_only;
         } else {
             return null; // Fail-closed: require valid sm_ or compute_ prefix
         }
 
         if (s.len == 0) return null;
-
-        var exact_only = false;
-        if (s[s.len - 1] == 'a') {
-            exact_only = true;
-            s = s[0 .. s.len - 1];
-        }
 
         if (s.len == 2) {
             const maj = std.fmt.parseInt(i32, s[0..1], 10) catch return null;
@@ -385,7 +397,7 @@ pub const CudaModel = struct {
             return TargetArch{
                 .major = maj,
                 .minor = min,
-                .exact_only = exact_only,
+                .image = image,
             };
         } else if (s.len == 3) {
             const maj = std.fmt.parseInt(i32, s[0..2], 10) catch return null;
@@ -393,7 +405,7 @@ pub const CudaModel = struct {
             return TargetArch{
                 .major = maj,
                 .minor = min,
-                .exact_only = exact_only,
+                .image = image,
             };
         }
         return null;
@@ -404,17 +416,27 @@ pub const CudaModel = struct {
         return parseTargetArch(arch_str);
     }
 
-    /// Evaluates whether a GPU device's compute capability is binary-compatible with the compiled CUDA target.
-    /// Follows NVIDIA CUDA Binary Compatibility rules (SASS is forward-compatible within same major architecture:
-    /// device.major == target.major and device.minor >= target.minor; suffixed targets like sm_90a require exact match).
+    /// Evaluates whether a GPU device's compute capability is compatible with the compiled CUDA target.
+    /// Follows NVIDIA CUDA Binary Compatibility and PTX JIT rules (R56-03):
+    /// - Standard sm_XY: emits SASS for sm_XY (runs on same major architecture with dev.minor >= target.minor)
+    ///   AND forward-compatible PTX for compute_XY (JIT-compiled by driver for any dev_cc >= target_cc,
+    ///   including future/higher major architectures).
+    /// - Architecture-specific sm_XYa (e.g. sm_90a): emits SASS only, requiring exact compute capability match.
+    /// - Virtual target compute_XY: emits PTX only, forward-compatible to all dev_cc >= target_cc.
     /// Returns false (fail-closed) for any unparsed or unrecognized target string.
     pub fn isDeviceArchCompatible(dev: *const cuda.DeviceInfo, target_arch_str: []const u8) bool {
         const target = parseTargetArch(target_arch_str) orelse return false; // Fail-closed!
-        if (dev.compute_major != target.major) return false;
-        if (target.exact_only) {
-            return dev.compute_minor == target.minor;
-        }
-        return dev.compute_minor >= target.minor;
+
+        const dev_cc = dev.compute_major * 10 + dev.compute_minor;
+        const target_cc = target.major * 10 + target.minor;
+
+        if (dev_cc < target_cc) return false;
+
+        return switch (target.image) {
+            .sass_only => dev.compute_major == target.major and dev.compute_minor == target.minor,
+            .ptx_only => true, // dev_cc >= target_cc
+            .sass_and_ptx => true, // SASS if same major (dev.minor >= target.minor) or PTX fallback if higher major
+        };
     }
 
     /// Minimum free VRAM required per GPU in dual_gpu_split mode: 7,800 MiB (~7.62 GiB / 8.18 GB).
@@ -4531,50 +4553,51 @@ test "CudaModel.parseTargetArch" {
     try std.testing.expect(cc86 != null);
     try std.testing.expectEqual(@as(i32, 8), cc86.?.major);
     try std.testing.expectEqual(@as(i32, 6), cc86.?.minor);
-    try std.testing.expect(!cc86.?.exact_only);
+    try std.testing.expectEqual(CudaModel.CodeImage.sass_and_ptx, cc86.?.image);
 
     const cc80 = CudaModel.parseTargetArch("sm_80");
     try std.testing.expect(cc80 != null);
     try std.testing.expectEqual(@as(i32, 8), cc80.?.major);
     try std.testing.expectEqual(@as(i32, 0), cc80.?.minor);
-    try std.testing.expect(!cc80.?.exact_only);
+    try std.testing.expectEqual(CudaModel.CodeImage.sass_and_ptx, cc80.?.image);
 
     const cc89 = CudaModel.parseTargetArch("sm_89");
     try std.testing.expect(cc89 != null);
     try std.testing.expectEqual(@as(i32, 8), cc89.?.major);
     try std.testing.expectEqual(@as(i32, 9), cc89.?.minor);
-    try std.testing.expect(!cc89.?.exact_only);
+    try std.testing.expectEqual(CudaModel.CodeImage.sass_and_ptx, cc89.?.image);
 
     const cc90 = CudaModel.parseTargetArch("sm_90");
     try std.testing.expect(cc90 != null);
     try std.testing.expectEqual(@as(i32, 9), cc90.?.major);
     try std.testing.expectEqual(@as(i32, 0), cc90.?.minor);
-    try std.testing.expect(!cc90.?.exact_only);
+    try std.testing.expectEqual(CudaModel.CodeImage.sass_and_ptx, cc90.?.image);
 
     const cc100 = CudaModel.parseTargetArch("sm_100");
     try std.testing.expect(cc100 != null);
     try std.testing.expectEqual(@as(i32, 10), cc100.?.major);
     try std.testing.expectEqual(@as(i32, 0), cc100.?.minor);
-    try std.testing.expect(!cc100.?.exact_only);
+    try std.testing.expectEqual(CudaModel.CodeImage.sass_and_ptx, cc100.?.image);
 
-    // Suffixed architecture-specific targets (exact_only = true)
+    // Suffixed architecture-specific targets (sass_only)
     const cc90a = CudaModel.parseTargetArch("sm_90a");
     try std.testing.expect(cc90a != null);
     try std.testing.expectEqual(@as(i32, 9), cc90a.?.major);
     try std.testing.expectEqual(@as(i32, 0), cc90a.?.minor);
-    try std.testing.expect(cc90a.?.exact_only);
+    try std.testing.expectEqual(CudaModel.CodeImage.sass_only, cc90a.?.image);
 
     const cc100a = CudaModel.parseTargetArch("sm_100a");
     try std.testing.expect(cc100a != null);
     try std.testing.expectEqual(@as(i32, 10), cc100a.?.major);
     try std.testing.expectEqual(@as(i32, 0), cc100a.?.minor);
-    try std.testing.expect(cc100a.?.exact_only);
+    try std.testing.expectEqual(CudaModel.CodeImage.sass_only, cc100a.?.image);
 
-    // compute_ prefix (virtual target)
+    // compute_ prefix (virtual target, ptx_only)
     const comp80 = CudaModel.parseTargetArch("compute_80");
     try std.testing.expect(comp80 != null);
     try std.testing.expectEqual(@as(i32, 8), comp80.?.major);
     try std.testing.expectEqual(@as(i32, 0), comp80.?.minor);
+    try std.testing.expectEqual(CudaModel.CodeImage.ptx_only, comp80.?.image);
 
     // Fail-closed / malformed / unsupported targets
     try std.testing.expect(CudaModel.parseTargetArch("none") == null);
@@ -4609,41 +4632,55 @@ test "CudaModel.isDeviceArchCompatible binary compatibility rules" {
     const dev_cc89 = makeDev(8, 9); // e.g. RTX 4090
     const dev_cc90 = makeDev(9, 0); // e.g. H100
     const dev_cc91 = makeDev(9, 1);
+    const dev_cc100 = makeDev(10, 0); // e.g. Blackwell B200
     const dev_cc75 = makeDev(7, 5); // e.g. RTX 2080 (Turing)
 
     // 1. sm_80 target compatibility:
-    // SASS for sm_80 is forward-compatible across Ampere and Ada (CC 8.0, 8.6, 8.9)
+    // SASS for sm_80 runs on CC 8.0, 8.6, 8.9; embedded PTX (compute_80) runs on CC 9.0 and 10.0;
+    // but NOT on CC 7.5 (75 < 80)
     try std.testing.expect(CudaModel.isDeviceArchCompatible(&dev_cc80, "sm_80"));
     try std.testing.expect(CudaModel.isDeviceArchCompatible(&dev_cc86, "sm_80"));
     try std.testing.expect(CudaModel.isDeviceArchCompatible(&dev_cc89, "sm_80"));
-    try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev_cc90, "sm_80")); // major mismatch
-    try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev_cc75, "sm_80")); // major mismatch
+    try std.testing.expect(CudaModel.isDeviceArchCompatible(&dev_cc90, "sm_80")); // embedded PTX fallback
+    try std.testing.expect(CudaModel.isDeviceArchCompatible(&dev_cc100, "sm_80")); // embedded PTX fallback
+    try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev_cc75, "sm_80")); // 75 < 80
 
     // 2. sm_86 target compatibility:
-    // SASS for sm_86 runs on CC 8.6 and forward on CC 8.9, but NOT on CC 8.0 (minor < target.minor)
+    // SASS for sm_86 runs on CC 8.6 and CC 8.9; embedded PTX runs on CC 9.0; NOT on CC 8.0 (80 < 86)
     try std.testing.expect(CudaModel.isDeviceArchCompatible(&dev_cc86, "sm_86"));
     try std.testing.expect(CudaModel.isDeviceArchCompatible(&dev_cc89, "sm_86"));
+    try std.testing.expect(CudaModel.isDeviceArchCompatible(&dev_cc90, "sm_86")); // embedded PTX fallback
     try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev_cc80, "sm_86")); // 8.0 < 8.6
-    try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev_cc90, "sm_86")); // major mismatch
 
     // 3. sm_89 target compatibility:
-    // SASS for sm_89 runs on CC 8.9, but NOT on CC 8.6 or 8.0
     try std.testing.expect(CudaModel.isDeviceArchCompatible(&dev_cc89, "sm_89"));
-    try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev_cc86, "sm_89"));
-    try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev_cc80, "sm_89"));
+    try std.testing.expect(CudaModel.isDeviceArchCompatible(&dev_cc90, "sm_89"));
+    try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev_cc86, "sm_89")); // 8.6 < 8.9
+    try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev_cc80, "sm_89")); // 8.0 < 8.9
 
     // 4. sm_90 target compatibility:
+    // Runs on CC 9.0, 9.1; embedded PTX fallback on CC 10.0; NOT on CC 8.6 (86 < 90)
     try std.testing.expect(CudaModel.isDeviceArchCompatible(&dev_cc90, "sm_90"));
     try std.testing.expect(CudaModel.isDeviceArchCompatible(&dev_cc91, "sm_90"));
+    try std.testing.expect(CudaModel.isDeviceArchCompatible(&dev_cc100, "sm_90")); // PTX fallback on later major
     try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev_cc86, "sm_90"));
 
     // 5. Suffixed exact-match target (sm_90a):
-    // Requires exact match CC 9.0; NOT forward-compatible to CC 9.1
+    // Requires exact match CC 9.0; NOT forward-compatible to CC 9.1 or CC 10.0
     try std.testing.expect(CudaModel.isDeviceArchCompatible(&dev_cc90, "sm_90a"));
     try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev_cc91, "sm_90a"));
+    try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev_cc100, "sm_90a"));
     try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev_cc86, "sm_90a"));
 
-    // 6. Fail-closed: unrecognized or malformed targets must return false
+    // 6. Virtual target compute_80:
+    // PTX-only, forward-compatible to CC 8.0, 8.6, 8.9, 9.0, 10.0; NOT on CC 7.5
+    try std.testing.expect(CudaModel.isDeviceArchCompatible(&dev_cc80, "compute_80"));
+    try std.testing.expect(CudaModel.isDeviceArchCompatible(&dev_cc86, "compute_80"));
+    try std.testing.expect(CudaModel.isDeviceArchCompatible(&dev_cc90, "compute_80")); // later major!
+    try std.testing.expect(CudaModel.isDeviceArchCompatible(&dev_cc100, "compute_80")); // later major!
+    try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev_cc75, "compute_80")); // 75 < 80
+
+    // 7. Fail-closed: unrecognized or malformed targets must return false
     try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev_cc86, "none"));
     try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev_cc86, "invalid"));
     try std.testing.expect(!CudaModel.isDeviceArchCompatible(&dev_cc86, ""));

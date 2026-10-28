@@ -3,7 +3,7 @@
 ## 1. Executive Summary & Research Motivation
 
 In DiffusionGemma's architecture, structured decision execution relies on a **dual-region sequence representation**:
-1. **Causal Prompt Region** ($0 \dots P - 1$): Contains the tokenized user turn, context, question, candidate choices, and the assistant prefix cue (`<|turn>model\nAnswer: `). Prompt tokens attend causally.
+1. **Causal Prompt Region** ($0 \dots P - 1$): Contains the tokenized user turn, context, question, candidate choices, and the assistant prefix cue (`<|turn>model\nAnswer:`). Prompt tokens attend causally.
 2. **Non-Causal Canvas Region** ($P \dots P + C - 1$): Evaluated under bidirectional attention (`causal = false`), seeded with target diffusion masks, turn delimiters, and padding tokens.
 
 This specification answers the core research question recorded in [`PLAN.md`](../PLAN.md) §10:
@@ -29,7 +29,7 @@ Within DiffusionGemma, prompt tokens and canvas tokens share a contiguous, 0-ind
 │              Prompt Region (0..P-1)           │             Canvas Region (P..P+C-1)          │
 ├─────────┬──────────────────────┬──────────────┼─────────────┬─────────────┬───────────────────┤
 │ BOS (2) │ User Turn Context    │ Model Prefix │ Answer Slot │ TURN_CLOSE  │ PAD Tail          │
-│         │ Question & Choices   │ "Answer: "   │ MASK (4)    │ (106)       │ (0)               │
+│         │ Question & Choices   │ "Answer:"    │ MASK (4)    │ (106)       │ (0)               │
 └─────────┴──────────────────────┴──────────────┴─────────────┴─────────────┴───────────────────┘
 0         1                      P-1            P (slot 0)    P+1           P+2           P+C-1
 ```
@@ -39,7 +39,7 @@ $$\theta_{i, j}^{(m)} = (i - j) \cdot \theta_0^{-2m / d_{\text{head}}}$$
 where $\theta_0 = 10000.0$ and $m \in [0, d_{\text{head}}/2 - 1]$.
 
 When the answer slot `MASK` is placed at canvas offset $k \in [0, C-1]$, its absolute sequence index is $i = P + k$.
-Its relative distance to the prompt prefix cue (`Answer: ` at $j = P - 1$) is:
+Its relative distance to the prompt prefix cue (`Answer:` at $j = P - 1$) is:
 $$\Delta_{\text{cue}}(k) = (P + k) - (P - 1) = k + 1$$
 
 As offset $k$ increases, relative rotation angles $\theta_{i, j}$ rotate further, naturally attenuating high-frequency attention query-key dot products between the answer prediction slot and the prompt context.
@@ -205,7 +205,7 @@ Zeno Direct Canvas Contract (Decoupled):
 | :--- | :--- | :--- |
 | **Assistant Prefix Location** | Canvas region (`<|turn>model\nAnswer: `) | Causal prompt region |
 | **Answer Slot Location** | Offset within canvas ($k \approx 4 - 6$) | Canonical index 0 (or 1) |
-| **Prompt Prefix KV Cache** | Cannot cache assistant prefix across requests | Full prompt including `Answer: ` is 100% reusable in KV cache |
+| **Prompt Prefix KV Cache** | Cannot cache assistant prefix across requests | Full prompt including `Answer:` is 100% reusable in KV cache |
 | **Positional RoPE Decay** | Degraded by intervening template tokens | Minimal distance to cue ($\Delta_{\text{cue}} = 1$) |
 | **Evaluated Canvas Width** | Requires larger canvas ($C \ge 32$) to fit template | Can operate at minimal $C = 16$ ($101\text{ ms}$ latency) |
 

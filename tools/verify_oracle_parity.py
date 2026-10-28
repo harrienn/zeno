@@ -143,6 +143,7 @@ def main():
 
         for i, (c_fix, c_zeno) in enumerate(zip(candidates, zeno_cands)):
             lbl = c_fix["label"]
+            assert c_zeno.get("token_id") == c_fix["token_id"], f"Candidate token ID mismatch for '{lbl}': {c_zeno.get('token_id')} != {c_fix['token_id']}"
             o_raw = oracle_raw_logits[i]
             z_raw = c_zeno["raw_logit"]
             d_raw = abs(z_raw - o_raw)

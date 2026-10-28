@@ -90,6 +90,10 @@ pub const Canvas = struct {
 
         for (candidates) |cand| {
             total = std.math.add(usize, total, comptime ("- ".len + "\n".len)) catch return null;
+            if (!std.mem.eql(u8, cand.token, cand.label)) {
+                total = std.math.add(usize, total, cand.token.len) catch return null;
+                total = std.math.add(usize, total, comptime ": ".len) catch return null;
+            }
             total = std.math.add(usize, total, cand.label.len) catch return null;
         }
 
@@ -128,6 +132,10 @@ pub const Canvas = struct {
 
         for (candidates) |cand| {
             try list.appendSlice(allocator, "- ");
+            if (!std.mem.eql(u8, cand.token, cand.label)) {
+                try list.appendSlice(allocator, cand.token);
+                try list.appendSlice(allocator, ": ");
+            }
             try list.appendSlice(allocator, cand.label);
             try list.appendSlice(allocator, "\n");
         }
@@ -135,6 +143,40 @@ pub const Canvas = struct {
         try list.appendSlice(allocator, "<turn|>\n<|turn>model\nAnswer:");
         std.debug.assert(list.items.len == preflight_len);
         return list.toOwnedSlice(allocator);
+    }
+
+    /// Validates all candidate specifications and resolves each candidate to a unique single token ID
+    /// by calculating the candidate continuation at the answer boundary of the formatted prompt.
+    pub fn validateCandidateContinuations(
+        tok: tokenizer.Tokenizer,
+        allocator: std.mem.Allocator,
+        prompt_text: []const u8,
+        prompt_tokens: []const tokenizer.TokenId,
+        candidates: []const decision.CandidateSpec,
+        out_token_ids: []u32,
+    ) CanvasError!void {
+        std.debug.assert(out_token_ids.len >= candidates.len);
+
+        for (candidates, 0..) |cand, i| {
+            const token_id = tok.resolveCandidateContinuation(
+                allocator,
+                prompt_text,
+                prompt_tokens,
+                cand.token,
+            ) catch |err| switch (err) {
+                error.MultiTokenCandidateNotAllowed => return error.MultiTokenCandidateNotAllowed,
+                error.TokenNotFound => return error.TokenNotFound,
+            };
+
+            // Check for duplicate token ID among earlier resolved candidates
+            for (out_token_ids[0..i]) |prev_id| {
+                if (prev_id == token_id) {
+                    return error.DuplicateCandidateToken;
+                }
+            }
+
+            out_token_ids[i] = token_id;
+        }
     }
 
     /// Validates all candidate specifications and resolves each candidate to a unique single token ID.
@@ -190,6 +232,27 @@ test "Canvas: formatDecisionPrompt includes turn tags and candidates" {
     defer allocator.free(prompt_text);
 
     try std.testing.expect(std.mem.indexOf(u8, prompt_text, "<|turn>user\nContext: OK\n\nQuestion: Is service active?\nChoices:\n- Yes\n- No\n<turn|>\n<|turn>model\nAnswer:") != null);
+}
+
+test "Canvas: formatDecisionPrompt renders coded choices with token prefix (R56-01)" {
+    const allocator = std.testing.allocator;
+    const candidates = [_]decision.CandidateSpec{
+        .{ .token = "A", .label = "Credit Card Fraud" },
+        .{ .token = "B", .label = "Identity Theft" },
+        .{ .token = "C", .label = "Account Takeover" },
+    };
+
+    const prompt_text = try Canvas.formatDecisionPrompt(allocator, "Classify this fraud report.", null, &candidates);
+    defer allocator.free(prompt_text);
+
+    const expected_snippet =
+        "Choices:\n" ++
+        "- A: Credit Card Fraud\n" ++
+        "- B: Identity Theft\n" ++
+        "- C: Account Takeover\n" ++
+        "<turn|>\n<|turn>model\nAnswer:";
+
+    try std.testing.expect(std.mem.indexOf(u8, prompt_text, expected_snippet) != null);
 }
 
 test "Canvas: seedSingleStep rejects prompt exceeding max_prompt_tokens with CanvasOverflow" {

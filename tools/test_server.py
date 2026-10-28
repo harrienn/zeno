@@ -344,8 +344,34 @@ def main():
         assert decision_result.get("status") == 200, f"Decision query failed: {decision_result}"
         print(f"✓ In-flight decision completed in {decision_result['elapsed']:.2f}s without blocking health probes!")
 
+        # Test 16: Multiple-choice request with distinct tokens and labels (R56-01)
+        print("\n--- Test 16: Multiple-choice request with distinct tokens and labels (R56-01) ---")
+        mc_payload = {
+            "query": "What type of incident is this?",
+            "context": "Customer report: All database connections timed out starting at 14:02 UTC.",
+            "schema": {
+                "type": "choice",
+                "candidates": [
+                    {"token": "A", "label": "Full Outage"},
+                    {"token": "B", "label": "Minor Degraded"},
+                    {"token": "C", "label": "Routine Query"}
+                ]
+            },
+            "options": {
+                "step_cap": 1,
+                "temperature": 1.0
+            }
+        }
+        mc_status, mc_data = test_request("POST", "/v1/systemone", body=mc_payload)
+        assert mc_status == 200, f"Expected 200, got {mc_status}: {mc_data}"
+        assert mc_data["decision"] in ["Full Outage", "Minor Degraded", "Routine Query"], f"Decision must match display label, got {mc_data.get('decision')}"
+        assert len(mc_data["candidates"]) == 3, f"Expected 3 candidates, got {len(mc_data.get('candidates', []))}"
+        assert mc_data["candidates"][0]["token_id"] == 236776, f"Expected token 'A' ID 236776, got {mc_data['candidates'][0]['token_id']}"
+        assert mc_data["candidates"][0]["label"] == "Full Outage"
+        print(f"✓ Coded multiple-choice request succeeded: decision='{mc_data['decision']}', token_ids={[c['token_id'] for c in mc_data['candidates']]}")
+
         print("\n=======================================================")
-        print(" ALL HTTP SERVER INTEGRATION TESTS PASSED (15/15)")
+        print(" ALL HTTP SERVER INTEGRATION TESTS PASSED (16/16)")
         print("=======================================================")
 
     finally:

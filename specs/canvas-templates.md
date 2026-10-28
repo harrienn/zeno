@@ -27,7 +27,7 @@ The canvas is a fixed-width array of token identifiers:
 ## 3. Dual-Region Memory Layout & Canvas Geometry
 
 DiffusionGemma operates on a **dual-region sequence** $[0 \dots P + C - 1]$:
-- **Prompt Region** ($0 \dots P-1$): Causal prefix containing the tokenized prompt and model prefix cue (`Answer: `).
+- **Prompt Region** ($0 \dots P-1$): Causal prefix containing the tokenized prompt and model prefix cue (`Answer:`).
 - **Canvas Region** ($P \dots P + C - 1$): Evaluated canvas prefix of width $C$ under the decoder's bidirectional attention path. The GGUF default/maximum is 256; Zeno's API can request a shorter width.
 
 ```text
@@ -35,7 +35,7 @@ DiffusionGemma operates on a **dual-region sequence** $[0 \dots P + C - 1]$:
 │              Prompt Region (0..P-1)           │             Canvas Region (P..P+C-1)          │
 ├─────────┬──────────────────────┬──────────────┼─────────────┬─────────────┬───────────────────┤
 │ BOS (2) │ User Turn Context    │ Model Prefix │ Answer Slot │ TURN_CLOSE  │ PAD Tail          │
-│         │ Question & Choices   │ "Answer: "   │ MASK (4)    │ (106)       │ (0)               │
+│         │ Question & Choices   │ "Answer:"    │ MASK (4)    │ (106)       │ (0)               │
 └─────────┴──────────────────────┴──────────────┴─────────────┴─────────────┴───────────────────┘
 0         1                      P-1            P (slot 0)    P+1           P+2           P+C-1
 ```
@@ -45,7 +45,7 @@ DiffusionGemma operates on a **dual-region sequence** $[0 \dots P + C - 1]$:
 In [vLLM PR #57250](https://github.com/vllm-project/vllm/pull/57250) (`examples/features/structured_diffusion/structured_server.py`), the assistant turn template is constructed directly inside the canvas buffer (e.g. `<|turn>model\nAnswer: ` lives on the canvas, and the answer slot $s[\text{"pos"}]$ is located at an offset within that canvas template). Answer slots are seeded with random noise draws across repeated sampling passes.
 
 In contrast, **Zeno's Direct Canvas Decision Contract**:
-1. Formats the full user context and assistant prefix (`<|turn>user\n...<turn|>\n<|turn>model\nAnswer: `) into the causal **prompt region** ($0 \dots P-1$).
+1. Formats the full user context and assistant prefix (`<|turn>user\n...<turn|>\n<|turn>model\nAnswer:`) into the causal **prompt region** ($0 \dots P-1$).
 2. Designates **canvas index 0** ($P+0$) as the answer/read position and seeds it with `MASK` (`4`). Zeno reads its logits without applying the reference sampler's iterative pin/accept/re-noise updates.
 3. Appends `TURN_CLOSE` (`106`) at canvas index 1 ($P+1$), and fills the remaining backing canvas with `PAD` (`0`). The evaluated prefix has width $C$; only positions $0 \dots C-1$ participate in that request.
 4. Reads candidate logits directly from canvas index 0 in one logical read, without iterative sampling draws. CUDA may use prompt KV prefix caching internally; that cache is an execution optimization and does not change the input-token contract.
@@ -59,7 +59,7 @@ This decoupled layout places the decision answer at canvas index 0 instead of em
 The artifact's complete jinja template is recorded verbatim in [`chat_template.jinja`](chat_template.jinja) (17,336 bytes). When evaluated with `messages=[{"role": "user", "content": ...}]` and `add_generation_prompt=True`, the template renders:
 `<|turn>user\n{content}<turn|>\n<|turn>model\n`.
 
-Zeno formats the decision query and candidate choices inside `{content}`, and appends the structured read prefix `Answer: ` to place the target prediction at answer slot $p$:
+Zeno formats the decision query and candidate choices inside `{content}`, and appends the structured read prefix `Answer:` to place the target prediction at answer slot $p$:
 
 ```text
 <|turn>user
@@ -69,7 +69,7 @@ Question: {query}
 Choices:
 {formatted_choices}<turn|>
 <|turn>model
-Answer: 
+Answer:
 ```
 
 ### 4.0 Verified Prompt Formatting Rules
@@ -82,17 +82,18 @@ Answer:
    - `PAD`: `0`
    - `MASK`: `4`
 3. **Answer Prefix**:
-   - The model turn begins with `Answer: ` where the token immediately following this prefix corresponds to answer slot $p$.
+   - The model turn begins with `Answer:` (without trailing space) where the token immediately following this prefix corresponds to answer slot $p$. Terminating prompt serialization at `Answer:` ensures that the candidate continuation token maps directly onto single vocabulary tokens (e.g. `Yes` = 10784, `No` = 3771, `A` = 236776) without inserting an extraneous isolated space token (`236767`).
 
 ### 4.1 Choice Formatting Rules
 
-* **Binary / Boolean**:
+* **Binary / Boolean / Direct Match (`cand.token == cand.label`)**:
   ```text
   Choices:
   - Yes
   - No
   ```
-* **Multiple Choice (One-Token Codes)**:
+* **Multiple Choice with Distinct Token Codes (`cand.token != cand.label`)**:
+  When a candidate's single-token code differs from its user-facing label, format option as `- {cand.token}: {cand.label}` (R56-01):
   ```text
   Choices:
   - A: Outage
@@ -113,17 +114,18 @@ Answer:
 
 ## 5. Candidate Validation & Token Resolution
 
-The request supplies a one-token output code and a separate display label for each candidate. Resolve the output code at the actual answer boundary of the fully rendered prompt. Encoding a trimmed candidate string in isolation is insufficient because whitespace and preceding text can change tokenization.
+The request supplies a one-token output code and a separate display label for each candidate. Resolve the output code at the actual answer boundary of the fully rendered prompt (`<turn|>\n<|turn>model\nAnswer:`). Encoding a trimmed candidate string in isolation is insufficient because whitespace and preceding text can change tokenization.
 
 For each candidate:
 
-1. Render the model's exact prompt and answer prefix.
-2. Resolve the candidate continuation using the selected tokenizer's continuation semantics.
-3. Reject it with `MultiTokenCandidateNotAllowed` unless that continuation is exactly one token.
-4. Reject duplicate token IDs with `DuplicateCandidateToken`, even when display labels differ.
-5. Keep the resolved token ID associated with its display label.
+1. Render the model's exact prompt and answer prefix (`Canvas.formatDecisionPrompt`).
+2. Tokenize the causal prompt region.
+3. Resolve the candidate continuation at the answer boundary using `Tokenizer.resolveCandidateContinuation` in the exact context of the rendered prompt (`full_text = prompt_text ++ cand.token`).
+4. Reject it with `MultiTokenCandidateNotAllowed` unless that continuation produces exactly one vocabulary token in context.
+5. Reject duplicate token IDs with `DuplicateCandidateToken`, even when display labels differ.
+6. Keep the resolved token ID associated with its display label.
 
-The continuation procedure is implemented in `src/canvas.zig` (`Canvas.formatDecisionPrompt`) and `src/tokenizer.zig` (`Tokenizer.findTokenId`), and verified across all 5 golden oracle fixtures.
+The continuation procedure is implemented in `src/canvas.zig` (`Canvas.validateCandidateContinuations`) and `src/tokenizer.zig` (`Tokenizer.resolveCandidateContinuation`), and verified across all 5 golden oracle fixtures.
 
 ### Error Conditions
 - **`MultiTokenCandidateNotAllowed`**: Returned if a rendered candidate continuation is not exactly one token.

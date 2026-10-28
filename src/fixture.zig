@@ -101,7 +101,19 @@ pub fn evaluateReferenceParity(
     const h_limit: f32 = if (is_v2) 0.35 else 0.05;
     const h_norm_limit: f32 = if (is_v2) 0.25 else 0.05;
 
-    const meets_tol = len_match and dec_match and unc_match and
+    var token_ids_match = true;
+    if (len_match and fix.candidates.len == resp.candidates.len) {
+        for (fix.candidates, resp.candidates) |fc, rc| {
+            if (fc.token_id != rc.token_id) {
+                token_ids_match = false;
+                break;
+            }
+        }
+    } else {
+        token_ids_match = false;
+    }
+
+    const meets_tol = len_match and dec_match and unc_match and token_ids_match and
         (max_raw <= raw_limit) and (max_sc <= sc_limit) and
         (max_prob <= prob_limit) and (h_diff <= h_limit) and (h_norm_diff <= h_norm_limit);
 
@@ -233,6 +245,11 @@ pub fn validateFixture(
     try std.testing.expectEqual(baseline.candidate_logits_raw.len, resp.candidates.len);
     try std.testing.expectEqual(baseline.candidate_logits_softcapped.len, resp.candidates.len);
     try std.testing.expectEqual(baseline.probabilities.len, resp.candidates.len);
+
+    // Assert exact candidate token ID equality against fixture specifications (R56-02)
+    for (fix.candidates, resp.candidates) |expected_cand, actual_cand| {
+        try std.testing.expectEqual(expected_cand.token_id, actual_cand.token_id);
+    }
 
     for (baseline.candidate_logits_raw, resp.candidates, 0..) |expected_raw, actual_cand, i| {
         try std.testing.expectApproxEqAbs(expected_raw, actual_cand.raw_logit, 0.5);

@@ -201,14 +201,7 @@ pub const DecisionEngine = struct {
         // 1. Validate request bounds and constraints
         try decision.validateRequest(req);
 
-        // 2. Validate and resolve candidate tokens
-        const cand_count = req.candidates.len;
-        const candidate_tokens = try request_allocator.alloc(u32, cand_count);
-        defer request_allocator.free(candidate_tokens);
-
-        try Canvas.validateCandidates(self.tokenizer, req.candidates, candidate_tokens);
-
-        // 3. Early byte-length guard before formatting and tokenization (R7-05, R8-02)
+        // 2. Early byte-length guard before formatting and tokenization (R7-05, R8-02)
         const preflight_prompt_bytes = Canvas.calculatePromptByteLength(
             req.query,
             req.context,
@@ -219,6 +212,7 @@ pub const DecisionEngine = struct {
             return error.CanvasOverflow;
         }
 
+        // 3. Format structured decision prompt conforming to Gemma 4 delimiters
         const formatted_prompt = try Canvas.formatDecisionPrompt(
             request_allocator,
             req.query,
@@ -229,8 +223,23 @@ pub const DecisionEngine = struct {
 
         std.debug.assert(formatted_prompt.len == preflight_prompt_bytes);
 
+        // 4. Tokenize prompt
         const raw_prompt_tokens = try self.tokenizer.encode(request_allocator, formatted_prompt);
         defer request_allocator.free(raw_prompt_tokens);
+
+        // 5. Validate and resolve candidate tokens at the rendered answer boundary (R56-02)
+        const cand_count = req.candidates.len;
+        const candidate_tokens = try request_allocator.alloc(u32, cand_count);
+        defer request_allocator.free(candidate_tokens);
+
+        try Canvas.validateCandidateContinuations(
+            self.tokenizer,
+            request_allocator,
+            formatted_prompt,
+            raw_prompt_tokens,
+            req.candidates,
+            candidate_tokens,
+        );
 
         const canvas_len = req.canvas_length orelse root.ModelConfig.canvas_length;
         const total_prompt_tokens = raw_prompt_tokens.len + 1; // +1 for bos
@@ -436,6 +445,57 @@ test "DecisionEngine: end-to-end boolean decision execution on local model if pr
     try std.testing.expect(resp.canvas_tokens_used > 0);
     try std.testing.expectEqual(@as(usize, 2), resp.candidates.len);
     try std.testing.expect(resp.timings == null);
+}
+
+test "DecisionEngine: multiple-choice coded options with distinct tokens and labels (R56-01)" {
+    if (!root.shouldRunModelTests()) return error.SkipZigTest;
+
+    const allocator = std.testing.allocator;
+    const model_path = "models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf";
+
+    var engine = DecisionEngine.init(allocator, model_path) catch |err| {
+        if (err == error.FileNotFound) return;
+        return err;
+    };
+    defer engine.deinit() catch {};
+
+    const candidates = [_]decision.CandidateSpec{
+        .{ .token = "A", .label = "Credit Card Fraud" },
+        .{ .token = "B", .label = "Identity Theft" },
+        .{ .token = "C", .label = "Account Takeover" },
+    };
+
+    const req = DecisionRequest{
+        .query = "What type of financial fraud is reported?",
+        .context = "Customer reported an unknown charge of $540 at a gas station.",
+        .schema_type = .choice,
+        .candidates = &candidates,
+        .step_cap = 1,
+        .temperature = 1.0,
+    };
+
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+
+    const resp = try engine.decide(arena.allocator(), req);
+
+    // Decision must match one of the user-facing display labels, not the token code "A"
+    try std.testing.expect(
+        std.mem.eql(u8, resp.decision, "Credit Card Fraud") or
+        std.mem.eql(u8, resp.decision, "Identity Theft") or
+        std.mem.eql(u8, resp.decision, "Account Takeover"),
+    );
+    try std.testing.expect(!std.mem.eql(u8, resp.decision, "A"));
+    try std.testing.expect(!std.mem.eql(u8, resp.decision, "B"));
+    try std.testing.expect(!std.mem.eql(u8, resp.decision, "C"));
+
+    // Verify candidate token IDs match codes A, B, C and preserve display labels
+    try std.testing.expectEqual(@as(u32, 236776), resp.candidates[0].token_id); // 'A'
+    try std.testing.expectEqualStrings("Credit Card Fraud", resp.candidates[0].label);
+    try std.testing.expectEqual(@as(u32, 236784), resp.candidates[1].token_id); // 'B'
+    try std.testing.expectEqualStrings("Identity Theft", resp.candidates[1].label);
+    try std.testing.expectEqual(@as(u32, 236798), resp.candidates[2].token_id); // 'C'
+    try std.testing.expectEqualStrings("Account Takeover", resp.candidates[2].label);
 }
 
 test "DecisionEngine: normative tie-breaking selects lowest candidate index (U-19)" {

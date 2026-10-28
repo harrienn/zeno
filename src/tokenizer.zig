@@ -371,6 +371,39 @@ pub const Tokenizer = struct {
 
         return error.TokenNotFound;
     }
+
+    /// Resolves a candidate token continuation at the answer boundary of a fully rendered prompt.
+    /// Strictly requires that the continuation produces exactly one vocabulary token in context (R56-02).
+    pub fn resolveCandidateContinuation(
+        self: Tokenizer,
+        allocator: std.mem.Allocator,
+        prompt_text: []const u8,
+        prompt_tokens: []const TokenId,
+        cand_token: []const u8,
+    ) TokenResolutionError!TokenId {
+        if (cand_token.len == 0) return error.TokenNotFound;
+
+        const full_text = std.fmt.allocPrint(allocator, "{s}{s}", .{ prompt_text, cand_token }) catch return error.TokenNotFound;
+        defer allocator.free(full_text);
+
+        const full_tokens = self.encode(allocator, full_text) catch return error.TokenNotFound;
+        defer allocator.free(full_tokens);
+
+        if (full_tokens.len <= prompt_tokens.len) {
+            return error.TokenNotFound;
+        }
+
+        if (full_tokens.len > prompt_tokens.len + 1) {
+            return error.MultiTokenCandidateNotAllowed;
+        }
+
+        // Verify that tokenized prefix matches prompt_tokens identically
+        if (!std.mem.eql(TokenId, full_tokens[0..prompt_tokens.len], prompt_tokens)) {
+            return error.TokenNotFound;
+        }
+
+        return full_tokens[prompt_tokens.len];
+    }
 };
 
 test "Tokenizer: verify special control tokens and candidate resolution on local model" {
@@ -447,4 +480,44 @@ test "Tokenizer: verify encode() handles control tokens and BPE merges" {
         if (tid == 106) found_turn_close = true;
     }
     try std.testing.expect(found_turn_close);
+}
+
+test "Tokenizer: resolveCandidateContinuation at answer boundary (R56-02)" {
+    const allocator = std.testing.allocator;
+    const model_path = "models/diffusiongemma-26B-A4B-it-Q4_K_M.gguf";
+
+    var model = root.DiffusionGemmaModel.loadFromFile(allocator, model_path) catch |err| {
+        if (err == error.FileNotFound) return;
+        return err;
+    };
+    defer model.deinit();
+
+    var tokenizer = try Tokenizer.initFromGguf(allocator, model.gguf_file);
+    defer tokenizer.deinit(allocator);
+
+    const prompt_text = "<|turn>user\nQuestion: Is the system healthy?\nChoices:\n- Yes\n- No\n<turn|>\n<|turn>model\nAnswer:";
+    const prompt_tokens = try tokenizer.encode(allocator, prompt_text);
+    defer allocator.free(prompt_tokens);
+
+    // Verify single-token candidate continuations
+    const id_yes = try tokenizer.resolveCandidateContinuation(allocator, prompt_text, prompt_tokens, "Yes");
+    try std.testing.expectEqual(@as(TokenId, 10784), id_yes);
+
+    const id_no = try tokenizer.resolveCandidateContinuation(allocator, prompt_text, prompt_tokens, "No");
+    try std.testing.expectEqual(@as(TokenId, 3771), id_no);
+
+    const id_a = try tokenizer.resolveCandidateContinuation(allocator, prompt_text, prompt_tokens, "A");
+    try std.testing.expectEqual(@as(TokenId, 236776), id_a);
+
+    // Multi-token candidate must be rejected with MultiTokenCandidateNotAllowed
+    try std.testing.expectError(
+        error.MultiTokenCandidateNotAllowed,
+        tokenizer.resolveCandidateContinuation(allocator, prompt_text, prompt_tokens, "Credit Card Fraud"),
+    );
+
+    // Empty candidate
+    try std.testing.expectError(
+        error.TokenNotFound,
+        tokenizer.resolveCandidateContinuation(allocator, prompt_text, prompt_tokens, ""),
+    );
 }
